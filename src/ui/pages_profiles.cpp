@@ -39,12 +39,7 @@ std::string FanModeText(const std::string& m) {
   return m;
 }
 
-std::string BattModeText(const std::string& m) {
-  if (m == "highcap") return T("Full capacity");
-  if (m == "balanced") return T("Balanced");
-  if (m == "eco") return T("Battery saver");
-  return m;
-}
+std::string BattModeText(const std::string& m) { return BattModeLabel(m); }
 
 std::string Intf(const KV& v, const char* key) { return std::to_string(v.Int(key, 0)); }
 

@@ -88,15 +88,18 @@ struct DisplayInfo {
   int width = 0, height = 0, refresh = 0;
   std::vector<int> refreshRates;     // supported at the current resolution
 };
-struct ColorSettings {  // software gamma ramp
+struct ColorSettings {  // software colour control: a gamma ramp (everything but saturation) and a colour matrix (saturation)
   int brightness = 50;  // 0..100 (50 = neutral)
   int contrast = 50;
   int gamma = 100;      // 50..260 (x100)
   int kelvin = 6500;    // 3000..9000
   int r = 100, g = 100, b = 100;  // channel gain percent
+  int saturation = 100;           // 0..200 percent (100 = neutral); needs the Windows colour-effect API, see IOsDisplay::SaturationSupported
   bool operator==(const ColorSettings& o) const {
-    return brightness == o.brightness && contrast == o.contrast && gamma == o.gamma && kelvin == o.kelvin && r == o.r && g == o.g && b == o.b;
+    return brightness == o.brightness && contrast == o.contrast && gamma == o.gamma && kelvin == o.kelvin && r == o.r && g == o.g && b == o.b &&
+           saturation == o.saturation;
   }
+  bool Neutral() const { return *this == ColorSettings(); }
 };
 class IOsDisplay {
  public:
@@ -105,6 +108,9 @@ class IOsDisplay {
   virtual bool SetBrightness(int pct, std::string* why) = 0;
   virtual bool SetRefresh(int hz, std::string* why) = 0;
   virtual bool SetColor(const ColorSettings& c, std::string* why) = 0;
+  // True when the saturation slider can work here (it uses the Windows full-screen colour effect, not the gamma ramp). Must not
+  // initialise anything: it is called while probing, from another thread than the one that applies colours.
+  virtual bool SaturationSupported() { return false; }
 };
 
 // ------------------------------------------------------------------------------------------------ OS: device switches

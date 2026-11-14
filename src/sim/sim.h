@@ -201,10 +201,13 @@ struct Display : IOsDisplay {
   std::vector<int> rates{60, 144};
   ColorSettings color;
   bool failColor = false;
+  bool saturationOk = true;   // false: the colour-effect API is missing (the saturation slider is unavailable)
+  int colorApplied = 0;       // how many times colours were pushed to the panel (tests: re-apply after resume)
   DisplayInfo Info() override;
   bool SetBrightness(int pct, std::string*) override { brightness = pct; return true; }
   bool SetRefresh(int hz, std::string* why) override;
   bool SetColor(const ColorSettings& c, std::string* why) override;
+  bool SaturationSupported() override { return saturationOk; }
 };
 
 struct Devices : IOsDevices {

@@ -524,6 +524,25 @@ void App::OpenUrl(const std::string& url) {
   ShellExecuteW(nullptr, L"open", Wide(url).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 }
 
+void App::OpenWindowsTool(const std::string& id) {
+  std::wstring target;
+  if (id == "display") {
+    target = L"ms-settings:display";
+  } else if (id == "nightlight") {
+    target = L"ms-settings:nightlight";
+  } else if (id == "colorcpl") {
+    wchar_t sys[MAX_PATH];
+    const UINT n = GetSystemDirectoryW(sys, MAX_PATH);   // the system copy, not whatever the search path finds first
+    if (n == 0 || n >= MAX_PATH) return;
+    target = std::wstring(sys) + L"\\colorcpl.exe";
+  } else {
+    return;
+  }
+  Str("tool.last") = id;
+  if (shot_) return;
+  ShellExecuteW(nullptr, L"open", target.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+}
+
 void App::CopyText(const std::string& text) {
   const std::wstring w = Wide(text);
   if (!OpenClipboard(d_->hwnd)) return;

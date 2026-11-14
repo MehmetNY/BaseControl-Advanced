@@ -1,0 +1,70 @@
+# Battery: charge profile tiles (a choice waits for Confirm), live follow of a change made elsewhere, the live readings and the history chart.
+# Run: BaseControl.exe --sim --script tests/ui/battery_flow.txt --size 1360x1300
+say == 1. the live profile is shown, nothing is chosen ==
+page battery
+expect batt.mode balanced
+expectint bt.draft -1
+let writes0 snap:ec.writes
+shot /tmp/shots/bt_default.png
+
+say == 2. picking a tile sends nothing ==
+clickid bt#2
+expectint bt.draft 2
+expect batt.mode balanced
+expect ec.writes $writes0
+shot /tmp/shots/bt_draft.png
+
+say == 3. Discard drops the choice, still nothing sent ==
+clickid dc#batt.mode
+expectint bt.draft -1
+expect batt.mode balanced
+expect ec.writes $writes0
+
+say == 4. choosing the profile that is already active is no change ==
+clickid bt#1
+expectint bt.draft -1
+
+say == 5. Confirm applies it and the hardware reads back ==
+clickid bt#0
+expectint bt.draft 0
+clickid ok#batt.mode
+wait 1500
+expect batt.mode highcap
+expectint bt.draft -1
+shot /tmp/shots/bt_applied.png
+
+say == 6. another program changes the profile: the page follows ==
+external batt.mode 2
+wait 2600
+expect batt.mode eco
+shot /tmp/shots/bt_external.png
+
+say == 7. a choice that the hardware has meanwhile reached disappears by itself ==
+clickid bt#1
+expectint bt.draft 1
+external batt.mode 1
+wait 2600
+expect batt.mode balanced
+expectint bt.draft -1
+
+say == 8. on the charger and on the battery ==
+expect power.ac 1
+expect power.charging 1
+external power.ac 0
+wait 2600
+expect power.ac 0
+expect power.charging 0
+shot /tmp/shots/bt_unplugged.png
+external power.ac 1
+wait 2600
+
+say == 9. history: starts with one point, then a lived-in eight hours ==
+battery_history empty
+shot /tmp/shots/bt_hist_empty.png
+battery_history demo
+expect batt.hist.step 60
+expect batt.hist *
+hoverid batt.chart
+shot /tmp/shots/bt_history.png
+dump batt.hist.step
+say done

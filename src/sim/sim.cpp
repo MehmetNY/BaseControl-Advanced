@@ -391,7 +391,7 @@ void Platform::UpdateRegisters() {
   le16(kBatCycleLo, 87);
   le16(kBatVoltageLo, 15380);
   le16(kBatRemainLo, static_cast<int>(4980 * battPct / 100.0));
-  le16(kBatRateLo, ac ? 0 : -static_cast<int>((cpuW + gpuW + 18.0) * 1000.0 / 15.4));
+  le16(kBatRateLo, ac ? (battPct < 99.5 ? 2150 : 0) : -static_cast<int>((cpuW + gpuW + 18.0) * 1000.0 / 15.4));
   le16(kBatTempLo, 3010);
 }
 
@@ -552,7 +552,12 @@ bool Display::SetColor(const ColorSettings& c, std::string* why) {
     if (why) *why = "sim: gamma ramp rejected by the driver";
     return false;
   }
+  if (c.saturation != 100 && !saturationOk) {
+    if (why) *why = "sim: the colour-effect API is not available";
+    return false;
+  }
   color = c;
+  colorApplied++;
   return true;
 }
 

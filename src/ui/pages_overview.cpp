@@ -5,6 +5,7 @@
 
 #include "../common/util.h"
 #include "page.h"
+#include "pages_shared.h"
 
 namespace bc {
 namespace ui {
@@ -92,9 +93,7 @@ std::string EnumNice(const std::string& v) {
   if (v == "boost") return T("Maximum fans");
   if (v == "custom") return T("Custom curve");
   if (v == "fixed") return T("Fixed speed");
-  if (v == "highcap") return T("High capacity");
-  if (v == "balanced") return T("Balanced");
-  if (v == "eco") return T("Eco");
+  if (v == "highcap" || v == "balanced" || v == "eco") return BattModeLabel(v);
   return v;
 }
 

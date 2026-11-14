@@ -3,6 +3,7 @@
 #include <cstring>
 #include <cmath>
 
+#include "colorramp.h"
 #include "controller.h"
 #include "lightfx.h"
 #include "profile_text.h"
@@ -40,6 +41,8 @@ void Controller::ProbeMisc() {
   SetCap("disp.bright", di.ok && di.brightness >= 0 ? "ok" : "absent", "");
   SetCap("disp.refresh", di.ok && di.refreshRates.size() > 1 ? "ok" : "absent", "");
   SetCap("disp.color", hw_.display ? "ok" : "absent", "");
+  SetCap("disp.sat", !hw_.display ? "absent" : (hw_.display->SaturationSupported() ? "ok" : "unsupported"),
+         hw_.display && !hw_.display->SaturationSupported() ? "Needs the Windows colour-effect API (Magnification.dll), which is not available." : "");
   if (hw_.devices) {
     SetCap("dev.wifi", hw_.devices->Get(Dev::Wifi) >= 0 ? "ok" : "absent");
     SetCap("dev.bt", hw_.devices->Get(Dev::Bluetooth) >= 0 ? "ok" : "absent");
@@ -96,13 +99,15 @@ void Controller::PollMisc() {
       k.Set("disp.refresh.list", l);
       k.Set("disp.res", Fmt("%dx%d", di.width, di.height));
     }
-    k.SetI("disp.c.bright", cfg_.Int("cfg.disp.c.bright", 50));
-    k.SetI("disp.c.contrast", cfg_.Int("cfg.disp.c.contrast", 50));
-    k.SetI("disp.c.gamma", cfg_.Int("cfg.disp.c.gamma", 100));
-    k.SetI("disp.c.kelvin", cfg_.Int("cfg.disp.c.kelvin", 6500));
-    k.SetI("disp.c.r", cfg_.Int("cfg.disp.c.r", 100));
-    k.SetI("disp.c.g", cfg_.Int("cfg.disp.c.g", 100));
-    k.SetI("disp.c.b", cfg_.Int("cfg.disp.c.b", 100));
+    const ColorSettings c = StoredColor();
+    k.SetI("disp.c.bright", c.brightness);
+    k.SetI("disp.c.contrast", c.contrast);
+    k.SetI("disp.c.gamma", c.gamma);
+    k.SetI("disp.c.kelvin", c.kelvin);
+    k.SetI("disp.c.r", c.r);
+    k.SetI("disp.c.g", c.g);
+    k.SetI("disp.c.b", c.b);
+    k.SetI("disp.c.sat", c.saturation);
     k.Set("disp.mode", cfg_.Str("cfg.disp.mode", "standard"));
   }
   if (hw_.devices) {
@@ -157,26 +162,16 @@ Result Controller::SetDisplay(const std::string& key, int value) {
   }
   if (key == "disp.refresh") {
     if (!hw_.display->SetRefresh(value, &why)) return Fail("failed.hw", why);
+    ScheduleColorReapply(1200, 1);   // some drivers drop the gamma ramp on a mode change
     return Ok();
   }
-  ColorSettings c;
-  c.brightness = static_cast<int>(cfg_.Int("cfg.disp.c.bright", 50));
-  c.contrast = static_cast<int>(cfg_.Int("cfg.disp.c.contrast", 50));
-  c.gamma = static_cast<int>(cfg_.Int("cfg.disp.c.gamma", 100));
-  c.kelvin = static_cast<int>(cfg_.Int("cfg.disp.c.kelvin", 6500));
-  c.r = static_cast<int>(cfg_.Int("cfg.disp.c.r", 100));
-  c.g = static_cast<int>(cfg_.Int("cfg.disp.c.g", 100));
-  c.b = static_cast<int>(cfg_.Int("cfg.disp.c.b", 100));
+  ColorSettings c = StoredColor();
   std::string mode = cfg_.Str("cfg.disp.mode", "standard");
   if (key == "disp.mode") {
-    static const struct { const char* n; int br, co, ga, k, r, g, b; } kPre[] = {
-        {"standard", 50, 50, 100, 6500, 100, 100, 100}, {"vibrant", 52, 60, 95, 6500, 100, 100, 100}, {"cinema", 46, 56, 110, 6200, 100, 98, 96},
-        {"internet", 50, 50, 100, 6500, 100, 100, 100},  {"photo", 50, 52, 100, 6500, 100, 100, 100},   {"video", 52, 54, 105, 6500, 100, 100, 100},
-        {"lowblue", 50, 50, 100, 4500, 100, 100, 100}};
+    // The image profiles are colour curves of BaseControl's own (the panel's factory calibration is not touched).
     const SettingDef* d = FindSetting("disp.mode");
     mode = EnumName(*d, value);
-    for (auto& p : kPre)
-      if (mode == p.n) { c.brightness = p.br; c.contrast = p.co; c.gamma = p.ga; c.kelvin = p.k; c.r = p.r; c.g = p.g; c.b = p.b; }
+    if (const ColorSettings* p = FindColorPreset(mode)) c = *p;
   } else {
     if (key == "disp.c.bright") c.brightness = value;
     else if (key == "disp.c.contrast") c.contrast = value;
@@ -185,14 +180,55 @@ Result Controller::SetDisplay(const std::string& key, int value) {
     else if (key == "disp.c.r") c.r = value;
     else if (key == "disp.c.g") c.g = value;
     else if (key == "disp.c.b") c.b = value;
+    else if (key == "disp.c.sat") c.saturation = value;
     mode = "custom";
   }
   if (!hw_.display->SetColor(c, &why)) return Fail("failed.hw", why);
   cfg_.SetI("cfg.disp.c.bright", c.brightness); cfg_.SetI("cfg.disp.c.contrast", c.contrast); cfg_.SetI("cfg.disp.c.gamma", c.gamma);
   cfg_.SetI("cfg.disp.c.kelvin", c.kelvin); cfg_.SetI("cfg.disp.c.r", c.r); cfg_.SetI("cfg.disp.c.g", c.g); cfg_.SetI("cfg.disp.c.b", c.b);
+  cfg_.SetI("cfg.disp.c.sat", c.saturation);
   cfg_.Set("cfg.disp.mode", mode);
   SaveConfig();
   return Ok();
+}
+
+// The colour settings the user last applied (neutral when they never touched them).
+ColorSettings Controller::StoredColor() const {
+  ColorSettings c;
+  c.brightness = static_cast<int>(cfg_.Int("cfg.disp.c.bright", 50));
+  c.contrast = static_cast<int>(cfg_.Int("cfg.disp.c.contrast", 50));
+  c.gamma = static_cast<int>(cfg_.Int("cfg.disp.c.gamma", 100));
+  c.kelvin = static_cast<int>(cfg_.Int("cfg.disp.c.kelvin", 6500));
+  c.r = static_cast<int>(cfg_.Int("cfg.disp.c.r", 100));
+  c.g = static_cast<int>(cfg_.Int("cfg.disp.c.g", 100));
+  c.b = static_cast<int>(cfg_.Int("cfg.disp.c.b", 100));
+  c.saturation = static_cast<int>(cfg_.Int("cfg.disp.c.sat", 100));
+  return c;
+}
+
+// Windows forgets the gamma ramp and the colour effect at sign-in, after sleep and on some mode changes, so the stored colours are put
+// back a moment after those events. Never while they are neutral: an untouched computer keeps whatever another tool (night light,
+// f.lux) has set.
+void Controller::ColorEvent(const std::string& ev) {
+  if (!hw_.display || !hw_.clock) return;
+  if (ev == "resume" || ev == "display_on") ScheduleColorReapply(1500, 2);
+}
+
+void Controller::ScheduleColorReapply(uint64_t afterMs, int times) {
+  if (!hw_.clock) return;
+  colorReapplyAt_ = hw_.clock->NowMs() + afterMs;
+  colorReapplyLeft_ = times;
+}
+
+void Controller::ColorTick() {
+  if (!hw_.display || !hw_.clock || colorReapplyAt_ == 0) return;
+  const uint64_t now = hw_.clock->NowMs();
+  if (now < colorReapplyAt_) return;
+  colorReapplyAt_ = --colorReapplyLeft_ > 0 ? now + 4500 : 0;
+  const ColorSettings c = StoredColor();
+  if (c.Neutral()) return;
+  std::string why;
+  if (!hw_.display->SetColor(c, &why)) L(mgp::LogLevel::Warn, "colours not re-applied: " + why);
 }
 
 Result Controller::SetDevice(const std::string& key, bool on) {
@@ -668,6 +704,47 @@ void Controller::PowerSourceTick() {
     L(mgp::LogLevel::Info, "power source: charger connected -> profile " + want);
     ApplyProfile(want, KV());
   }
+}
+
+// One sample a minute: the charge in percent (+200 while the charger is connected). Minutes in which nothing was sampled - the machine was
+// asleep, the service was busy - become -1 entries so the time axis stays true. A machine without a battery never starts a history.
+void Controller::BatteryHistoryTick() {
+  if (!hw_.clock) return;
+  const uint64_t now = hw_.clock->NowMs();
+  std::lock_guard<std::mutex> g(snapMu_);
+  if (battHistAt_ == 0 && battPctNow_ < 0) return;
+  if (battHistAt_ != 0 && now - battHistAt_ < kBattStepMs) return;
+  uint64_t steps = 1;
+  if (battHistAt_ != 0) {
+    steps = (now - battHistAt_) / kBattStepMs;   // >= 1 here
+    const uint64_t missed = std::min<uint64_t>(steps - 1, kBattMax);
+    for (uint64_t i = 0; i < missed; i++) battHist_.push_back(-1);
+  }
+  battHist_.push_back(battPctNow_ < 0 ? -1 : static_cast<int>(Clamp<long long>(battPctNow_, 0, 100)) + (acKnown_ && acNow_ ? 200 : 0));
+  while (battHist_.size() > kBattMax) battHist_.pop_front();
+  battHistAt_ = battHistAt_ == 0 ? now : battHistAt_ + steps * kBattStepMs;   // keeps the cadence: no drift over hours
+  BatteryHistoryText();
+}
+
+// Rebuilds the snapshot text of the history. battHist_ and battHistText_ change together, under snapMu_ (the simulator's screenshot
+// tool seeds the history from another thread).
+void Controller::BatteryHistoryText() {
+  std::string t;
+  t.reserve(battHist_.size() * 4);
+  for (size_t i = 0; i < battHist_.size(); i++) {
+    if (i) t += ',';
+    t += std::to_string(battHist_[i]);
+  }
+  battHistText_ = t;
+}
+
+void Controller::SeedBatteryHistory(const std::vector<int>& samples) {
+  std::lock_guard<std::mutex> g(snapMu_);
+  battHist_.clear();
+  const size_t from = samples.size() > kBattMax ? samples.size() - kBattMax : 0;
+  for (size_t i = from; i < samples.size(); i++) battHist_.push_back(samples[i] < 0 ? -1 : std::min(samples[i], 300));
+  battHistAt_ = hw_.clock ? hw_.clock->NowMs() : 1;
+  BatteryHistoryText();
 }
 
 // ------------------------------------------------------------------------------------------------ OEM coexistence

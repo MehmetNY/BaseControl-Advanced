@@ -70,6 +70,10 @@ class Ui {
   V2 LocalMouse() const { return V2{in.mouse.x - origin_.x, in.mouse.y - origin_.y}; }
   bool Focused(const std::string& id) const { return focus_ == Hash(id); }   // the widget was the last one pressed
   bool Click(const std::string& id, const Rect& r, bool enabled = true, bool* hover = nullptr, bool* held = nullptr);
+  // Names a region for the script driver (hoverid / clickid) without making it a button: no hand cursor, no click.
+  void Mark(const std::string& id, const Rect& r) {
+    if (recordHits) hits[id] = Rect(r.x + origin_.x, r.y + origin_.y, r.w, r.h);
+  }
   float Anim(const std::string& id, float target, float speed = 12.0f);
   bool Dragging(const std::string& id) const { return active_ == Hash(id) && in.down; }
 

@@ -325,6 +325,7 @@ void Controller::PollOs(bool full) {
     SysStatus s = hw_.power->Status();
     acNow_ = s.ac;
     acKnown_ = true;
+    battPctNow_ = s.battPct;
     k.SetB("power.ac", s.ac);
     if (s.battPct >= 0) k.SetI("power.batt.pct", s.battPct);
     if (s.battSecs >= 0) k.SetI("power.batt.secs", s.battSecs);

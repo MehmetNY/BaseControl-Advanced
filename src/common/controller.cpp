@@ -87,6 +87,7 @@ void Controller::Start() {
   LoadDesired();
   Probe();
   PollOnce(true);
+  if (hw_.display && !StoredColor().Neutral()) ScheduleColorReapply(2500, 2);   // colours chosen earlier come back after sign-in
   if (desired_.Size() && cfg_.Bool("cfg.applyOnStart", true) && cfg_.Bool("cfg.keep", true)) {
     reapplyAt_ = (hw_.clock ? hw_.clock->NowMs() : 0) + 8000;  // let the system settle after boot / login
     reapplyWhy_ = "startup";
@@ -251,6 +252,10 @@ void Controller::SyncSnapshot() {
   st.Set("fan.guard", fanGuard_.empty() ? "ok" : "tripped");
   st.Set("fan.guard.why", fanGuard_);
   std::lock_guard<std::mutex> g(snapMu_);
+  if (!battHistText_.empty()) {
+    st.Set("batt.hist", battHistText_);
+    st.SetI("batt.hist.step", static_cast<long long>(kBattStepMs / 1000));
+  }
   sStatus_ = st;
 }
 
@@ -554,7 +559,9 @@ void Controller::Housekeeping() {
   FanWatchdog();
   AppProfileTick();
   PowerSourceTick();
+  BatteryHistoryTick();
   LightPolicyTick();
+  ColorTick();
   // events -> delayed re-apply (firmware resets values after resume / AC change / display wake)
   std::vector<std::string> ev;
   {
@@ -565,6 +572,7 @@ void Controller::Housekeeping() {
   for (auto& e : ev) {
     L(mgp::LogLevel::Info, "event: " + e);
     LightEvent(e);
+    ColorEvent(e);
     if (e == "suspend" || e == "display_off") continue;   // nothing to re-apply while the machine is going quiet
     if (cfg_.Bool("cfg.keep", true)) {
       reapplyAt_ = now + 3000;

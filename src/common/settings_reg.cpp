@@ -90,6 +90,7 @@ const std::vector<SettingDef> kTable = {
     INT("disp.c.r", 50, 100, 1, "%", Ev::Os, "disp.color", false),
     INT("disp.c.g", 50, 100, 1, "%", Ev::Os, "disp.color", false),
     INT("disp.c.b", 50, 100, 1, "%", Ev::Os, "disp.color", false),
+    INT("disp.c.sat", 0, 200, 1, "%", Ev::Os, "disp.sat", false),
     ENUM("disp.mode", 7, "standard,vibrant,cinema,internet,photo,video,lowblue", Ev::Os, "disp.color", false),
     // ---- device switches -----------------------------------------------------------------------------------------
     BOOL("dev.wifi", Ev::Os, "dev.wifi", false),

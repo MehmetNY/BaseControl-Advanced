@@ -63,6 +63,9 @@ class Controller {
   bool TakeResult(uint64_t id, Result* out);
   void SetInterest(bool visible);               // UI visible -> fast polling
   void Notify(const std::string& event);        // "resume" | "suspend" | "display_on" | "display_off" | "ac_change"
+  // Replaces the battery history (oldest first, same encoding as batt.hist). For the simulator's screenshots and tests only: there is no
+  // request that reaches it, so no client can rewrite the history.
+  void SeedBatteryHistory(const std::vector<int>& samples);
 
   // ---- test / manual helpers ----
   void PollOnce(bool full = true);              // one poll + housekeeping pass on the calling thread
@@ -138,6 +141,10 @@ class Controller {
   void ProbeMisc();
   void PollMisc();
   Result SetDisplay(const std::string& key, int value);
+  ColorSettings StoredColor() const;
+  void ColorEvent(const std::string& ev);
+  void ScheduleColorReapply(uint64_t afterMs, int times);
+  void ColorTick();
   Result SetDevice(const std::string& key, bool on);
   Result SetLight(const std::string& key, const std::string& raw);
   void LightTick();
@@ -157,6 +164,8 @@ class Controller {
   Result AppDelete(const KV& args);   // app.delete: i
   Result AppMove(const KV& args);     // app.move: i, dir (-1 = up, 1 = down)
   void PowerSourceTick();   // switches the profile when the charger is plugged / unplugged (cfg.prof.auto)
+  void BatteryHistoryTick();  // one charge sample a minute for the last 8 hours (published as batt.hist)
+  void BatteryHistoryText();  // rebuilds battHistText_ from battHist_ (caller holds snapMu_)
   void Reapply(const char* why);
   KV CaptureProfileValues();
   std::vector<std::string> ProfileNames() const;
@@ -222,6 +231,14 @@ class Controller {
 
   std::string appRunning_, profileBeforeApp_;
   bool acNow_ = true, acKnown_ = false;   // power source as last read by PollOs
+  int battPctNow_ = -1;                   // charge in percent as last read by PollOs (-1 = no battery / unknown)
+  // Battery history: a sample is the charge in percent, plus 200 while the charger was connected; -1 marks a minute without a reading
+  // (the machine slept). The newest sample is last. Kept in memory only: it starts again when the service starts.
+  static constexpr uint64_t kBattStepMs = 60000;
+  static constexpr size_t kBattMax = 480;   // 8 hours
+  std::deque<int> battHist_;
+  uint64_t battHistAt_ = 0;                 // clock time of the newest sample (0 = none yet)
+  std::string battHistText_;                // battHist_ as "a,b,c" for the snapshot (rebuilt when a sample is added)
   int acSeen_ = -1;                       // power source PowerSourceTick last reacted to (-1 = not yet looked)
   std::string profileOnAc_;               // profile that was active when the charger was unplugged
   uint64_t lastAppScan_ = 0;
@@ -235,6 +252,8 @@ class Controller {
   uint64_t lightIdleBeat_ = 0, lightReapplyAt_ = 0;
   int lightReapplyLeft_ = 0, lightAcSeen_ = -1;
   bool fpsOk_ = false;   // a frame-rate source is present (set by ProbeMisc)
+  uint64_t colorReapplyAt_ = 0;   // when to push the stored colours to the panel again (0 = nothing planned)
+  int colorReapplyLeft_ = 0;
 
   // consecutive mismatch counters for "keep" enforcement
   std::map<std::string, int> mismatch_;

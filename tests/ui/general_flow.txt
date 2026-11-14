@@ -1,5 +1,5 @@
 # General settings: preferences, key mapping flow, overlay settings and the key actions (simulator).
-# Run: BaseControl.exe --sim --script tests/ui/general_flow.txt
+# Run: BaseControl.exe --sim --script tests/ui/general_flow.txt --size 1360x1100
 say == 1. preference switches write to ui.kv state ==
 page prefs
 clickid pr#keys.winlock

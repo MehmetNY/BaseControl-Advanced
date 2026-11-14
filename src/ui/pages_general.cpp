@@ -192,11 +192,15 @@ float PageDevices(App& a, const Rect& r) {
     k.BoolRow("dev.touchpad", T("Touchpad"), T("The built-in pointing device."));
   }
   {
-    Card k(c, m, T("Built-in display"), "", IconId::Display, 2 * kRowInfo + kRowButtons, true);
+    Card k(c, m, T("Built-in display"), "", IconId::Display, kRowSlider + kRowInfo + kRowButtons, true);
     const std::string res = a.S("disp.res");
     std::string panel = res.empty() ? Dash() : res;
     if (a.Has("disp.refresh")) panel += " @ " + std::to_string(a.I("disp.refresh")) + " Hz";
-    k.Info(T("Screen brightness"), a.Has("disp.bright") ? std::to_string(a.I("disp.bright")) + " %" : Dash());
+    SliderCfg br;
+    br.key = "disp.bright";
+    br.title = T("Screen brightness");
+    br.desc = T("The backlight of the built-in screen, the same control as the Windows brightness slider.");
+    k.Slider(br);
     k.Info(T("Panel"), panel);
     if (k.Button("go#display", T("Open display settings"), Btn::Ghost, IconId::ChevronR)) a.Go(Page::Display);
   }

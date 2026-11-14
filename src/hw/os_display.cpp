@@ -4,6 +4,7 @@
 #include <winioctl.h>
 
 #include <algorithm>
+#include <mutex>
 #include <set>
 
 #include "../common/colorramp.h"
@@ -41,7 +42,66 @@ bool IsInternalTech(int tech) {
   return static_cast<unsigned>(tech) == 0x80000000u || tech == 11 || tech == 13;
 }
 
+// ---- the Windows full-screen colour effect (Magnification API), loaded when needed: it carries the saturation setting, which a gamma
+// ramp cannot express. The API belongs to the thread that initialises it, so MagInitialize is only called from SetSaturation (the
+// controller's worker thread); the probe only checks that the entry points exist.
+struct MagEffect {
+  float transform[5][5];
+};
+typedef BOOL(WINAPI* MagInitializeFn)();
+typedef BOOL(WINAPI* MagSetFullscreenColorEffectFn)(const MagEffect*);
+struct Mag {
+  std::mutex mu;
+  HMODULE dll = nullptr;
+  bool tried = false;
+  MagInitializeFn init = nullptr;
+  MagSetFullscreenColorEffectFn set = nullptr;
+  bool initialised = false;
+  bool Load() {
+    std::lock_guard<std::mutex> g(mu);
+    if (!tried) {
+      tried = true;
+      dll = LoadLibraryExW(L"Magnification.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+      if (dll) {
+        init = reinterpret_cast<MagInitializeFn>(reinterpret_cast<void*>(GetProcAddress(dll, "MagInitialize")));
+        set = reinterpret_cast<MagSetFullscreenColorEffectFn>(reinterpret_cast<void*>(GetProcAddress(dll, "MagSetFullscreenColorEffect")));
+      }
+    }
+    return init != nullptr && set != nullptr;
+  }
+};
+Mag& TheMag() {
+  static Mag m;
+  return m;
+}
+
 }  // namespace
+
+bool OsDisplay::SaturationSupported() { return TheMag().Load(); }
+
+bool OsDisplay::SetSaturation(int percent, std::string* why) {
+  Mag& m = TheMag();
+  if (percent == 100 && !m.initialised) return true;   // nothing was applied, nothing to undo
+  if (!m.Load()) {
+    if (why) *why = "the Windows colour-effect API (Magnification.dll) is not available";
+    return false;
+  }
+  if (!m.initialised) {
+    if (!m.init()) {
+      if (why) *why = "the Windows colour-effect API could not start: " + Win32Text(GetLastError());
+      return false;
+    }
+    m.initialised = true;
+  }
+  MagEffect e;
+  SaturationMatrix(percent, e.transform);
+  if (!m.set(&e)) {
+    if (why) *why = "Windows rejected the colour effect: " + Win32Text(GetLastError());
+    return false;
+  }
+  lastSaturation_ = percent;
+  return true;
+}
 
 std::wstring OsDisplay::InternalPanelName() {
   UINT32 np = 0, nm = 0;
@@ -186,12 +246,16 @@ bool OsDisplay::SetRefresh(int hz, std::string* why) {
 bool OsDisplay::SetColor(const ColorSettings& c, std::string* why) {
   uint16_t ramp[3][256];
   BuildGammaRamp(c, ramp);
+  // saturation first: when it fails nothing has changed yet, and when the ramp fails afterwards it is put back
+  const int prevSaturation = lastSaturation_;
+  if (c.saturation != prevSaturation && !SetSaturation(c.saturation, why)) return false;
   const std::wstring name = InternalPanelName();
   HDC dc = CreateDCW(L"DISPLAY", DevName(name), nullptr, nullptr);
   bool own = dc != nullptr;
   if (!dc) dc = GetDC(nullptr);
   if (!dc) {
     if (why) *why = "no device context for the display";
+    if (c.saturation != prevSaturation) SetSaturation(prevSaturation, nullptr);
     return false;
   }
   const BOOL ok = SetDeviceGammaRamp(dc, ramp);
@@ -200,6 +264,7 @@ bool OsDisplay::SetColor(const ColorSettings& c, std::string* why) {
   else ReleaseDC(nullptr, dc);
   if (!ok) {
     if (why) *why = "Windows rejected the colour ramp: " + Win32Text(le);
+    if (c.saturation != prevSaturation) SetSaturation(prevSaturation, nullptr);
     return false;
   }
   return true;

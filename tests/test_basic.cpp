@@ -556,6 +556,137 @@ TEST(colorramp_extremes_stay_inside_windows_limits) {
   CHECK(r[1][128] <= (128 + 127) * 256);
 }
 
+TEST(colorramp_saturation_matrix_and_preview_transform) {
+  float m[5][5];
+  SaturationMatrix(100, m);
+  for (int i = 0; i < 5; i++)
+    for (int j = 0; j < 5; j++) CHECK_NEAR(m[i][j], i == j ? 1.0 : 0.0, 1e-6);   // 100 % changes nothing
+  SaturationMatrix(0, m);
+  for (int j = 0; j < 3; j++) CHECK_NEAR(m[0][j] + m[1][j] + m[2][j], 1.0, 1e-5);   // every column keeps the luminance weights
+  CHECK_NEAR(m[0][0], 0.2126, 1e-5);
+  CHECK_NEAR(m[1][2], 0.7152, 1e-5);
+  CHECK_NEAR(m[3][3], 1.0, 1e-6);
+  CHECK_NEAR(m[4][4], 1.0, 1e-6);
+  uint16_t ramp[3][256];
+  ColorSettings c;
+  BuildGammaRamp(c, ramp);
+  int r, g, b;
+  TransformRgb(c, ramp, 200, 120, 40, &r, &g, &b);
+  CHECK(std::abs(r - 200) <= 2 && std::abs(g - 120) <= 2 && std::abs(b - 40) <= 2);   // neutral settings leave a colour alone
+  c.saturation = 0;
+  TransformRgb(c, ramp, 200, 120, 40, &r, &g, &b);
+  CHECK(std::abs(r - g) <= 2 && std::abs(g - b) <= 2);                                  // 0 % saturation is grey
+  c.saturation = 200;
+  TransformRgb(c, ramp, 200, 120, 40, &r, &g, &b);
+  CHECK(r > 200 && b < 40);                                                              // 200 % pushes the colour further out
+  TransformRgb(c, ramp, 128, 128, 128, &r, &g, &b);
+  CHECK(std::abs(r - 128) <= 2 && std::abs(g - 128) <= 2 && std::abs(b - 128) <= 2);   // greys never change
+}
+
+TEST(colorramp_preview_map_matches_the_forward_transform_and_undoes_live) {
+  uint16_t ramp[3][256];
+  ColorSettings neutral;
+  BuildGammaRamp(neutral, ramp);
+  {
+    // nothing live: the preview is the plain forward transform, for any draft
+    ColorSettings draft;
+    draft.kelvin = 5200;
+    draft.saturation = 140;
+    draft.gamma = 120;
+    uint16_t dr[3][256];
+    BuildGammaRamp(draft, dr);
+    PreviewMap pm(draft, nullptr);
+    PreviewMap pn(draft, &neutral);   // a neutral live is the same thing
+    for (int r = 0; r <= 255; r += 51)
+      for (int g = 0; g <= 255; g += 51)
+        for (int b = 0; b <= 255; b += 51) {
+          int a1, a2, a3, b1, b2, b3, c1, c2, c3;
+          TransformRgb(draft, dr, r, g, b, &a1, &a2, &a3);
+          pm.Map(r, g, b, &b1, &b2, &b3);
+          pn.Map(r, g, b, &c1, &c2, &c3);
+          CHECK(std::abs(a1 - b1) <= 1 && std::abs(a2 - b2) <= 1 && std::abs(a3 - b3) <= 1);
+          CHECK(b1 == c1 && b2 == c2 && b3 == c3);
+        }
+  }
+  // A live set of colours (warm, more saturation, a touch more gamma): the colour drawn for the preview, pushed through what the panel
+  // applies, comes out as the colour the draft calls for.
+  ColorSettings live;
+  live.kelvin = 5600;
+  live.saturation = 125;
+  live.gamma = 108;
+  live.contrast = 52;
+  uint16_t lr[3][256];
+  BuildGammaRamp(live, lr);
+  ColorSettings draft;
+  draft.kelvin = 6000;
+  draft.saturation = 110;
+  uint16_t dr[3][256];
+  BuildGammaRamp(draft, dr);
+  PreviewMap pm(draft, &live);
+  int worst = 0;
+  for (int r = 40; r <= 200; r += 40)
+    for (int g = 40; g <= 200; g += 40)
+      for (int b = 40; b <= 200; b += 40) {
+        int wr, wg, wb, pr, pg, pb, sr, sg, sb;
+        TransformRgb(draft, dr, r, g, b, &wr, &wg, &wb);    // what the draft should look like on a clean panel
+        pm.Map(r, g, b, &pr, &pg, &pb);                       // what is drawn
+        TransformRgb(live, lr, pr, pg, pb, &sr, &sg, &sb);    // what the panel then makes of it
+        worst = std::max(worst, std::max(std::abs(sr - wr), std::max(std::abs(sg - wg), std::abs(sb - wb))));
+      }
+  CHECK(worst <= 4);
+  // previewing the live settings themselves draws the scene untouched (the panel applies them anyway)
+  PreviewMap same(live, &live);
+  for (int v : {40, 90, 128, 170, 200}) {   // (colours the live saturation would push past black or white cannot be undone, so they are left out)
+    int r, g, b;
+    same.Map(v, 255 - v, v / 2 + 20, &r, &g, &b);
+    CHECK(std::abs(r - v) <= 3 && std::abs(g - (255 - v)) <= 3 && std::abs(b - (v / 2 + 20)) <= 3);
+  }
+  // A grey drawn for a warm live ramp keeps the channels apart in the right direction (blue is pulled down, so blue is drawn higher).
+  PreviewMap plain(neutral, &live);
+  int r, g, b;
+  plain.Map(128, 128, 128, &r, &g, &b);
+  CHECK(b > r);
+  // The panel cannot show more than its ramp allows: a wanted channel above the ramp's top is clipped, never wrapped or negative.
+  ColorSettings cold = live;
+  cold.kelvin = 3200;
+  PreviewMap pc(neutral, &cold);
+  pc.Map(255, 255, 255, &r, &g, &b);
+  CHECK(r >= 0 && r <= 255 && g >= 0 && g <= 255 && b >= 0 && b <= 255);
+  CHECK_EQ(b, 255);
+  // A fully grey live saturation cannot be undone (the information is gone): the colour passes through instead of dividing by zero.
+  ColorSettings grey;
+  grey.saturation = 0;
+  PreviewMap pg(neutral, &grey);
+  pg.Map(90, 120, 150, &r, &g, &b);
+  CHECK(std::abs(r - 90) <= 1 && std::abs(g - 120) <= 1 && std::abs(b - 150) <= 1);
+}
+
+TEST(colorramp_image_profiles_match_the_registry) {
+  const SettingDef* d = FindSetting("disp.mode");
+  CHECK(d != nullptr);
+  CHECK(!ColorPresets().empty());
+  CHECK_EQ(std::string(ColorPresets()[0].name), std::string("standard"));
+  CHECK(ColorPresets()[0].c.Neutral());                               // the default profile changes nothing
+  CHECK_EQ(static_cast<int>(ColorPresets().size()), d->max + 1);      // one registry entry per profile, in the same order
+  for (size_t i = 0; i < ColorPresets().size(); i++) {
+    const ColorPreset& p = ColorPresets()[i];
+    CHECK_EQ(EnumName(*d, static_cast<int>(i)), std::string(p.name));
+    CHECK(FindColorPreset(p.name) == &p.c);
+    // every profile stays inside the ranges the individual sliders allow
+    CHECK(p.c.kelvin >= 3000 && p.c.kelvin <= 9000);
+    CHECK(p.c.gamma >= 50 && p.c.gamma <= 260);
+    CHECK(p.c.saturation >= 0 && p.c.saturation <= 200);
+    CHECK(p.c.r >= 50 && p.c.g >= 50 && p.c.b >= 50 && p.c.r <= 100 && p.c.g <= 100 && p.c.b <= 100);
+    CHECK(p.c.brightness >= 0 && p.c.brightness <= 100 && p.c.contrast >= 0 && p.c.contrast <= 100);
+    uint16_t ramp[3][256];
+    BuildGammaRamp(p.c, ramp);                                          // and the ramp builder accepts it (monotonic, Windows-safe)
+    for (int ch = 0; ch < 3; ch++)
+      for (int k = 1; k < 256; k++) CHECK(ramp[ch][k] >= ramp[ch][k - 1]);
+  }
+  CHECK(FindColorPreset("nonsense") == nullptr);
+  CHECK(FindColorPreset("custom") == nullptr);                         // "custom" is what a hand-made setting is called, not a profile
+}
+
 TEST(profile_text_roundtrip_and_builtins) {
   using namespace bc;
   CHECK(IsBuiltinProfile("Quiet"));

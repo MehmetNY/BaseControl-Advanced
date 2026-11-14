@@ -1,6 +1,7 @@
 // Offscreen rendering (README screenshots, `--shot`) and the click-script driver (`--script`) used to test the UI under
 // Wine without a person at the keyboard. Both run the exact same Frame() code as the real window.
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <fstream>
 #include <sstream>
@@ -12,6 +13,28 @@
 
 namespace bc {
 namespace ui {
+
+namespace {
+// Eight hours of a lived-in laptop for screenshots (simulator only): a few hours on battery, a charge, a sleep and the charger again.
+std::vector<int> DemoBatteryHistory() {
+  std::vector<int> h;
+  auto run = [&](int minutes, double from, double to, bool ac) {
+    for (int i = 0; i < minutes; i++) {
+      const double v = from + (to - from) * (static_cast<double>(i) / std::max(1, minutes - 1));
+      h.push_back(static_cast<int>(std::lround(v)) + (ac ? 200 : 0));
+    }
+  };
+  run(70, 90, 71, false);
+  run(18, 72, 80, true);
+  run(120, 80, 45, false);
+  for (int i = 0; i < 26; i++) h.push_back(-1);   // asleep
+  run(40, 44, 33, false);
+  run(110, 34, 76, true);
+  run(480 - static_cast<int>(h.size()), 76, 76, true);
+  return h;
+}
+}  // namespace
+
 namespace {
 
 bool PngClsid(CLSID* out) {
@@ -51,6 +74,18 @@ void App::ApplyShotState() {
   const Page p = PageFromName(opt_.shotPage, &ok);
   if (ok) Go(p);
   if (opt_.shotAdvanced) Flag("custom.adv") = true;
+  if (opt_.shotDrafts && ok && p == Page::Display) {
+    // a warmer, more saturated draft: the preview follows it and the picture is marked DRAFT
+    struct C { const char* key; int v; };
+    for (const C& c : {C{"disp.c.kelvin", 5200}, C{"disp.c.sat", 130}}) {
+      if (!Has(c.key)) continue;
+      Draft& dr = GetDraft(c.key);
+      dr.liveAtStart = static_cast<int>(N(c.key));
+      dr.v = c.v;
+      dr.active = true;
+    }
+    return;
+  }
   if (opt_.shotDrafts) {
     struct D { const char* key; int delta; };
     static const D kDrafts[] = {{"ec.pl1", 50}, {"ec.pl2", 70}, {"nv.offset.core", 100}, {"os.max", -8}};
@@ -300,6 +335,11 @@ int App::RunShot() {
           else if (key == "os.max") { d_->simWorld->power.policy.maxPct = static_cast<int>(val); done = true; }
           else if (key == "os.min") { d_->simWorld->power.policy.minPct = static_cast<int>(val); done = true; }
           else if (key == "power.ac") { pl.ac = val != 0; done = true; }
+          else if (key == "disp.sat") { d_->simWorld->display.saturationOk = val != 0; done = true; }   // the Windows colour-effect API is there / missing
+          else if (key == "batt.mode") {   // 0 full capacity, 1 balanced, 2 eco
+            pl.ec[reg::kBatteryMode] = static_cast<uint8_t>((pl.ec[reg::kBatteryMode] & ~0x38) | (val < 0.5 ? 0x08 : val < 1.5 ? 0x18 : 0x28));
+            done = true;
+          }
         }
         if (!done) { std::printf("FAIL line %d: cannot change %s from outside\n", lineNo, key.c_str()); failures++; }
         step(4, 30);
@@ -314,6 +354,13 @@ int App::RunShot() {
         }
         CmdQuiet(name, args);
         step(8, 30);
+      } else if (cmd == "battery_history") {
+        // fills the controller's eight hour battery history with a lived-in demo (simulator only; "empty" = a single point)
+        std::string what;
+        ss >> what;
+        if (d_->ctl) d_->ctl->SeedBatteryHistory(what == "empty" ? std::vector<int>{276} : DemoBatteryHistory());
+        else { std::printf("FAIL line %d: battery_history needs the in-process controller\n", lineNo); failures++; }
+        step(6, 30);
       } else if (cmd == "notify") {
         // a power event from Windows (simulator only): resume, suspend, display_on, display_off, ac_change
         std::string ev;
@@ -366,6 +413,14 @@ int App::RunShot() {
         } else {
           check(lineNo, "ui " + key, Str(key), want);
         }
+      } else if (cmd == "expectint") {
+        // a number the page keeps in App::Int (a tile choice, a tab)
+        std::string key, want;
+        ss >> key;
+        std::getline(ss, want);
+        want = Trim(want);
+        step(2, 20);
+        check(lineNo, "int " + key, std::to_string(Int(key)), want);
       } else if (cmd == "let") {
         std::string name, src;
         ss >> name >> src;
@@ -439,6 +494,10 @@ int App::RunShot() {
     }
     const double until = NowSeconds() + 5.5;   // the controller looks at the running programs every few seconds
     while (NowSeconds() < until) step(1, 40);
+  }
+  if (opt_.shotDrafts && known && p == Page::Battery && d_->ctl) {
+    d_->ctl->SeedBatteryHistory(DemoBatteryHistory());
+    step(8, 30);
   }
   ApplyShotState();   // drafts need live values from the frames above
   step(24, 25);

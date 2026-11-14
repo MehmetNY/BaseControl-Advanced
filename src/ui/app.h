@@ -127,6 +127,9 @@ class App {
   // elevation helpers (service management)
   void RunElevated(const std::wstring& args, const std::string& doneToast);
   void OpenUrl(const std::string& url);
+  // Opens a Windows tool from a fixed list ("display" = Settings > Display, "nightlight" = Settings > Night light, "colorcpl" = colour
+  // management). The id is never a path or a command line. Offscreen renders and scripts only record it (Str("tool.last")).
+  void OpenWindowsTool(const std::string& id);
   void* WindowHandle() const;            // the main window (owner of native dialogs); null while rendering offscreen
   void CopyText(const std::string& text);
   void ApplyAccent();

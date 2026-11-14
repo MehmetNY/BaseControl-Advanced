@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <vector>
 
 #include "../src/common/controller.h"
 #include "../src/common/registers.h"
@@ -631,6 +632,111 @@ TEST(ctl_display_and_devices) {
   CHECK_EQ(r.Set("dev.bt", "0").code, std::string("reverted"));
 }
 
+TEST(ctl_display_saturation_is_a_colour_setting) {
+  Rig r;
+  CHECK_EQ(r.S().Str("cap.disp.sat"), std::string("ok"));
+  CHECK_EQ(r.S().Int("disp.c.sat"), 100LL);
+  CHECK(r.Set("disp.c.sat", "140").ok);
+  CHECK_EQ(r.w.display.color.saturation, 140);
+  CHECK_EQ(r.S().Int("disp.c.sat"), 140LL);
+  CHECK_EQ(r.S().Str("disp.mode"), std::string("custom"));   // a hand-made value leaves the image profiles
+  CHECK(r.Set("disp.mode", "vibrant").ok);                    // every profile carries its own saturation
+  CHECK_EQ(r.w.display.color.saturation, 135);
+  CHECK_EQ(r.S().Int("disp.c.sat"), 135LL);
+  CHECK(r.Set("disp.mode", "standard").ok);
+  CHECK_EQ(r.w.display.color.saturation, 100);
+  CHECK(r.w.display.color.Neutral());
+  CHECK_EQ(r.Set("disp.c.sat", "201").code, std::string("range"));
+  CHECK_EQ(r.Set("disp.c.sat", "-1").code, std::string("range"));
+  CHECK(r.Set("disp.c.sat", "0").ok);                         // fully grey is a valid choice
+  CHECK_EQ(r.w.display.color.saturation, 0);
+}
+
+TEST(ctl_display_saturation_unavailable_without_the_colour_effect_api) {
+  Rig r;
+  r.w.display.saturationOk = false;   // Magnification.dll missing / refused
+  CHECK(r.Cmd("probe").ok);   // the user pressed "re-probe hardware"
+  CHECK_EQ(r.S().Str("cap.disp.sat"), std::string("unsupported"));
+  CHECK(!r.S().Str("capwhy.disp.sat").empty());
+  const int before = r.w.display.colorApplied;
+  CHECK_EQ(r.Set("disp.c.sat", "120").code, std::string("unsupported"));
+  CHECK_EQ(r.w.display.colorApplied, before);                 // nothing reached the panel
+  CHECK_EQ(r.S().Int("disp.c.sat"), 100LL);
+  CHECK(r.Set("disp.c.kelvin", "5000").ok);                   // the rest of the colour controls still work
+  CHECK_EQ(r.w.display.color.kelvin, 5000);
+  CHECK_EQ(r.S().Str("cap.disp.color"), std::string("ok"));
+}
+
+TEST(ctl_display_colours_come_back_after_sleep_and_wake) {
+  Rig r;
+  CHECK(r.Set("disp.c.kelvin", "5200").ok);
+  CHECK(r.Set("disp.c.sat", "130").ok);
+  r.w.display.color = ColorSettings();   // Windows drops the ramp and the colour effect across sleep
+  int n = r.w.display.colorApplied;
+  r.c.Notify("resume");
+  r.Run(3);
+  CHECK(r.w.display.colorApplied > n);
+  CHECK_EQ(r.w.display.color.kelvin, 5200);
+  CHECK_EQ(r.w.display.color.saturation, 130);
+  r.w.display.color = ColorSettings();   // some drivers need a second look a few seconds later
+  n = r.w.display.colorApplied;
+  r.Run(6);
+  CHECK(r.w.display.colorApplied > n);
+  CHECK_EQ(r.w.display.color.kelvin, 5200);
+  r.w.display.color = ColorSettings();   // the display waking up gets the same treatment
+  r.c.Notify("display_on");
+  r.Run(3);
+  CHECK_EQ(r.w.display.color.kelvin, 5200);
+  CHECK_EQ(r.w.display.color.saturation, 130);
+  r.Run(6);
+  n = r.w.display.colorApplied;          // and nothing else keeps pushing them
+  r.c.Notify("ac_change");
+  r.Run(10);
+  CHECK_EQ(r.w.display.colorApplied, n);
+}
+
+TEST(ctl_display_neutral_colours_are_never_pushed_again) {
+  Rig r;
+  const int n0 = r.w.display.colorApplied;
+  r.c.Notify("resume");
+  r.Run(10);
+  r.c.Notify("display_on");
+  r.Run(10);
+  CHECK_EQ(r.w.display.colorApplied, n0);   // an untouched machine keeps whatever night light / f.lux set
+  CHECK(r.Set("disp.c.kelvin", "5000").ok);
+  CHECK(r.Set("disp.mode", "standard").ok);
+  const int n1 = r.w.display.colorApplied;
+  r.c.Notify("resume");
+  r.Run(10);
+  CHECK_EQ(r.w.display.colorApplied, n1);   // the standard profile is neutral again
+}
+
+TEST(ctl_display_colours_return_at_start_and_after_a_refresh_change) {
+  std::string dir = TempDir();
+  CHECK(!dir.empty());
+  {
+    Rig r(sim::Model::Exact, dir);
+    CHECK(r.Set("disp.c.kelvin", "4800").ok);
+    CHECK(r.Set("disp.c.sat", "115").ok);
+  }
+  {
+    Rig r(sim::Model::Exact, dir);   // sign-in: Windows starts with a clean ramp
+    CHECK(r.w.display.color.Neutral());
+    r.Run(4);
+    CHECK_EQ(r.w.display.color.kelvin, 4800);
+    CHECK_EQ(r.w.display.color.saturation, 115);
+    r.Run(8);
+    r.w.display.color = ColorSettings();
+    CHECK(r.Set("disp.refresh", "60").ok);   // a mode change can drop the ramp as well
+    r.Run(3);
+    CHECK_EQ(r.w.display.color.kelvin, 4800);
+    CHECK_EQ(r.S().Int("disp.refresh"), 60LL);
+  }
+  std::string cmd = "rm -rf " + dir;
+  int rc = std::system(cmd.c_str());
+  (void)rc;
+}
+
 TEST(ctl_lighting) {
   Rig r;
   size_t n0 = r.w.light.sent.size();
@@ -1187,6 +1293,62 @@ TEST(ctl_profile_summaries_are_published) {
   CHECK(!s.Str("profile.v.Overboost").empty());
   CHECK(r.Cmd("profile.delete", a).ok);
   CHECK(!r.S().Has("profile.v.My game"));
+}
+
+// ------------------------------------------------------------------------------------------------ battery history
+namespace {
+std::vector<int> BattHist(Rig& r) {
+  std::vector<int> v;
+  const std::string t = r.S().Str("batt.hist");
+  size_t i = 0;
+  while (i < t.size()) {
+    size_t j = t.find(',', i);
+    if (j == std::string::npos) j = t.size();
+    v.push_back(atoi(t.substr(i, j - i).c_str()));
+    i = j + 1;
+  }
+  return v;
+}
+}  // namespace
+
+TEST(ctl_battery_history_samples_once_a_minute) {
+  Rig r;
+  r.Run(5);
+  std::vector<int> h = BattHist(r);
+  CHECK_EQ(h.size(), static_cast<size_t>(1));          // the first sample is taken as soon as the charge is known
+  CHECK(h[0] >= 200 && h[0] <= 300);                   // the simulated charger is connected: charge + 200
+  CHECK_EQ(r.S().Int("batt.hist.step"), 60LL);
+  r.Run(5 * 60);
+  h = BattHist(r);
+  CHECK(h.size() >= 5 && h.size() <= 7);               // about one a minute, whatever the poll cadence
+  r.w.plat.ac = false;
+  r.Run(3 * 60);
+  h = BattHist(r);
+  CHECK(h.back() >= 0 && h.back() <= 100);             // unplugged: the plain percentage
+  CHECK(h.front() >= 200);
+}
+
+TEST(ctl_battery_history_marks_the_minutes_the_machine_slept) {
+  Rig r;
+  r.Run(5);
+  const size_t before = BattHist(r).size();
+  r.w.clock.Advance(10 * 60 * 1000);                   // a ten minute sleep: no polls in between
+  r.c.PollOnce(false);
+  const std::vector<int> h = BattHist(r);
+  CHECK_EQ(h.size(), before + 10);                     // nine empty minutes and the new sample
+  for (size_t i = before; i + 1 < h.size(); i++) CHECK_EQ(h[i], -1);
+  CHECK(h.back() >= 0);
+}
+
+TEST(ctl_battery_history_keeps_eight_hours) {
+  Rig r;
+  r.Run(2);
+  r.w.clock.Advance(20ull * 3600 * 1000);              // far longer than the window
+  r.c.PollOnce(false);
+  const std::vector<int> h = BattHist(r);
+  CHECK_EQ(h.size(), static_cast<size_t>(480));
+  CHECK_EQ(h[0], -1);
+  CHECK(h.back() >= 0);
 }
 
 // ------------------------------------------------------------------------------------------------ misc plumbing

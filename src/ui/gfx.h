@@ -57,7 +57,7 @@ enum class Align { Left, Center, Right };
 enum class IconId {
   None, Overview, Settings, Performance, Profiles, Fan, Custom, Apps, Lighting, Battery, Display, Info, Shield, Bolt, Plug, Cpu, Gpu, Ram,
   Thermo, Wifi, Bluetooth, Camera, Touchpad, Keyboard, Check, Cross, Warn, Lock, ChevronR, ChevronD, Plus, Trash, Refresh, Undo, External,
-  Copy, Power, Eye, Log, Gamepad, Chip, Sliders, Sun, Moon, Key, Folder, Download, Service
+  Copy, Power, Eye, Log, Gamepad, Chip, Sliders, Sun, Moon, Key, Folder, Download, Service, Leaf
 };
 
 class Gfx {
@@ -87,6 +87,8 @@ class Gfx {
   void Arc(V2 c, float rad, float startDeg, float sweepDeg, uint32_t col, float w);  // 0 deg = east, clockwise
   void Poly(const std::vector<V2>& pts, uint32_t col, float w);
   void PolyFill(const std::vector<V2>& pts, uint32_t col);  // closed polygon
+  // A w x h picture of 0xAARRGGBB pixels scaled into `box` and clipped to a rounded rectangle (rad 0 = square corners).
+  void Image(const Rect& box, const uint32_t* argb, int w, int h, float rad = 0);
 
   // ---- text
   void Text(const Rect& box, const std::string& s, FontId f, uint32_t c, Align a = Align::Left, bool vcenter = true, bool ellipsis = true);

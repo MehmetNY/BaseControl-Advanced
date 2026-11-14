@@ -402,25 +402,29 @@ LRESULT App::Impl::Handle(HWND h, UINT m, WPARAM w, LPARAM l) {
       if (m == WM_SYSKEYDOWN && w != VK_F4 && w != VK_MENU) return 0;
       break;
     }
-    case WM_POWERBROADCAST:
-      if (ctl && app->mode_ == "local") {   // the service does this itself; the in-process controller of the elevated mode needs it here
+    case WM_POWERBROADCAST: {
+      // The in-process controller needs these events: in the elevated "local" mode it does everything, in service mode it is the user-session
+      // half that puts the display colours back after sleep (the service handles the hardware side itself).
+      Controller* target = ctl ? ctl.get() : userCtl.get();
+      if (target) {
         if (w == PBT_APMSUSPEND) {
-          ctl->Notify("suspend");
+          target->Notify("suspend");
         } else if (w == PBT_APMRESUMEAUTOMATIC || w == PBT_APMRESUMESUSPEND) {
-          ctl->Notify("resume");
+          target->Notify("resume");
         } else if (w == PBT_POWERSETTINGCHANGE && l) {
           const POWERBROADCAST_SETTING* p = reinterpret_cast<const POWERBROADCAST_SETTING*>(l);
           DWORD v = 0;
           if (p->DataLength >= 4) std::memcpy(&v, p->Data, 4);
           if (IsEqualGUID(p->PowerSetting, hw::kGuidConsoleDisplayState)) {
-            if (v == 1) ctl->Notify("display_on");
-            else if (v == 0) ctl->Notify("display_off");
+            if (v == 1) target->Notify("display_on");
+            else if (v == 0) target->Notify("display_off");
           } else if (IsEqualGUID(p->PowerSetting, hw::kGuidAcDcPowerSource)) {
-            ctl->Notify("ac_change");
+            target->Notify("ac_change");
           }
         }
       }
       return TRUE;
+    }
     case WM_SETCURSOR:
       if (LOWORD(l) == HTCLIENT) {
         SetCursor(LoadCursorW(nullptr, ui.WantIBeam() ? kIBeam : (ui.WantHand() ? kHand : kArrow)));

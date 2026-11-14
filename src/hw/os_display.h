@@ -15,9 +15,14 @@ class OsDisplay : public IOsDisplay {
   bool SetBrightness(int pct, std::string* why) override;
   bool SetRefresh(int hz, std::string* why) override;
   bool SetColor(const ColorSettings& c, std::string* why) override;
+  bool SaturationSupported() override;
 
   // GDI device name of the internal panel ("\\.\DISPLAY1") or "" when it cannot be determined (primary is used then).
   static std::wstring InternalPanelName();
+
+ private:
+  bool SetSaturation(int percent, std::string* why);
+  int lastSaturation_ = 100;
 };
 
 }  // namespace hw

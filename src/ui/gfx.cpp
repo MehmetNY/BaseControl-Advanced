@@ -206,6 +206,19 @@ void Gfx::Poly(const std::vector<V2>& pts, uint32_t col, float w) {
   g_->DrawLines(&pen, p.data(), static_cast<INT>(p.size()));
 }
 
+void Gfx::Image(const Rect& box, const uint32_t* argb, int w, int h, float rad) {
+  if (!g_ || !argb || w <= 0 || h <= 0 || box.w <= 0 || box.h <= 0) return;
+  Bitmap bmp(w, h, w * 4, PixelFormat32bppARGB, reinterpret_cast<BYTE*>(const_cast<uint32_t*>(argb)));
+  ImageAttributes edge;
+  edge.SetWrapMode(WrapModeTileFlipXY);   // no half-transparent fringe where the scaling samples past the border
+  const GraphicsState st = g_->Save();
+  std::unique_ptr<GraphicsPath> path(RoundPath(box, rad));
+  g_->SetClip(path.get(), CombineModeIntersect);
+  g_->SetInterpolationMode(InterpolationModeHighQualityBilinear);
+  g_->DrawImage(&bmp, RectF(box.x, box.y, box.w, box.h), 0.0f, 0.0f, static_cast<REAL>(w), static_cast<REAL>(h), UnitPixel, &edge);
+  g_->Restore(st);
+}
+
 void Gfx::PolyFill(const std::vector<V2>& pts, uint32_t col) {
   if (pts.size() < 3) return;
   std::vector<PointF> p;
@@ -442,6 +455,16 @@ void Gfx::Icon(IconId id, const Rect& box, uint32_t c, float stroke) {
       for (float v : {6.5f, 10.0f, 13.5f, 17.0f}) { k.D(v, 10, 0.8f); }
       k.D(8, 13.4f, 0.8f); k.D(12, 13.4f, 0.8f); k.D(16, 13.4f, 0.8f); k.L(8.5f, 15.8f, 15.5f, 15.8f);
       break;
+    case IconId::Leaf: {
+      // two curved edges from the stem (5, 19) to the tip (19.5, 4.5) and the midrib
+      auto pt = [&](float x, float y) { return PointF(k.ox + x * k.s, k.oy + y * k.s); };
+      PointF up[4] = {pt(5, 19), pt(4.6f, 11.2f), pt(10.5f, 5.6f), pt(19.5f, 4.5f)};
+      PointF lo[4] = {pt(5, 19), pt(12.8f, 19.4f), pt(18.6f, 13.6f), pt(19.5f, 4.5f)};
+      k.g->DrawCurve(&k.pen, up, 4, 0.8f);
+      k.g->DrawCurve(&k.pen, lo, 4, 0.8f);
+      k.L(5, 19, 13.5f, 10.5f);
+      break;
+    }
     case IconId::Check: k.Pl({5, 12.5f, 10, 17.5f, 19, 7}); break;
     case IconId::Cross: k.L(6, 6, 18, 18); k.L(18, 6, 6, 18); break;
     case IconId::Warn: k.Pl({12, 3.8f, 21.5f, 20, 2.5f, 20}, true); k.L(12, 9.8f, 12, 14.6f); k.D(12, 17.3f, 1); break;

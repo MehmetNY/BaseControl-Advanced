@@ -1,0 +1,109 @@
+# Display: the preview and the colour controls. Nothing reaches the panel before Confirm; an image profile is a draft until Confirm; touching a
+# slider after a tile (or a tile after a slider) lets the last touch win; saturation is unavailable without the Windows colour-effect API.
+# Run: BaseControl.exe --sim --script tests/ui/display_flow.txt --size 1360x1800
+say == 1. the live colours are standard, nothing is chosen ==
+page display
+expect disp.mode standard
+expect disp.c.kelvin 6500
+expect disp.c.sat 100
+expect cap.disp.sat ok
+expectint dsp.draft -1
+expectdraft disp.c.kelvin 0
+shot /tmp/shots/dsp_default.png
+
+say == 2. moving the temperature slider is a draft, the panel keeps its colours ==
+dragid sl#disp.c.kelvin 0.25
+expectdraft disp.c.kelvin 1
+expect disp.c.kelvin 6500
+expect disp.mode standard
+shot /tmp/shots/dsp_draft.png
+
+say == 3. Confirm applies it: the mode becomes custom and the draft is gone ==
+clickid ok#disp.c.kelvin
+wait 1500
+expect disp.c.kelvin !6500
+expect disp.mode custom
+expectdraft disp.c.kelvin 0
+
+say == 4. a tile is a draft too ==
+clickid dp#1
+expectint dsp.draft 1
+expect disp.mode custom
+expect disp.c.sat 100
+shot /tmp/shots/dsp_tile_draft.png
+
+say == 5. Discard drops the choice, nothing is sent ==
+clickid dc#disp.mode
+expectint dsp.draft -1
+expect disp.c.sat 100
+
+say == 6. Confirm on a tile sets every colour of the profile ==
+clickid dp#1
+clickid ok#disp.mode
+wait 1500
+expect disp.mode vibrant
+expect disp.c.sat 135
+expect disp.c.kelvin 6500
+expectint dsp.draft -1
+shot /tmp/shots/dsp_vibrant.png
+
+say == 7. a slider touched after a tile wins: the tile draft goes ==
+clickid dp#2
+expectint dsp.draft 2
+dragid sl#disp.c.sat 0.2
+expectdraft disp.c.sat 1
+expectint dsp.draft -1
+clickid dc#disp.c.sat
+expectdraft disp.c.sat 0
+
+say == 8. a tile touched after a slider wins: the slider drafts go ==
+dragid sl#disp.c.gamma 0.8
+expectdraft disp.c.gamma 1
+clickid dp#3
+expectint dsp.draft 3
+expectdraft disp.c.gamma 0
+clickid dc#disp.mode
+expectint dsp.draft -1
+
+say == 9. Reset puts everything back to standard ==
+clickid dsp#reset
+wait 1500
+expect disp.mode standard
+expect disp.c.sat 100
+expect disp.c.kelvin 6500
+expect disp.c.gamma 100
+
+say == 10. panel brightness: a draft, then Confirm ==
+dragid sl#disp.bright 0.2
+expectdraft disp.bright 1
+expect disp.bright 70
+clickid ok#disp.bright
+wait 1500
+expect disp.bright !70
+expectdraft disp.bright 0
+
+say == 11. without the colour-effect API saturation is unavailable, the other sliders still work ==
+external disp.sat 0
+cmd probe
+wait 1200
+expect cap.disp.sat unsupported
+dragid sl#disp.c.sat 0.8
+expectdraft disp.c.sat 0
+dragid sl#disp.c.r 0.3
+expectdraft disp.c.r 1
+clickid dc#disp.c.r
+shot /tmp/shots/dsp_nosat.png
+external disp.sat 1
+cmd probe
+wait 1200
+expect cap.disp.sat ok
+
+say == 12. the Windows tools open from a fixed list ==
+clickid dsp#cm
+expectui tool.last colorcpl
+clickid dsp#ds
+expectui tool.last display
+clickid dsp#nl
+expectui tool.last nightlight
+shot /tmp/shots/dsp_end.png
+say done

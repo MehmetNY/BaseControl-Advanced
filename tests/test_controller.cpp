@@ -1,0 +1,782 @@
+// Controller flows against the simulated machine: probing, gating, verified writes, rollback, live values, profiles, persistence.
+#include <cstdio>
+#include <cstdlib>
+#include <string>
+
+#include "../src/common/controller.h"
+#include "../src/common/registers.h"
+#include "../src/sim/sim.h"
+#include "mini_test.h"
+
+#include <sys/stat.h>
+#include <unistd.h>
+
+using namespace bc;
+
+namespace {
+
+Controller::Options Opts(const std::string& dir = "") {
+  Controller::Options o;
+  o.manual = true;
+  o.mode = "sim";
+  o.dataDir = dir;
+  return o;
+}
+
+struct Rig {
+  sim::World w;
+  Controller c;
+  explicit Rig(sim::Model m = sim::Model::Exact, const std::string& dir = "") : w(m), c(w.hw(), Opts(dir)) { c.Start(); }
+
+  Result Set(const std::string& k, const std::string& v, const KV& args = KV()) {
+    Request r;
+    r.op = "set";
+    r.key = k;
+    r.value = v;
+    r.args = args;
+    return c.ExecuteSync(r);
+  }
+  Result Cmd(const std::string& k, const KV& args = KV()) {
+    Request r;
+    r.op = "cmd";
+    r.key = k;
+    r.args = args;
+    return c.ExecuteSync(r);
+  }
+  Result Cfg(const std::string& k, const std::string& v) {
+    Request r;
+    r.op = "cfg";
+    r.key = k;
+    r.value = v;
+    return c.ExecuteSync(r);
+  }
+  KV S() { return c.Snapshot(); }
+  uint8_t Ec(uint16_t a) { return w.plat.ec[a]; }
+  // advance the virtual clock and poll like the worker thread would
+  void Run(int seconds, int stepMs = 1000) {
+    for (int t = 0; t < seconds * 1000; t += stepMs) {
+      w.clock.Advance(stepMs);
+      c.PollOnce(false);
+    }
+  }
+};
+
+KV Consent(const char* name) {
+  KV a;
+  a.Set(std::string("consent.") + name, "1");
+  return a;
+}
+
+std::string TempDir() {
+  char tmpl[] = "/tmp/bctestXXXXXX";
+  char* d = mkdtemp(tmpl);
+  return d ? std::string(d) : std::string();
+}
+
+}  // namespace
+
+// ------------------------------------------------------------------------------------------------ probing / classes
+TEST(ctl_probe_exact_device) {
+  Rig r;
+  KV s = r.S();
+  CHECK_EQ(s.Str("dev.class"), std::string("verified"));
+  CHECK_EQ(s.Str("ec.link"), std::string("connected"));
+  for (const char* cap : {"ec", "pl.ec", "tcc", "fan.read", "fan.ctl", "fan.curve", "batt.mode", "fnlock", "msr", "msr.pkg", "msr.icc",
+                          "msr.volt", "msr.pf", "gpu.nvml", "gpu.ctgp", "os.cpu", "disp.bright", "light.kbd"})
+    CHECK_EQ(s.Str(std::string("cap.") + cap), std::string("ok"));
+  CHECK_EQ(s.Str("cap.light.bar"), std::string("absent"));
+  CHECK_EQ(s.Str("cap.gpu.db"), std::string("unsupported"));
+  CHECK_EQ(s.Int("dev.project"), 26LL);
+  CHECK_EQ(s.Int("ec.pl1"), 120LL);
+  CHECK_EQ(s.Int("ec.pl2"), 120LL);
+  CHECK_EQ(s.Int("ec.pl4"), 200LL);
+  CHECK_EQ(s.Int("ec.tcc"), 100LL);
+  CHECK_EQ(s.Int("gpu.ctgp"), 140LL);
+  CHECK_EQ(s.Str("fan.mode"), std::string("auto"));
+  CHECK_EQ(s.Str("batt.mode"), std::string("balanced"));
+  CHECK(s.Int("cpu.temp") > 20);
+  CHECK(s.Num("cpu.pkg.w") >= 0);
+  CHECK_EQ(s.Str("oem.services"), std::string("gcuService,GcuBridge"));
+  CHECK_EQ(s.Int("ec.writes"), 0LL);  // probing never writes
+}
+
+TEST(ctl_probe_never_writes_to_ec) {
+  Rig r;
+  CHECK_EQ(r.w.plat.ecWrites, 0);
+  r.Cmd("probe");
+  CHECK_EQ(r.w.plat.ecWrites, 0);
+  r.Run(5);
+  CHECK_EQ(r.w.plat.ecWrites, 0);
+}
+
+TEST(ctl_family_and_unknown_classes) {
+  Rig fam(sim::Model::Family);
+  CHECK_EQ(fam.S().Str("dev.class"), std::string("family"));
+  CHECK_EQ(fam.S().Str("cap.gpu.ctgp"), std::string("off"));  // MGP engine only trusts the exact unit
+  Rig unk(sim::Model::Unknown);
+  CHECK_EQ(unk.S().Str("dev.class"), std::string("unknown"));
+}
+
+TEST(ctl_absent_hardware_degrades) {
+  sim::World w;
+  w.ec.state = mgp::DriverState::Absent;
+  w.plat.msrAvailable = false;
+  w.plat.nvmlAvailable = false;
+  Controller c(w.hw(), Opts());
+  c.Start();
+  KV s = c.Snapshot();
+  CHECK_EQ(s.Str("cap.ec"), std::string("absent"));
+  CHECK_EQ(s.Str("cap.pl.ec"), std::string("absent"));
+  CHECK_EQ(s.Str("cap.msr"), std::string("absent"));
+  CHECK_EQ(s.Str("cap.gpu.nvml"), std::string("absent"));
+  CHECK_EQ(s.Str("ec.link"), std::string("absent"));
+  // Windows-level features keep working
+  CHECK_EQ(s.Str("cap.os.cpu"), std::string("ok"));
+  Request q; q.op = "set"; q.key = "ec.pl1"; q.value = "100";
+  CHECK(!c.ExecuteSync(q).ok);
+  q.key = "os.epp"; q.value = "20";
+  CHECK(c.ExecuteSync(q).ok);
+}
+
+// ------------------------------------------------------------------------------------------------ request validation
+TEST(ctl_bad_requests) {
+  Rig r;
+  CHECK_EQ(r.Set("does.not.exist", "1").code, std::string("unknown"));
+  CHECK_EQ(r.Set("ec.pl1", "banana").code, std::string("range"));
+  CHECK_EQ(r.Set("ec.pl1", "5").code, std::string("range"));
+  CHECK_EQ(r.Set("ec.pl1", "900").code, std::string("range"));
+  CHECK_EQ(r.Set("gpu.ctgp", "141").code, std::string("range"));
+  CHECK_EQ(r.Cfg("notcfg.key", "1").code, std::string("range"));
+  CHECK_EQ(r.Cfg("cfg.bad key!", "1").code, std::string("range"));
+  Request q; q.op = "frobnicate";
+  CHECK_EQ(r.c.ExecuteSync(q).code, std::string("unknown"));
+  CHECK_EQ(r.Cmd("nope").code, std::string("unknown"));
+  CHECK_EQ(r.w.plat.ecWrites, 0);  // nothing reached the EC
+}
+
+// ------------------------------------------------------------------------------------------------ CPU power through the EC
+TEST(ctl_set_pl_within_oem_range) {
+  Rig r;
+  Result res = r.Set("ec.pl1", "100");
+  CHECK(res.ok);
+  CHECK_EQ(r.Ec(reg::kPl1), static_cast<uint8_t>(100));
+  CHECK_EQ(r.Ec(reg::kPl2), static_cast<uint8_t>(120));
+  CHECK_EQ(r.Ec(reg::kPl4), static_cast<uint8_t>(200));
+  CHECK_EQ(r.S().Int("ec.pl1"), 100LL);
+  CHECK_EQ(r.S().Int("msr.pl1"), 100LL);        // the CPU followed
+  CHECK(res.data.Bool("cpu.applied"));
+  CHECK_EQ(r.Ec(reg::kCpuTempLimitRead) & 0x7F, 5);  // the TCC offset is re-asserted unchanged
+}
+
+TEST(ctl_pl_ordering_enforced) {
+  Rig r;
+  CHECK_EQ(r.Set("ec.pl1", "130").code, std::string("range"));          // PL1 above the current PL2
+  CHECK_EQ(r.Set("ec.pl2", "130").code, std::string("gate.consent"));   // above the OEM max needs consent
+  r.Set("ec.pl1", "100");
+  CHECK_EQ(r.Set("ec.pl2", "90").code, std::string("range"));          // PL2 < PL1
+  CHECK_EQ(r.Set("ec.pl4", "80").code, std::string("range"));          // PL4 < PL2
+  CHECK_EQ(r.Ec(reg::kPl2), static_cast<uint8_t>(120));
+}
+
+TEST(ctl_pl_above_oem_needs_consent) {
+  Rig r;
+  Result res = r.Set("ec.pl2", "150");
+  CHECK(!res.ok);
+  CHECK_EQ(res.code, std::string("gate.consent"));
+  CHECK_EQ(res.data.Str("consent"), std::string("ec_pl_high"));
+  CHECK_EQ(r.Ec(reg::kPl2), static_cast<uint8_t>(120));
+  res = r.Set("ec.pl2", "150", Consent("ec_pl_high"));
+  CHECK(res.ok);
+  CHECK_EQ(r.Ec(reg::kPl2), static_cast<uint8_t>(150));
+  CHECK_EQ(r.S().Str("cfg.consent.ec_pl_high"), std::string("1"));
+  CHECK(r.Cmd("consent.reset").ok);
+  CHECK_EQ(r.S().Str("cfg.consent.ec_pl_high", "0"), std::string("0"));
+  CHECK_EQ(r.Set("ec.pl2", "160").code, std::string("gate.consent"));   // consent is gone again
+}
+
+TEST(ctl_pl_write_failure_rolls_back) {
+  Rig r;
+  r.w.plat.ecFailWriteNumber = r.w.plat.ecWrites + 2;  // the PL2 write fails after PL1 was changed
+  Result res = r.Set("ec.pl1", "100");
+  CHECK(!res.ok);
+  CHECK_EQ(res.code, std::string("reverted"));
+  CHECK_EQ(r.Ec(reg::kPl1), static_cast<uint8_t>(120));  // PL1 restored
+  CHECK_EQ(r.Ec(reg::kPl2), static_cast<uint8_t>(120));
+}
+
+TEST(ctl_pl_ignored_by_ec_is_reported) {
+  Rig r;
+  r.w.plat.ecDropWrites = true;
+  Result res = r.Set("ec.pl1", "100");
+  CHECK(!res.ok);
+  CHECK_EQ(res.code, std::string("reverted"));
+  CHECK_EQ(r.Ec(reg::kPl1), static_cast<uint8_t>(120));
+  CHECK_EQ(r.S().Int("ec.pl1"), 120LL);
+}
+
+TEST(ctl_pl_msr_not_following_is_diagnosed) {
+  Rig r;
+  r.w.plat.msrFollowsEc = false;
+  Result res = r.Set("ec.pl1", "100");
+  CHECK(res.ok);                               // the EC accepted it...
+  CHECK(!res.data.Bool("cpu.applied", true));  // ...but the package limit did not follow, and we say so
+  CHECK_EQ(r.S().Int("msr.pl1"), 120LL);
+  CHECK(r.w.log.Has("does not follow"));
+}
+
+TEST(ctl_ec_cold_needs_activation) {
+  Rig r;
+  r.w.plat.MakeEcCold();
+  Result res = r.Set("ec.pl1", "100");
+  CHECK_EQ(res.code, std::string("needs.activation"));
+  CHECK_EQ(r.w.plat.ecWrites, 0);
+  // taking over while the OEM service runs is refused
+  r.Cfg("cfg.takeover", "1");
+  res = r.Set("ec.pl1", "100");
+  CHECK_EQ(res.code, std::string("gate.oem"));
+  CHECK_EQ(r.w.plat.ecWrites, 0);
+  // stopping the OEM service first (reversible), then the bring-up works
+  r.Cfg("cfg.takeover", "0");
+  CHECK(r.Cmd("oem.takeover").ok);
+  CHECK(!r.w.oem.Probe().running);
+  CHECK_EQ(r.S().Str("cfg.takeover"), std::string("1"));
+  res = r.Set("ec.pl1", "100");
+  CHECK(res.ok);
+  CHECK(r.w.plat.EcActive());
+  CHECK_EQ(r.Ec(reg::kPl1), static_cast<uint8_t>(100));
+  CHECK(r.Cmd("oem.restore").ok);
+  CHECK(r.w.oem.Probe().running);
+}
+
+TEST(ctl_activation_failure_is_reported) {
+  Rig r;
+  r.w.plat.MakeEcCold();
+  r.Cfg("cfg.takeover", "1");
+  r.w.oem.running = false;
+  r.w.plat.ecDropWrites = true;  // the EC ignores the activation byte
+  Result res = r.Set("ec.pl1", "100");
+  CHECK(!res.ok);
+  CHECK(res.code == "failed.verify" || res.code == "failed.hw");
+}
+
+TEST(ctl_tcc_target) {
+  Rig r;
+  Result res = r.Set("ec.tcc", "90");
+  CHECK(res.ok);
+  CHECK_EQ(r.Ec(reg::kCpuTempLimitRead) & 0x7F, 15);
+  CHECK_EQ(r.S().Int("ec.tcc"), 90LL);
+  CHECK_EQ(r.Set("ec.tcc", "69").code, std::string("range"));
+}
+
+TEST(ctl_thermal_gate_blocks_raising_only) {
+  Rig r;
+  r.w.plat.SetLoad(1, 0);
+  r.w.plat.cpuT = 96;
+  r.w.clock.Advance(100);
+  r.c.PollOnce(true);
+  CHECK(r.S().Int("cpu.temp.ec") >= 92);
+  Result res = r.Set("ec.pl2", "130", Consent("ec_pl_high"));
+  CHECK_EQ(res.code, std::string("gate.thermal"));
+  CHECK_EQ(r.Ec(reg::kPl2), static_cast<uint8_t>(120));
+  // lowering is always allowed
+  CHECK(r.Set("ec.pl1", "90").ok);
+  CHECK_EQ(r.Ec(reg::kPl1), static_cast<uint8_t>(90));
+}
+
+// ------------------------------------------------------------------------------------------------ live values (sliders follow the hardware)
+TEST(ctl_snapshot_follows_external_changes) {
+  Rig r;
+  CHECK_EQ(r.S().Int("ec.pl1"), 120LL);
+  // another program (or the OEM service) changes the limits behind our back
+  r.w.plat.ec[reg::kPl1] = 77;
+  r.w.plat.ec[reg::kPl2] = 99;
+  r.w.plat.SetEcProfile(true, 25);
+  r.Run(2);
+  KV s = r.S();
+  CHECK_EQ(s.Int("ec.pl1"), 77LL);
+  CHECK_EQ(s.Int("ec.pl2"), 99LL);
+  CHECK_EQ(s.Int("gpu.ctgp"), 150LL);
+  // and the MSR view follows what the firmware does
+  r.w.plat.msr[0x610] = r.w.plat.msr[0x610];
+  r.Run(2);
+  CHECK(r.S().Has("msr.pl1"));
+}
+
+// ------------------------------------------------------------------------------------------------ gating
+TEST(ctl_family_model_needs_experimental_toggle) {
+  Rig r(sim::Model::Family);
+  Result res = r.Set("ec.pl1", "100");
+  CHECK_EQ(res.code, std::string("gate.experimental"));
+  CHECK_EQ(r.w.plat.ecWrites, 0);
+  r.Cfg("cfg.experimental", "1");
+  CHECK(r.Set("ec.pl1", "100").ok);
+}
+
+TEST(ctl_unknown_model_blocks_hardware_writes) {
+  Rig r(sim::Model::Unknown);
+  r.Cfg("cfg.experimental", "1");
+  Result res = r.Set("ec.pl1", "100");
+  CHECK_EQ(res.code, std::string("gate.model"));
+  CHECK_EQ(r.w.plat.ecWrites, 0);
+  // Windows-only settings are not hardware writes
+  CHECK(r.Set("os.epp", "10").ok);
+  CHECK(r.Set("disp.bright", "30").ok);
+  r.Cfg("cfg.unknownModel", "1");
+  CHECK(r.Set("ec.pl1", "100").code != "gate.model");
+}
+
+TEST(ctl_read_only_kill_switch) {
+  Rig r;
+  CHECK(r.Cfg("cfg.readonly", "1").ok);
+  CHECK_EQ(r.Set("ec.pl1", "100").code, std::string("gate.readonly"));
+  CHECK_EQ(r.Set("gpu.ctgp", "125").code, std::string("gate.readonly"));
+  CHECK_EQ(r.Set("fan.mode", "boost").code, std::string("gate.readonly"));
+  CHECK_EQ(r.w.plat.ecWrites, 0);
+  CHECK(r.Set("os.max", "90").ok);  // Windows policy is not a hardware write
+  r.Cfg("cfg.readonly", "0");
+  CHECK(r.Set("ec.pl1", "100").ok);
+}
+
+TEST(ctl_experimental_features_are_gated) {
+  Rig r;
+  CHECK_EQ(r.Set("msr.pl1", "90").code, std::string("gate.experimental"));
+  CHECK_EQ(r.Set("msr.icc", "150").code, std::string("gate.experimental"));
+  CHECK_EQ(r.Set("msr.volt.core", "-50").code, std::string("gate.experimental"));
+  CHECK_EQ(r.Set("nv.offset.core", "50").code, std::string("gate.experimental"));
+  CHECK_EQ(r.Set("fan.fixed.cpu", "50").code, std::string("gate.experimental"));
+  CHECK_EQ(r.Set("fan.ramp", "5").code, std::string("gate.experimental"));
+  CHECK_EQ(r.Set("fan.mode", "fixed").code, std::string("gate.experimental"));
+  CHECK_EQ(r.Set("gpu.db", "1").code, std::string("unsupported"));      // capability missing on this model
+  r.Cfg("cfg.experimental", "1");
+  CHECK_EQ(r.Set("gpu.db", "1").code, std::string("unsupported"));      // ...and the toggle does not change that
+  CHECK_EQ(r.w.plat.ecWrites, 0);
+}
+
+// ------------------------------------------------------------------------------------------------ GPU cTGP
+TEST(ctl_ctgp_flow) {
+  Rig r;
+  CHECK(r.Set("gpu.ctgp", "125").ok);
+  CHECK_NEAR(r.w.plat.CtgpW(), 125, 0.1);
+  CHECK(r.Set("gpu.ctgp", "140").ok);
+  CHECK_NEAR(r.w.plat.CtgpW(), 140, 0.1);
+  CHECK_EQ(r.S().Int("gpu.ctgp"), 140LL);
+  Result res = r.Set("gpu.ctgp", "150");
+  CHECK_EQ(res.code, std::string("gate.consent"));
+  CHECK_EQ(res.data.Str("consent"), std::string("ctgp_over_oem"));
+  CHECK_NEAR(r.w.plat.CtgpW(), 140, 0.1);
+  res = r.Set("gpu.ctgp", "150", Consent("ctgp_over_oem"));
+  CHECK(res.ok);
+  CHECK_NEAR(r.w.plat.CtgpW(), 150, 0.1);
+  res = r.Set("gpu.ctgp", "135");
+  CHECK_EQ(res.data.Str("consent"), std::string("ctgp_unverified"));  // 130/135 W were never measured live
+  CHECK(r.Set("gpu.ctgp", "135", Consent("ctgp_unverified")).ok);
+  CHECK_NEAR(r.w.plat.CtgpW(), 135, 0.1);
+}
+
+TEST(ctl_ctgp_takes_the_shared_apply_lock) {
+  Rig r;
+  CHECK(r.Set("gpu.ctgp", "140").ok);
+  CHECK_EQ(r.w.lock.acquired, 1);
+  CHECK_EQ(r.w.lock.released, 1);
+  CHECK_EQ(r.w.lock.depth, 0);
+  // a consent refusal never reaches the lock
+  Result res = r.Set("gpu.ctgp", "150");
+  CHECK_EQ(res.code, std::string("gate.consent"));
+  CHECK_EQ(r.w.lock.acquired, 1);
+  // another program holds the lock: nothing is applied and the answer is "busy"
+  r.w.lock.failNext = true;
+  const double before = r.w.plat.CtgpW();
+  res = r.Set("gpu.ctgp", "125");
+  CHECK_EQ(res.code, std::string("busy"));
+  CHECK_NEAR(r.w.plat.CtgpW(), before, 0.1);
+  CHECK_EQ(r.w.lock.depth, 0);
+}
+
+TEST(ctl_ctgp_with_lagging_nvml) {
+  Rig r;
+  r.w.plat.nvLagSamples = 3;
+  Result res = r.Set("gpu.ctgp", "145");
+  CHECK(res.code == "ok" || res.code == "gate.consent");
+  if (res.code == "gate.consent") res = r.Set("gpu.ctgp", "145", Consent("ctgp_over_oem"));
+  CHECK(res.ok);
+  CHECK_NEAR(r.w.plat.CtgpW(), 145, 0.1);
+}
+
+TEST(ctl_ctgp_reapplied_after_display_cycle) {
+  Rig r;
+  CHECK(r.Set("gpu.ctgp", "150", Consent("ctgp_over_oem")).ok);
+  r.w.plat.DisplayCycle();                    // the firmware drops the offset above 15 (observed on the real unit)
+  CHECK_NEAR(r.w.plat.CtgpW(), 140, 0.1);
+  r.c.Notify("display_on");
+  r.Run(6);
+  CHECK_NEAR(r.w.plat.CtgpW(), 150, 0.1);     // BaseControl put it back
+  CHECK(r.w.log.Has("re-applying"));
+}
+
+// ------------------------------------------------------------------------------------------------ fans
+TEST(ctl_fan_modes) {
+  Rig r;
+  CHECK(r.Set("fan.mode", "boost").ok);
+  CHECK(r.Ec(reg::kFanMode) & 0x40);
+  CHECK_EQ(r.S().Str("fan.mode"), std::string("boost"));
+  r.Run(30);
+  CHECK(r.S().Int("fan.cpu.duty") >= 90);
+  CHECK(r.Set("fan.mode", "auto").ok);
+  CHECK(!(r.Ec(reg::kFanMode) & 0x40));
+  CHECK_EQ(r.S().Str("fan.mode"), std::string("auto"));
+}
+
+TEST(ctl_fan_custom_curve) {
+  Rig r;
+  CHECK(r.Set("fan.cpu.curve", "35:0,48:30,60:45,72:60,84:80,96:100").ok);  // saved only (mode is auto)
+  CHECK_EQ(r.Ec(reg::kFanTableCpuUp + 1), static_cast<uint8_t>(50));        // factory table untouched
+  CHECK(r.Set("fan.mode", "custom").ok);
+  CHECK(r.Ec(reg::kFanCurveEnable) & 0x80);
+  CHECK(r.Ec(reg::kFanCurveLatch) & 0x04);
+  CHECK_EQ(r.Ec(reg::kFanTableCpuUp + 1), static_cast<uint8_t>(48));
+  CHECK_EQ(r.Ec(reg::kFanTableCpuDuty + 1), static_cast<uint8_t>(60));
+  CHECK_EQ(r.S().Str("fan.mode"), std::string("custom"));
+  CHECK_EQ(r.S().Str("fan.cpu.curve"), std::string("35:0,48:30,60:45,72:60,84:80,96:100"));
+  // editing in custom mode writes straight away
+  CHECK(r.Set("fan.gpu.curve", "40:0,50:35,60:50,70:65,80:85,90:100").ok);
+  CHECK_EQ(r.Ec(reg::kFanTableGpuUp + 2), static_cast<uint8_t>(60));
+  // an unsafe curve never reaches the EC
+  Result bad = r.Set("fan.cpu.curve", "35:0,50:20,100:30");
+  CHECK_EQ(bad.code, std::string("range"));
+  CHECK_EQ(r.Ec(reg::kFanTableCpuUp + 1), static_cast<uint8_t>(48));
+}
+
+TEST(ctl_fan_table_readback_failure_restores) {
+  Rig r;
+  r.Set("fan.cpu.curve", "35:0,48:30,60:45,72:60,84:80,96:100");
+  uint8_t before[48];
+  for (int i = 0; i < 48; i++) before[i] = r.Ec(reg::kFanTableCpuUp + i);
+  r.w.plat.ecDropWrites = true;
+  Result res = r.Set("fan.mode", "custom");
+  CHECK(!res.ok);
+  for (int i = 0; i < 48; i++) CHECK_EQ(r.Ec(reg::kFanTableCpuUp + i), before[i]);
+}
+
+TEST(ctl_fixed_fan_and_watchdog) {
+  Rig r;
+  r.Cfg("cfg.experimental", "1");
+  CHECK_EQ(r.Set("fan.mode", "fixed").code, std::string("gate.consent"));
+  CHECK(r.Set("fan.fixed.cpu", "20").ok);
+  CHECK(r.Set("fan.fixed.gpu", "20").ok);
+  CHECK(r.Set("fan.mode", "fixed", Consent("fan_fixed")).ok);
+  CHECK_EQ(r.Ec(reg::kFanFixedCpu), static_cast<uint8_t>(0x80 | 20));
+  r.w.plat.SetLoad(1, 1);
+  r.Run(240);
+  // the temperature climbed with a 20 % fan, the watchdog must have forced boost
+  CHECK_EQ(r.S().Str("fan.guard"), std::string("tripped"));
+  CHECK(r.Ec(reg::kFanMode) & 0x40);
+  CHECK_EQ(r.Ec(reg::kFanFixedCpu), static_cast<uint8_t>(0));
+  CHECK_EQ(r.S().Str("fan.mode"), std::string("boost"));
+  CHECK(r.w.log.Has("fan watchdog"));
+  CHECK(r.Set("fan.mode", "auto").ok);
+  CHECK_EQ(r.S().Str("fan.guard"), std::string("ok"));
+}
+
+// ------------------------------------------------------------------------------------------------ battery / preferences
+TEST(ctl_battery_and_preferences) {
+  Rig r;
+  CHECK(r.Set("batt.mode", "eco").ok);
+  CHECK_EQ(r.Ec(reg::kBatteryMode) & 0x38, 0x28);
+  CHECK_EQ(r.S().Str("batt.mode"), std::string("eco"));
+  CHECK(r.Set("pref.fnlock", "1").ok);
+  CHECK(r.Ec(reg::kFnLock) & 0x10);
+  CHECK(r.Set("pref.acboot", "1").ok);
+  CHECK(r.Ec(reg::kAcAutoBoot) & 0x08);
+  CHECK(r.Ec(reg::kAcAutoBoot) & 0x80);  // the PECI bit next to it was not disturbed
+  // "powered USB" and "boot on AC" are mutually exclusive
+  CHECK(r.Set("pref.usbpower", "1").ok);
+  CHECK(r.Ec(reg::kUsbPowerShare) & 0x10);
+  CHECK(!(r.Ec(reg::kAcAutoBoot) & 0x08));
+  CHECK(r.Set("pref.acboot", "1").ok);
+  CHECK(!(r.Ec(reg::kUsbPowerShare) & 0x10));
+  CHECK(r.Ec(reg::kAcAutoBoot) & 0x08);
+}
+
+// ------------------------------------------------------------------------------------------------ MSR (advanced CPU)
+TEST(ctl_msr_gating_and_flow) {
+  Rig r;
+  CHECK_EQ(r.Set("msr.pl1", "90").code, std::string("gate.experimental"));
+  r.Cfg("cfg.experimental", "1");
+  Result res = r.Set("msr.pl1", "90");
+  CHECK_EQ(res.code, std::string("gate.consent"));
+  CHECK_EQ(res.data.Str("consent"), std::string("msr_write"));
+  CHECK(r.Set("msr.pl1", "90", Consent("msr_write")).ok);
+  CHECK_EQ(r.S().Int("msr.pl1"), 90LL);
+  CHECK_EQ(r.S().Int("msr.pl2"), 120LL);
+  CHECK(r.Set("msr.tau1", "56").ok);
+  CHECK_NEAR(r.S().Num("msr.tau1"), 56, 3);
+  CHECK(r.Set("msr.pl2", "140").ok);
+  CHECK_EQ(r.Set("msr.pl1", "200").code, std::string("range"));  // PL1 above PL2
+  CHECK(r.Set("msr.icc", "150").ok);
+  CHECK_EQ(r.S().Int("msr.icc"), 150LL);
+  CHECK(r.Set("msr.pf.l2", "0").ok);
+  CHECK_EQ(r.S().Str("msr.pf.l2"), std::string("0"));
+}
+
+TEST(ctl_msr_firmware_owned_value_reverts) {
+  Rig r;
+  r.Cfg("cfg.experimental", "1");
+  r.w.plat.msrFirmwareOwns = true;
+  Result res = r.Set("msr.pl1", "90", Consent("msr_write"));
+  CHECK_EQ(res.code, std::string("reverted"));
+  CHECK_EQ(r.S().Int("msr.pl1"), 120LL);
+}
+
+TEST(ctl_msr_locked_and_closed_mailbox) {
+  Rig r;
+  r.w.plat.msrPkgLocked = true;
+  r.w.plat.ocMailboxOpen = false;
+  r.c.ExecuteSync([] { Request q; q.op = "cmd"; q.key = "probe"; return q; }());
+  r.Cfg("cfg.experimental", "1");
+  CHECK_EQ(r.S().Str("cap.msr.pkg"), std::string("locked"));
+  CHECK_EQ(r.S().Str("cap.msr.volt"), std::string("locked"));
+  CHECK_EQ(r.Set("msr.pl1", "90", Consent("msr_write")).code, std::string("unsupported"));
+  CHECK_EQ(r.Set("msr.volt.core", "-50", Consent("msr_write")).code, std::string("unsupported"));
+}
+
+TEST(ctl_msr_undervolt_roundtrip) {
+  Rig r;
+  r.Cfg("cfg.experimental", "1");
+  CHECK(r.Set("msr.volt.core", "-70", Consent("msr_write")).ok);
+  CHECK(std::abs(static_cast<int>(r.S().Int("msr.volt.core")) + 70) <= 1);
+  CHECK_EQ(r.Set("msr.volt.core", "20").code, std::string("range"));
+}
+
+// ------------------------------------------------------------------------------------------------ Windows policy / display / devices / light
+TEST(ctl_os_cpu_policy) {
+  Rig r;
+  CHECK(r.Set("os.boost", "disabled").ok);
+  CHECK_EQ(r.w.power.policy.boost, 0);
+  CHECK_EQ(r.S().Str("os.boost"), std::string("disabled"));
+  CHECK(r.Set("os.max", "80").ok);
+  CHECK_EQ(r.Set("os.min", "90").code, std::string("range"));   // min above max
+  CHECK_EQ(r.Set("os.max", "3").code, std::string("range"));    // below the registry minimum
+  r.w.power.failSet = true;
+  CHECK_EQ(r.Set("os.epp", "50").code, std::string("failed.hw"));
+}
+
+TEST(ctl_display_and_devices) {
+  Rig r;
+  CHECK(r.Set("disp.bright", "35").ok);
+  CHECK_EQ(r.w.display.brightness, 35);
+  CHECK(r.Set("disp.refresh", "60").ok);
+  CHECK_EQ(r.w.display.refresh, 60);
+  CHECK_EQ(r.Set("disp.refresh", "120").code, std::string("failed.hw"));
+  CHECK(r.Set("disp.mode", "cinema").ok);
+  CHECK_EQ(r.S().Str("disp.mode"), std::string("cinema"));
+  CHECK(r.Set("disp.c.kelvin", "5500").ok);
+  CHECK_EQ(r.w.display.color.kelvin, 5500);
+  CHECK_EQ(r.S().Str("disp.mode"), std::string("custom"));
+  r.w.display.failColor = true;
+  CHECK_EQ(r.Set("disp.c.gamma", "120").code, std::string("failed.hw"));
+  CHECK(r.Set("dev.wifi", "0").ok);
+  CHECK_EQ(r.w.devices.Get(Dev::Wifi), 0);
+  CHECK_EQ(r.S().Str("dev.wifi"), std::string("0"));
+  r.w.devices.stuck = true;
+  CHECK_EQ(r.Set("dev.bt", "0").code, std::string("reverted"));
+}
+
+TEST(ctl_lighting) {
+  Rig r;
+  size_t n0 = r.w.light.sent.size();
+  CHECK(r.Set("light.kbd.color", "#10aa40").ok);
+  CHECK(r.w.light.sent.size() > n0);
+  bool sawColor = false;
+  for (auto& p : r.w.light.sent)
+    if (p.second[1] == 0x14 && p.second[4] == 0x10 && p.second[5] == 0xAA && p.second[6] == 0x40) sawColor = true;
+  CHECK(sawColor);
+  CHECK_EQ(r.S().Str("light.kbd.color"), std::string("#10aa40"));
+  CHECK_EQ(r.Set("light.kbd.color", "green").code, std::string("range"));
+  CHECK_EQ(r.Set("light.bar.color", "#ffffff").code, std::string("unsupported"));  // this model has no light bar
+  CHECK(r.Set("light.kbd.effect", "cycle").ok);
+  size_t n1 = r.w.light.sent.size();
+  r.Run(3, 100);  // the software effect streams colour reports
+  CHECK(r.w.light.sent.size() > n1 + 5);
+  CHECK(r.Set("light.kbd.power", "0").ok);
+  CHECK_EQ(r.S().Str("light.kbd.power"), std::string("0"));
+}
+
+// ------------------------------------------------------------------------------------------------ profiles
+TEST(ctl_builtin_profiles_apply) {
+  Rig r;
+  KV a;
+  a.Set("name", "Balanced");
+  Result res = r.Cmd("profile.apply", a);
+  CHECK(res.ok);
+  CHECK_EQ(r.Ec(reg::kPl1), static_cast<uint8_t>(60));
+  CHECK_EQ(r.Ec(reg::kPl2), static_cast<uint8_t>(80));
+  CHECK_EQ(r.Ec(reg::kPl4), static_cast<uint8_t>(120));
+  CHECK_EQ(r.Ec(reg::kCpuTempLimitRead) & 0x7F, 10);  // 95 C
+  CHECK_EQ(r.S().Str("profile.active"), std::string("Balanced"));
+  a.Set("name", "Overboost");
+  CHECK(r.Cmd("profile.apply", a).ok);
+  CHECK_EQ(r.Ec(reg::kPl1), static_cast<uint8_t>(120));
+  CHECK_EQ(r.Ec(reg::kPl4), static_cast<uint8_t>(200));
+  CHECK(r.Ec(reg::kFanMode) & 0x40);
+  a.Set("name", "Quiet");
+  CHECK(r.Cmd("profile.apply", a).ok);
+  CHECK_EQ(r.Ec(reg::kPl1), static_cast<uint8_t>(35));
+  CHECK(!(r.Ec(reg::kFanMode) & 0x40));
+  a.Set("name", "Nope");
+  CHECK_EQ(r.Cmd("profile.apply", a).code, std::string("unknown"));
+}
+
+TEST(ctl_custom_profile_save_apply_delete) {
+  Rig r;
+  r.Set("ec.pl1", "95");
+  r.Set("ec.pl2", "110");
+  KV a;
+  a.Set("name", "My game");
+  CHECK(r.Cmd("profile.save", a).ok);
+  CHECK(r.S().Str("profile.list").find("My game") != std::string::npos);
+  r.Set("ec.pl1", "50");
+  CHECK(r.Cmd("profile.apply", a).ok);
+  CHECK_EQ(r.Ec(reg::kPl1), static_cast<uint8_t>(95));
+  CHECK_EQ(r.Ec(reg::kPl2), static_cast<uint8_t>(110));
+  KV bad;
+  bad.Set("name", "evil=name|x");
+  CHECK_EQ(r.Cmd("profile.save", bad).code, std::string("range"));
+  KV builtin;
+  builtin.Set("name", "Quiet");
+  CHECK_EQ(r.Cmd("profile.delete", builtin).code, std::string("range"));
+  CHECK(r.Cmd("profile.delete", a).ok);
+  CHECK(r.S().Str("profile.list").find("My game") == std::string::npos);
+}
+
+TEST(ctl_profile_with_unconsented_values_is_partial) {
+  Rig r;
+  r.Set("ec.pl2", "150", Consent("ec_pl_high"));
+  KV a;
+  a.Set("name", "Hot");
+  CHECK(r.Cmd("profile.save", a).ok);
+  CHECK(r.Cmd("consent.reset").ok);
+  CHECK(r.Set("ec.pl1", "60").ok);   // lowering needs no consent even though PL2 stays at 150
+  CHECK(r.Set("ec.pl2", "90").ok);
+  Result res = r.Cmd("profile.apply", a);
+  CHECK(!res.ok);                               // the high value needs consent again
+  CHECK_EQ(res.data.Str("consent"), std::string("ec_pl_high"));
+  CHECK_EQ(r.Ec(reg::kPl2), static_cast<uint8_t>(90));
+}
+
+// ------------------------------------------------------------------------------------------------ re-apply / persistence
+TEST(ctl_reapply_after_resume_and_rate_limit) {
+  Rig r;
+  CHECK(r.Set("ec.pl1", "100").ok);
+  r.w.plat.ec[reg::kPl1] = 120;  // firmware reset after resume
+  r.c.Notify("resume");
+  r.Run(5);
+  CHECK_EQ(r.Ec(reg::kPl1), static_cast<uint8_t>(100));
+  // a program that keeps resetting the value must not cause an endless fight
+  int wrote = 0;
+  for (int i = 0; i < 12; i++) {
+    r.w.plat.ec[reg::kPl1] = 120;
+    int before = r.w.plat.ecWrites;
+    r.c.Notify("resume");
+    r.Run(5);
+    if (r.w.plat.ecWrites != before) wrote++;
+  }
+  CHECK(wrote <= 6);
+  CHECK(r.w.log.Has("re-apply suppressed"));
+}
+
+TEST(ctl_keep_off_means_no_reapply) {
+  Rig r;
+  r.Cfg("cfg.keep", "0");
+  r.Set("ec.pl1", "100");
+  r.w.plat.ec[reg::kPl1] = 120;
+  r.c.Notify("resume");
+  r.Run(5);
+  CHECK_EQ(r.Ec(reg::kPl1), static_cast<uint8_t>(120));
+}
+
+TEST(ctl_persistence_across_restart) {
+  std::string dir = TempDir();
+  CHECK(!dir.empty());
+  {
+    Rig r(sim::Model::Exact, dir);
+    CHECK(r.Set("ec.pl1", "95").ok);
+    KV a;
+    a.Set("name", "Persisted");
+    CHECK(r.Cmd("profile.save", a).ok);
+    r.Cfg("cfg.lang", "tr");
+  }
+  {
+    Rig r(sim::Model::Exact, dir);   // fresh machine at the OEM default 120/120/200
+    CHECK_EQ(r.Ec(reg::kPl1), static_cast<uint8_t>(120));
+    CHECK(r.S().Str("profile.list").find("Persisted") != std::string::npos);
+    CHECK_EQ(r.S().Str("cfg.lang"), std::string("tr"));
+    r.Run(12);                        // start-up re-apply fires after ~8 s
+    CHECK_EQ(r.Ec(reg::kPl1), static_cast<uint8_t>(95));
+  }
+  std::string cmd = "rm -rf " + dir;
+  int rc = std::system(cmd.c_str());
+  (void)rc;
+}
+
+TEST(ctl_desired_file_with_garbage_is_ignored) {
+  std::string dir = TempDir();
+  if (FILE* f = fopen((dir + "/desired.kv").c_str(), "wb")) {
+    fputs("ec.pl1=9999\nbogus.key=1\nec.pl2=abc\nec.tcc=90\n", f);
+    fclose(f);
+  }
+  {
+    Rig r(sim::Model::Exact, dir);
+    r.Run(12);
+    CHECK_EQ(r.Ec(reg::kPl1), static_cast<uint8_t>(120));  // out-of-range / unknown / malformed entries were dropped
+    CHECK_EQ(r.Ec(reg::kCpuTempLimitRead) & 0x7F, 15);       // the valid one was applied
+  }
+  std::string cmd = "rm -rf " + dir;
+  int rc = std::system(cmd.c_str());
+  (void)rc;
+}
+
+// ------------------------------------------------------------------------------------------------ application profiles
+TEST(ctl_application_profile_switching) {
+  Rig r;
+  r.Cfg("cfg.app.0.exe", "game.exe");
+  r.Cfg("cfg.app.0.profile", "Overboost");
+  KV a;
+  a.Set("name", "Balanced");
+  r.Cmd("profile.apply", a);
+  CHECK_EQ(r.Ec(reg::kPl1), static_cast<uint8_t>(60));
+  r.w.power.exes = {"explorer.exe", "game.exe"};
+  r.Run(5);
+  CHECK_EQ(r.Ec(reg::kPl1), static_cast<uint8_t>(120));
+  r.w.power.exes = {"explorer.exe"};
+  r.Run(5);
+  CHECK_EQ(r.Ec(reg::kPl1), static_cast<uint8_t>(60));  // back to the previous profile
+}
+
+// ------------------------------------------------------------------------------------------------ misc plumbing
+TEST(ctl_threaded_mode_executes_and_stops) {
+  sim::World w;
+  Controller::Options o;
+  o.mode = "sim";
+  Controller c(w.hw(), o);   // worker thread, virtual clock never advances by itself: only Execute paths are used
+  c.Start();
+  Request q; q.op = "set"; q.key = "os.epp"; q.value = "25";
+  Result res = c.Execute(q);
+  CHECK(res.ok);
+  uint64_t id = c.Submit(q);
+  Result out;
+  bool got = false;
+  for (int i = 0; i < 200 && !got; i++) {
+    got = c.TakeResult(id, &out);
+    if (!got) usleep(10000);
+  }
+  CHECK(got && out.ok);
+  c.Stop();
+}
+
+TEST(ctl_log_tail_and_error_state) {
+  Rig r;
+  r.Set("ec.pl1", "5");
+  CHECK(r.S().Str("last.error").find("range") != std::string::npos);
+  r.Set("ec.pl1", "100");
+  CHECK(r.S().Str("log.tail").find("set ec.pl1=100 ok") != std::string::npos);
+}

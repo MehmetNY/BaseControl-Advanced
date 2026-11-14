@@ -1,0 +1,17 @@
+# build output
+build/
+dist/
+*.o
+*.d
+*.obj
+*.exe
+*.dll
+*.pdb
+*.log
+__pycache__/
+# editor / OS
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+.DS_Store

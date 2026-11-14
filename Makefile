@@ -16,7 +16,7 @@ TESTS    := $(wildcard tests/*.cpp)
 OBJ_COMMON := $(patsubst src/%.cpp,$(BUILD)/%.o,$(COMMON) $(MGPCORE) $(SIM) $(SVCPORT))
 OBJ_TESTS  := $(patsubst tests/%.cpp,$(BUILD)/tests/%.o,$(TESTS))
 
-.PHONY: all test clean
+.PHONY: all test clean i18n
 all: $(BUILD)/tests.bin
 
 $(BUILD)/%.o: src/%.cpp
@@ -30,7 +30,11 @@ $(BUILD)/tests/%.o: tests/%.cpp
 $(BUILD)/tests.bin: $(OBJ_COMMON) $(OBJ_TESTS)
 	$(CXX) $(SAN) $^ -o $@ -pthread
 
-test: $(BUILD)/tests.bin
+# Every user-visible string has a Turkish translation, and no translation is left without a string (see tools/check_i18n.py).
+i18n:
+	@if command -v python3 >/dev/null 2>&1; then python3 tools/check_i18n.py --strict | head -1; python3 tools/check_i18n.py --strict >/dev/null; else echo "python3 not found: translation check skipped"; fi
+
+test: i18n $(BUILD)/tests.bin
 	./$(BUILD)/tests.bin
 
 clean:

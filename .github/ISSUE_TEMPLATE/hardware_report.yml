@@ -1,0 +1,62 @@
+name: Hardware report
+description: It worked - or did not work - on my laptop. Reports from real hardware are the most useful thing you can send.
+labels: ["hardware report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Almost everything in BaseControl Advanced has only been tried against a simulator ([what has never been run](https://github.com/MehmetNY/BaseControl-Advanced/blob/main/docs/CAPABILITIES.md#what-has-never-been-run)). Whatever you found, working or not, helps.
+
+        Please change one thing at a time, watch the temperatures, and keep the read-only switch (Safety and service) in mind. Other models of the same laptop family may behave differently; the program locks hardware writes on models it does not recognise, and a report is how that can be improved safely.
+  - type: input
+    id: version
+    attributes:
+      label: BaseControl version
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Laptop model
+      description: As printed on the lid or the bottom label, and as Device info shows it.
+      placeholder: "Monster Tulpar T5 V21.7 (GM5TG7Y)"
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: BIOS and EC firmware
+      description: "Device info shows both."
+      placeholder: "BIOS N.1.07Mon08, EC GMxTGxx_10.710"
+  - type: checkboxes
+    id: tried
+    attributes:
+      label: What did you try?
+      options:
+        - label: Starting the program and reading the Overview page (live values)
+        - label: Installing and starting the service
+        - label: CPU power limits through the embedded controller (PL1 / PL2 / PL4)
+        - label: GPU power target
+        - label: Fan modes (auto, boost, custom curve, fixed speed)
+        - label: Advanced CPU panel (needs PawnIO)
+        - label: Keyboard light
+        - label: Battery charge profile
+        - label: Display (brightness, refresh rate, colour)
+        - label: Key remapping / overlay / tray
+        - label: Installer / uninstaller
+  - type: textarea
+    id: result
+    attributes:
+      label: What happened?
+      description: For each thing you tried - did it work, did a value stick, did anything look wrong? Mention temperatures and any change in noise or performance.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: "Safety and service > Diagnostics > Copy diagnostics, then paste it here. It contains no serial numbers and no user name, but please read it and remove anything you would rather not share."
+      render: text
+    validations:
+      required: true

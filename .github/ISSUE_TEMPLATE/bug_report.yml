@@ -1,0 +1,78 @@
+name: Bug report
+description: Something does not work, or a setting does something other than what you asked.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you. Please skim [Capabilities and verification](https://github.com/MehmetNY/BaseControl-Advanced/blob/main/docs/CAPABILITIES.md) first: it lists what has never been run on real hardware and what is deliberately missing.
+
+        If a setting applied something other than what you asked, or a protection did not trigger, that is a **safety bug** - please tick the box below.
+  - type: input
+    id: version
+    attributes:
+      label: BaseControl version
+      description: "Device info > About, or run `BaseControl.exe --version`."
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: How are you running it?
+      options:
+        - Installed, with the service
+        - Portable executable, with the service
+        - Portable executable, "Run elevated without the service" (local mode)
+        - Simulator (--sim)
+    validations:
+      required: true
+  - type: dropdown
+    id: laptop
+    attributes:
+      label: Laptop
+      options:
+        - Monster Tulpar T5 V21.7 (GM5TG7Y)
+        - XMG Neo 15 M21 (GM5TG7W)
+        - Another model (say which below)
+        - Not applicable (simulator)
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: "Windows 11 23H2"
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened?
+      description: What you did, what you saw. Screenshots can be pasted here.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Performance > Custom profiles
+        2. Move PL1 to ...
+        3. Press Confirm
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety
+      options:
+        - label: This is a safety bug - a setting applied something other than I asked, or a protection did not trigger.
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: "Safety and service > Diagnostics > Copy diagnostics, then paste it here. It contains no serial numbers and no user name, but please read it and remove anything you would rather not share."
+      render: text

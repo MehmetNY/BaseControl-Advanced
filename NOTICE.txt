@@ -1,0 +1,101 @@
+BaseControl Advanced
+Copyright (C) 2026 MehmetNY and contributors
+
+BaseControl Advanced is free software: you can redistribute it and/or modify it under the terms of the
+GNU General Public License as published by the Free Software Foundation, either version 3 of the License,
+or (at your option) any later version. It is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+The full text is in LICENSE.txt (LICENSE in the source tree).
+
+This file says what the program contains, what it learned from, and what it deliberately does not contain.
+The same list is shown in the program on Device info > About.
+
+
+1. What is in the program
+-------------------------
+
+* BaseControl Advanced itself: written from scratch for this project.
+
+* MONSTER GPU POWER (source folder src/mgp): the author's own GPU power project, GPL-3.0.
+  https://github.com/MehmetNY/Monster-XMG-Gpu-Power-Control
+  Its engine drives the GPU power (cTGP) control and the OEM profile synchronisation.
+
+* The C and C++ runtime. The executable is linked statically against the MinGW-w64 runtime and the GNU
+  C++ runtime libraries (libgcc, libstdc++), which are distributed under their own licences, including
+  the GCC Runtime Library Exception.
+
+* Parts of Windows (GDI+, Setup API, HID, WLAN, power profiles, Service Control Manager, ...) are used
+  through their documented interfaces. They are not part of this program and are not redistributed.
+
+
+2. What it learned from (nothing below is included)
+---------------------------------------------------
+
+These projects were read to understand how the hardware behaves and how a control centre can be
+organised. No source file, text or data file of any of them is included in BaseControl Advanced.
+Facts about the hardware (which register means what) are not copyrightable; docs/REGISTERS.md lists the
+registers the program uses and what is known about each. Licences were read from the projects' own files.
+
+  RevoHelper                           MIT
+    https://github.com/AstralMemory/RevoHelper
+    A light, free control app for a sibling laptop brand: a model for a smaller and faster alternative.
+
+  HydroControl                         MIT
+    https://github.com/Gumwars/HydroControl
+    A Linux control centre for a sibling laptop: notes on the shared embedded controller and on
+    guarding writes.
+
+  tongfang-uniwill-dkms / tuxedo-drivers   GPL-2.0-or-later
+    https://github.com/arbitrary-string/tongfang-uniwill-dkms
+    Linux drivers for the Uniwill embedded controller: what its registers mean.
+
+  clevo-control-panel                  GPL-3.0
+    https://github.com/arbitrary-string/clevo-control-panel
+    Keyboard light, charge limit and performance-mode ideas for Clevo and Tongfang laptops.
+
+  TUXEDO Control Center (archive)      GPL-3.0
+    https://github.com/arbitrary-string/tuxedo-control-center-archive
+    Profiles, fan curves and settings of a mature control centre for the same laptop family.
+
+  MechControl                          no licence stated - read as a reference only
+    https://github.com/Liddo-kun/MechControl-RE
+    A native Windows replacement for the OEM app on Uniwill-built laptops.
+
+  tongfang-gm7mg7p-re                  no licence stated - read as a reference only
+    https://github.com/ElDavoo/tongfang-gm7mg7p-re
+    Reverse-engineering notes for the embedded controller of a sibling laptop.
+
+  Unbound-Power                        no licence stated - read as a reference only
+    https://github.com/Heavyfail/Unbound-Power
+    A GPU power-unlock tool.
+
+Where a project states no licence, nothing was copied from it.
+
+
+3. What is deliberately not included
+------------------------------------
+
+* The OEM Control Center (version 4.9.47.11 was the reference for the feature list): no OEM code, driver,
+  image, string table, certificate or file is included, and none of the OEM's server addresses,
+  credentials, keys or identifiers is in the program. BaseControl reaches the embedded controller through
+  the OEM's own ACPIDriver device when it is installed on the laptop; it neither ships nor modifies it.
+
+* PawnIO (https://github.com/namazso/PawnIO; driver GPL-2.0, modules LGPL-2.1-or-later): the signed driver
+  that gives the advanced CPU panel access to processor registers. It is not included; you install it
+  yourself (docs/SETUP.md).
+
+
+4. Names
+--------
+
+BaseControl Advanced is an independent project. It is not made, approved or supported by Monster
+Notebook, XMG, Tongfang, Uniwill, Intel or NVIDIA. Their names, and "Windows", are trademarks of their
+owners and are used only to say which hardware and system the program works with.
+
+
+5. Tools used to make the project
+---------------------------------
+
+The executable is cross-compiled with MinGW-w64 GCC; the installer is built with NSIS; the screenshots
+and banner in the README were rendered with the Inter typeface (SIL Open Font License 1.1), which is not
+distributed with the program.

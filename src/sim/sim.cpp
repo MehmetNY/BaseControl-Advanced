@@ -5,6 +5,7 @@
 #include <cstring>
 
 #include "../common/fan.h"
+#include "../common/hostdata.h"
 #include "../common/rapl.h"
 #include "../common/registers.h"
 #include "../common/util.h"
@@ -605,6 +606,51 @@ std::vector<LightZone> Light::Detect(std::string* info) {
   return v;
 }
 
+Storage::Storage() {
+  StorageDrive a;
+  a.model = "WD Green SN3000 2TB";
+  a.bus = "NVMe";
+  a.ssd = true;
+  a.sizeBytes = 2000398934016ull;
+  a.tempC = 33;
+  a.powerCycles = 927;
+  a.powerOnHours = 4 * 24 + 20;
+  a.wearPct = 1;
+  a.sparePct = 100;
+  a.critWarn = 0;
+  a.writtenGb = 3870;
+  StorageDrive b;
+  b.model = "SAMSUNG MZVL21T0HCLR-00B00";
+  b.bus = "NVMe";
+  b.ssd = true;
+  b.sizeBytes = 1024209543168ull;
+  b.tempC = 35;
+  b.powerCycles = 3109;
+  b.powerOnHours = 559 * 24 + 23;
+  b.wearPct = 7;
+  b.sparePct = 100;
+  b.critWarn = 0;
+  b.writtenGb = 41300;
+  drives = {a, b};
+}
+
+bool Storage::Read(std::vector<StorageDrive>* out, bool health) {
+  std::lock_guard<std::mutex> lk(mu);
+  ++reads;
+  if (failRead) return false;
+  if (health) ++healthReads;
+  out->clear();
+  for (StorageDrive d : drives) {
+    if (!health || healthDenied) {
+      d.tempC = -1;
+      d.powerCycles = d.powerOnHours = d.writtenGb = -1;
+      d.wearPct = d.sparePct = d.critWarn = -1;
+    }
+    out->push_back(d);
+  }
+  return true;
+}
+
 HostInfo Host::Get() {
   HostInfo h;
   h.os = "Windows 11 Pro 23H2 (simulated)";
@@ -617,6 +663,15 @@ HostInfo Host::Get() {
   h.sysVendor = "MONSTER";
   h.sysProduct = "TULPAR T5 V21.7";
   h.boardName = "GM5TG7Y";
+  h.cpuCores = 8;
+  h.cpuThreads = 16;
+  h.cpuBaseMhz = 2304;
+  if (smbios) {
+    std::vector<uint8_t> raw;
+    std::string err;
+    mgp::SmbiosInfo si;
+    if (smbios->ReadRaw(raw, err) && mgp::ParseRawSmbios(raw.data(), raw.size(), si)) h.memory = MemModulesFromSmbios(si);
+  }
   h.elevated = true;
   return h;
 }
@@ -651,6 +706,25 @@ std::vector<uint8_t> BuildSmbios(const std::string& manuf, const std::string& pr
     f[0] = 2; f[1] = 0x08; f[4] = 1; f[5] = 2; f[6] = 3; f[7] = 4;
     addStruct(f, {"Tongfang", board, "Not Applicable", "BOARD-SERIAL-FAKE"});
   }
+  // Memory devices (type 17): two 16 GB DDR4-3200 SODIMMs whose maker is the unresolved JEDEC id, plus one empty slot. Serial numbers are fake.
+  auto memDev = [&](int sizeMb, const char* loc, const char* maker, const char* part) {
+    std::vector<uint8_t> f(0x22, 0);
+    f[0] = 17; f[1] = 0x22; f[2] = 0x10;
+    f[8] = 64; f[0x0A] = 64;
+    f[0x0C] = static_cast<uint8_t>(sizeMb & 0xFF); f[0x0D] = static_cast<uint8_t>((sizeMb >> 8) & 0xFF);
+    f[0x0E] = 0x0D; f[0x10] = 1; f[0x11] = 2; f[0x12] = 0x1A; f[0x13] = 0x80;
+    f[0x15] = 3200 & 0xFF; f[0x16] = 3200 >> 8;
+    f[0x17] = 3; f[0x18] = 4; f[0x19] = 5; f[0x1A] = 6; f[0x1B] = 2;
+    f[0x20] = 3200 & 0xFF; f[0x21] = 3200 >> 8;
+    addStruct(f, {loc, "BANK 0", maker, "SERIAL-FAKE-DIMM", "Asset-FAKE", part});
+  };
+  memDev(16384, "ChannelA-DIMM0", "80CE", "M471A2G43AB2-CWE");
+  memDev(16384, "ChannelB-DIMM0", "80CE", "M471A2G43AB2-CWE");
+  {
+    std::vector<uint8_t> f(0x15, 0);
+    f[0] = 17; f[1] = 0x15; f[2] = 0x12; f[0x0E] = 0x0D; f[0x10] = 1;
+    addStruct(f, {"ChannelC-DIMM0"});
+  }
   {
     std::vector<uint8_t> f(4, 0);
     f[0] = 127; f[1] = 4;
@@ -667,6 +741,7 @@ std::vector<uint8_t> BuildSmbios(const std::string& manuf, const std::string& pr
 
 World::World(Model m, bool realClock)
     : clock(realClock), plat(clock), ec(plat), nv(plat), msr(plat), gpu(plat), power(plat), fps(plat) {
+  host.smbios = &smbios;
   if (m == Model::Exact) smbios.raw = BuildSmbios("MONSTER", "TULPAR T5 V21.7", "N.1.07Mon08", "GM5TG7Y");
   else if (m == Model::Family) smbios.raw = BuildSmbios("SCHENKER", "XMG NEO 15 M21", "N.1.07Mon08", "GM5TG7W");
   else {
@@ -691,6 +766,7 @@ Hardware World::hw() {
   h.oem = &oem;
   h.light = &light;
   h.host = &host;
+  h.storage = &storage;
   h.fps = &fps;
   h.applyLock = &lock;
   return h;

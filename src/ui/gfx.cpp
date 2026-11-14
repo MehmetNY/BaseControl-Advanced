@@ -486,6 +486,13 @@ void Gfx::Icon(IconId id, const Rect& box, uint32_t c, float stroke) {
     case IconId::Key: k.C2(7.5f, 12, 4); k.L(11.5f, 12, 21, 12); k.L(17.5f, 12, 17.5f, 15.8f); k.L(21, 12, 21, 14.8f); break;
     case IconId::Folder: k.Pl({3, 6, 9.5f, 6, 11.5f, 8.5f, 21, 8.5f, 21, 19.5f, 3, 19.5f}, true); break;
     case IconId::Download: k.L(12, 4, 12, 15); k.Pl({7.5f, 10.5f, 12, 15, 16.5f, 10.5f}); k.L(5, 20, 19, 20); break;
+    case IconId::Drive:   // a drive enclosure: body, a split line, the activity light and a label strip
+      k.RR(3, 5.5f, 18, 13, 2.6f);
+      k.L(3, 13, 21, 13);
+      k.D(7.4f, 16, 1);
+      k.L(11.5f, 16, 17, 16);
+      k.L(7, 8.6f, 9.5f, 8.6f);
+      break;
     case IconId::Service: k.RR(4, 4, 16, 6.5f, 1.8f); k.RR(4, 13.5f, 16, 6.5f, 1.8f); k.D(7.6f, 7.2f, 1); k.D(7.6f, 16.7f, 1); break;
     default: break;
   }

@@ -1,0 +1,59 @@
+# Safety and service on a laptop BaseControl does not recognise: a write first asks about experimental writes, then the model gate
+# refuses it until the user allows writes on this model (which asks first), and the switch can be taken back.
+# Run: BaseControl.exe --sim --sim-model unknown --script tests/ui/safety_unknown_flow.txt --size 1360x1500
+say == 1. an unrecognised laptop: a write first asks about experimental writes; Cancel changes nothing ==
+page safety
+expect dev.class unknown
+shot /tmp/shots/su_default.png
+page prefs
+let fn snap:pref.fnlock
+clickid sw#pref.fnlock
+wait 500
+shot /tmp/shots/su_experimental_modal.png
+clickid modal#0
+wait 300
+expect pref.fnlock $fn
+expect cfg.experimental 0
+expect last.error ~Allow experimental writes
+
+say == 2. with experimental writes allowed, the model gate still refuses the write ==
+page safety
+clickid sp#experimental
+clickid modal#1
+wait 300
+expect cfg.experimental 1
+page prefs
+clickid sw#pref.fnlock
+wait 800
+expect pref.fnlock $fn
+expect last.error ~unrecognised hardware model
+shot /tmp/shots/su_refused.png
+
+say == 3. allowing writes on this model asks first; Cancel changes nothing, Allow lets the write through ==
+page safety
+clickid sp#unknown
+wait 300
+shot /tmp/shots/su_modal.png
+clickid modal#0
+wait 300
+expect cfg.unknownModel
+clickid sp#unknown
+clickid modal#1
+wait 300
+expect cfg.unknownModel 1
+shot /tmp/shots/su_allowed.png
+page prefs
+clickid sw#pref.fnlock
+wait 800
+expect pref.fnlock !$fn
+
+say == 4. the switch turns it off again without asking, and the write is refused again ==
+page safety
+clickid sp#unknown
+wait 300
+expect cfg.unknownModel 0
+page prefs
+let fn2 snap:pref.fnlock
+clickid sw#pref.fnlock
+wait 800
+expect pref.fnlock $fn2

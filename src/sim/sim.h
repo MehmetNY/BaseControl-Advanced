@@ -238,7 +238,19 @@ struct Light : ILightHid {
 };
 
 struct Host : IHostInfo {
+  mgp::ISmbiosSource* smbios = nullptr;   // memory modules come from the same (synthetic) table the real implementation parses
   HostInfo Get() override;
+};
+
+// Two internal NVMe drives with the readings of the reference machine's Components page (simulation values, not evidence).
+struct Storage : IStorage {
+  std::mutex mu;               // the interactive simulator changes drives from the script thread while the controller reads them
+  std::vector<StorageDrive> drives;
+  bool failRead = false;       // Read() fails altogether
+  bool healthDenied = false;   // the inventory works but the health queries are refused (no rights)
+  int reads = 0, healthReads = 0;
+  Storage();
+  bool Read(std::vector<StorageDrive>* out, bool health) override;
 };
 
 struct Smbios : mgp::ISmbiosSource {
@@ -288,6 +300,7 @@ struct World {
   Oem oem;
   Light light;
   Host host;
+  Storage storage;
   FpsSim fps;
   Smbios smbios;
   Lock lock;

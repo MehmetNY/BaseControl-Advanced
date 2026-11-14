@@ -30,6 +30,7 @@ enum class Page {
 
 struct Options {
   std::string mode = "auto";   // auto | local | sim
+  std::string simModel;        // simulator only: exact (default) | family | unknown - which laptop the simulation pretends to be
   std::string lang;            // "" = stored preference / system language
   bool tray = false;           // start hidden in the tray
   // offscreen rendering for documentation (--shot)

@@ -175,7 +175,8 @@ int App::RunShot() {
         want = it == vars.end() ? std::string() : it->second;
       }
       const bool anything = want == "*";
-      const bool same = anything ? !got.empty() : got == want;
+      const bool contains = !want.empty() && want[0] == '~';   // "~text": the value contains the text
+      const bool same = anything ? !got.empty() : contains ? got.find(want.substr(1)) != std::string::npos : got == want;
       if (same != negate) {
         std::printf("ok   line %d: %s = %s\n", at, what.c_str(), got.size() > 60 ? (got.substr(0, 57) + "...").c_str() : got.c_str());
       } else {
@@ -322,9 +323,19 @@ int App::RunShot() {
         // Another program changes a value behind BaseControl's back (simulator only): the LIVE readings must follow.
         std::string key;
         double val = 0;
-        ss >> key >> val;
+        ss >> key;
         bool done = false;
-        if (d_->simWorld) {
+        if (key == "svc.state") {   // what the Windows service manager reports: missing | stopped | starting | running | stopping
+          std::string word;
+          ss >> word;
+          Str("svc.state.fake") = word;
+          done = true;
+        } else {
+          ss >> val;
+        }
+        if (done) {
+          // handled above
+        } else if (d_->simWorld) {
           std::lock_guard<std::recursive_mutex> lk(d_->simWorld->plat.mu);
           sim::Platform& pl = d_->simWorld->plat;
           const uint8_t b = static_cast<uint8_t>(std::max(0.0, std::min(255.0, val)));
@@ -336,6 +347,27 @@ int App::RunShot() {
           else if (key == "os.min") { d_->simWorld->power.policy.minPct = static_cast<int>(val); done = true; }
           else if (key == "power.ac") { pl.ac = val != 0; done = true; }
           else if (key == "disp.sat") { d_->simWorld->display.saturationOk = val != 0; done = true; }   // the Windows colour-effect API is there / missing
+          else if (key.rfind("storage.", 0) == 0) {
+            // storage.health 0|1 (health queries refused / allowed), storage.fail 0|1, storage.<n>.temp|warn|wear <value>
+            sim::Storage& st = d_->simWorld->storage;
+            std::lock_guard<std::mutex> sl(st.mu);
+            if (key == "storage.health") { st.healthDenied = val == 0; done = true; }
+            else if (key == "storage.fail") { st.failRead = val != 0; done = true; }
+            else {
+              int idx = -1;
+              char field[16] = {0};
+              if (std::sscanf(key.c_str(), "storage.%d.%15s", &idx, field) == 2 && idx >= 0 && idx < static_cast<int>(st.drives.size())) {
+                StorageDrive& d = st.drives[static_cast<size_t>(idx)];
+                const std::string f = field;
+                if (f == "temp") { d.tempC = static_cast<int>(val); done = true; }
+                else if (f == "warn") { d.critWarn = static_cast<int>(val); done = true; }
+                else if (f == "wear") { d.wearPct = static_cast<int>(val); done = true; }
+              }
+            }
+          }
+          else if (key == "oem.installed") { d_->simWorld->oem.installed = val != 0; done = true; }   // the OEM Control Center is there / uninstalled
+          else if (key == "oem.fail") { d_->simWorld->oem.failStop = val != 0; done = true; }         // stopping its service is refused
+          else if (key == "oem.running") { d_->simWorld->oem.running = val != 0; done = true; }       // somebody started / stopped its service
           else if (key == "batt.mode") {   // 0 full capacity, 1 balanced, 2 eco
             pl.ec[reg::kBatteryMode] = static_cast<uint8_t>((pl.ec[reg::kBatteryMode] & ~0x38) | (val < 0.5 ? 0x08 : val < 1.5 ? 0x18 : 0x28));
             done = true;

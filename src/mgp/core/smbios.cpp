@@ -81,6 +81,46 @@ bool ParseSmbiosStructures(const uint8_t* data, size_t len, SmbiosInfo& out) {
           }
         }
         break;
+      case 17:  // Bellek aygıtı (DIMM yuvası / lehimli bellek). Seri no (0x18) ve asset tag (0x19) KASITLI olarak okunmaz.
+        if (length >= 0x15) {
+          SmbiosMemory m;
+          const unsigned rawSize = static_cast<unsigned>(p[0x0C]) | (static_cast<unsigned>(p[0x0D]) << 8);
+          if (rawSize == 0x7FFF && length >= 0x20) {  // 32 GB ve üstü: genişletilmiş boyut (MB, bit 30:0)
+            const uint32_t ext = static_cast<uint32_t>(p[0x1C]) | (static_cast<uint32_t>(p[0x1D]) << 8) | (static_cast<uint32_t>(p[0x1E]) << 16) |
+                                 (static_cast<uint32_t>(p[0x1F]) << 24);
+            m.sizeMb = static_cast<int>(ext & 0x7FFFFFFFu);
+          } else if (rawSize == 0 || rawSize == 0xFFFF) {
+            m.sizeMb = 0;  // takılı değil / bilinmiyor
+          } else if (rawSize & 0x8000u) {
+            m.sizeMb = static_cast<int>((rawSize & 0x7FFFu) / 1024u);  // KB cinsinden
+          } else {
+            m.sizeMb = static_cast<int>(rawSize);
+          }
+          m.formFactor = p[0x0E];
+          m.locator = GetString(strs, end, p[0x10]);
+          m.bank = GetString(strs, end, p[0x11]);
+          m.typeCode = p[0x12];
+          if (length >= 0x17) m.ratedMts = static_cast<int>(static_cast<unsigned>(p[0x15]) | (static_cast<unsigned>(p[0x16]) << 8));
+          if (length >= 0x1B) {
+            m.manufacturer = GetString(strs, end, p[0x17]);
+            m.part = GetString(strs, end, p[0x1A]);
+          }
+          if (length >= 0x22) m.configuredMts = static_cast<int>(static_cast<unsigned>(p[0x20]) | (static_cast<unsigned>(p[0x21]) << 8));
+          if (m.ratedMts == 0xFFFF && length >= 0x58) {  // genişletilmiş hız (SMBIOS 3.3+)
+            const uint32_t e = static_cast<uint32_t>(p[0x54]) | (static_cast<uint32_t>(p[0x55]) << 8) | (static_cast<uint32_t>(p[0x56]) << 16) |
+                               (static_cast<uint32_t>(p[0x57]) << 24);
+            m.ratedMts = static_cast<int>(e & 0x7FFFFFFFu);
+          }
+          if (m.configuredMts == 0xFFFF && length >= 0x5C) {
+            const uint32_t e = static_cast<uint32_t>(p[0x58]) | (static_cast<uint32_t>(p[0x59]) << 8) | (static_cast<uint32_t>(p[0x5A]) << 16) |
+                               (static_cast<uint32_t>(p[0x5B]) << 24);
+            m.configuredMts = static_cast<int>(e & 0x7FFFFFFFu);
+          }
+          if (m.ratedMts == 0xFFFF) m.ratedMts = 0;
+          if (m.configuredMts == 0xFFFF) m.configuredMts = 0;
+          if (out.memory.size() < 64) out.memory.push_back(m);
+        }
+        break;
       default:
         break;
     }

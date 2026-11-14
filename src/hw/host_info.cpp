@@ -5,6 +5,7 @@
 #include <cstring>
 #include <cwchar>
 
+#include "../common/hostdata.h"
 #include "../common/util.h"
 #include "../mgp/core/smbios.h"
 
@@ -61,6 +62,38 @@ std::string OsName() {
   return Fmt("%s%s%s (build %lu)", name, ver.empty() ? "" : " ", ver.c_str(), static_cast<unsigned long>(v.dwBuildNumber));
 }
 
+// Physical cores and logical processors (every processor group), from the Windows topology.
+void CpuTopology(int* cores, int* threads) {
+  DWORD len = 0;
+  GetLogicalProcessorInformationEx(RelationProcessorCore, nullptr, &len);
+  if (len == 0 || GetLastError() != ERROR_INSUFFICIENT_BUFFER) return;
+  std::vector<BYTE> buf(len);
+  if (!GetLogicalProcessorInformationEx(RelationProcessorCore, reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(buf.data()), &len)) return;
+  int c = 0, t = 0;
+  for (DWORD off = 0; off + sizeof(DWORD) * 2 <= len;) {
+    const SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX* e = reinterpret_cast<const SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*>(buf.data() + off);
+    if (e->Size == 0) break;
+    if (e->Relationship == RelationProcessorCore) {
+      c++;
+      for (WORD g = 0; g < e->Processor.GroupCount && g < 8; g++)
+        for (KAFFINITY m = e->Processor.GroupMask[g].Mask; m; m &= m - 1) t++;
+    }
+    off += e->Size;
+  }
+  *cores = c;
+  *threads = t;
+}
+
+// Nominal frequency of the first logical processor ("~MHz" in the registry: 2304 for a Core i7-11800H @ 2.30 GHz).
+int CpuBaseMhz() {
+  HKEY k = nullptr;
+  if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0", 0, KEY_READ | KEY_WOW64_64KEY, &k) != ERROR_SUCCESS) return 0;
+  DWORD mhz = 0, sz = sizeof mhz, type = 0;
+  const LONG rc = RegQueryValueExW(k, L"~MHz", nullptr, &type, reinterpret_cast<BYTE*>(&mhz), &sz);
+  RegCloseKey(k);
+  return (rc == ERROR_SUCCESS && type == REG_DWORD && mhz > 0 && mhz < 20000) ? static_cast<int>(mhz) : 0;
+}
+
 // Display adapters Windows knows about (the class key lists every installed adapter, also one that is not driving a screen).
 std::string GpuNames() {
   std::string out;
@@ -107,6 +140,8 @@ HostInfo HostInfoWin::Get() {
     const double gb = static_cast<double>(m.ullTotalPhys) / (1024.0 * 1024.0 * 1024.0);
     h.ram = Fmt("%d GB", static_cast<int>(gb + 0.5));
   }
+  CpuTopology(&h.cpuCores, &h.cpuThreads);
+  h.cpuBaseMhz = CpuBaseMhz();
   wchar_t name[MAX_COMPUTERNAME_LENGTH + 1] = {0};
   DWORD n = MAX_COMPUTERNAME_LENGTH + 1;
   if (GetComputerNameW(name, &n)) h.machineName = U(name);
@@ -120,6 +155,7 @@ HostInfo HostInfoWin::Get() {
       h.sysVendor = si.sysManufacturer;
       h.sysProduct = si.sysProduct;
       h.boardName = si.boardProduct;
+      h.memory = MemModulesFromSmbios(si);
     }
   }
   h.elevated = IsElevated();

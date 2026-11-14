@@ -1,0 +1,69 @@
+# Device info: the components with live gauges, the drive tiles, drive warnings, missing health rights, and the support summary.
+# The page is read-only: nothing on it is a setting, so there is no Confirm here. Drive values change behind BaseControl's back (external).
+# Run: BaseControl.exe --sim --script tests/ui/deviceinfo_flow.txt --size 1360x1700
+say == 1. the facts come from the machine: cores, base clock, memory modules, drives ==
+page deviceinfo
+expect host.cores 8
+expect host.threads 16
+expect host.cpu.mhz 2304
+expect host.mem.n 2
+expect host.mem.0.type DDR4
+expect host.mem.1.maker Samsung
+expect storage.n 2
+expect storage.0.model WD Green SN3000 2TB
+expect storage.0.hours 116
+expect storage.0.cycles 927
+expect storage.1.hours 13439
+expect storage.1.cycles 3109
+shot /tmp/shots/di_default.png
+
+say == 2. the gauges follow the machine ==
+load 0.05 0.05
+wait 2500
+let low snap:os.cpu.pct
+load 0.95 0.95
+wait 3500
+expect os.cpu.pct !$low
+shot /tmp/shots/di_load.png
+load 0.3 0.2
+
+say == 3. a hot drive with a warning: the gauge follows and the tile says so ==
+external storage.0.temp 78
+external storage.0.warn 2
+wait 6500
+expect storage.0.temp 78
+expect storage.0.warn 2
+shot /tmp/shots/di_hot.png
+
+say == 4. without the rights for health data the tile explains and shows no stale numbers ==
+external storage.health 0
+wait 6500
+expect storage.n 2
+expect storage.0.model WD Green SN3000 2TB
+expect storage.0.temp
+expect storage.0.cycles
+shot /tmp/shots/di_nohealth.png
+external storage.health 1
+wait 6500
+expect storage.0.temp 78
+
+say == 5. a drive that stops answering keeps its last values on the page ==
+external storage.fail 1
+wait 6500
+expect storage.n 2
+expect storage.0.temp 78
+external storage.fail 0
+external storage.0.warn 0
+external storage.0.temp 33
+wait 6500
+expect storage.0.temp 33
+expect storage.0.warn 0
+
+say == 6. the summary button copies the description, with no names or serial numbers ==
+clickid di#copy
+expectui clip.last ~Model: MONSTER TULPAR T5 V21.7 (GM5TG7Y)
+expectui clip.last ~CPU: 11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8 cores / 16 threads)
+expectui clip.last ~WD Green SN3000 2TB (NVMe, 2 TB)
+expectui clip.last !~SIM-TULPAR
+expectui clip.last !~FAKE
+shot /tmp/shots/di_final.png

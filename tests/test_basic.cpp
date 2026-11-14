@@ -6,7 +6,9 @@
 #include "../src/common/colorramp.h"
 #include "../src/common/profile_text.h"
 #include "../src/common/fan.h"
+#include "../src/common/controller.h"
 #include "../src/common/fsutil.h"
+#include "../src/common/hostdata.h"
 #include "../src/common/kv.h"
 #include "../src/common/lightfx.h"
 #include "../src/common/rapl.h"
@@ -14,6 +16,7 @@
 #include "../src/common/settings_reg.h"
 #include "../src/common/util.h"
 #include "../src/common/writeguard.h"
+#include "../src/mgp/core/smbios.h"
 #include "../src/sim/sim.h"
 #include "mini_test.h"
 
@@ -763,4 +766,213 @@ TEST(lightfx_effects_have_the_right_shape) {
   CHECK(LevelFraction(0) == LevelFraction(1) && LevelFraction(9) == 1.0);
   CHECK_EQ(std::string(EffectName(3)), std::string("temp"));
   CHECK_EQ(std::string(EffectName(99)), std::string("pulse"));
+}
+
+// ------------------------------------------------------------------------------------------------ Device info data: SMBIOS memory, drive health
+namespace {
+// One SMBIOS type 17 structure with the given formatted length; strings are appended after it.
+std::vector<uint8_t> MemStruct(size_t len, unsigned rawSize, int typeCode, int speed, int configured, const std::vector<std::string>& strs,
+                               uint32_t extSize = 0, uint32_t extSpeed = 0) {
+  std::vector<uint8_t> f(len, 0);
+  f[0] = 17;
+  f[1] = static_cast<uint8_t>(len);
+  if (len > 0x0D) { f[0x0C] = rawSize & 0xFF; f[0x0D] = (rawSize >> 8) & 0xFF; }
+  if (len > 0x12) { f[0x0E] = 0x0D; f[0x10] = 1; f[0x11] = 2; f[0x12] = static_cast<uint8_t>(typeCode); }
+  if (len > 0x16) { f[0x15] = speed & 0xFF; f[0x16] = (speed >> 8) & 0xFF; }
+  if (len > 0x1A) { f[0x17] = 3; f[0x18] = 4; f[0x19] = 5; f[0x1A] = 6; }
+  if (len > 0x1F) for (int i = 0; i < 4; i++) f[0x1C + i] = (extSize >> (8 * i)) & 0xFF;
+  if (len > 0x21) { f[0x20] = configured & 0xFF; f[0x21] = (configured >> 8) & 0xFF; }
+  if (len > 0x57) for (int i = 0; i < 4; i++) f[0x54 + i] = (extSpeed >> (8 * i)) & 0xFF;
+  for (const std::string& t : strs) { f.insert(f.end(), t.begin(), t.end()); f.push_back(0); }
+  if (strs.empty()) f.push_back(0);
+  f.push_back(0);
+  return f;
+}
+std::vector<uint8_t> SystemStruct() {
+  std::vector<uint8_t> f(0x08, 0);
+  f[0] = 1; f[1] = 0x08; f[4] = 1; f[5] = 2;
+  for (const char* t : {"ACME", "Laptop"}) { f.insert(f.end(), t, t + std::strlen(t)); f.push_back(0); }
+  f.push_back(0);
+  return f;
+}
+}  // namespace
+
+TEST(smbios_type17_memory_devices_are_parsed_without_serials) {
+  mgp::SmbiosInfo si;
+  CHECK(mgp::ParseRawSmbios(sim::BuildSmbios("MONSTER", "TULPAR T5 V21.7", "N.1.07Mon08", "GM5TG7Y").data(),
+                            sim::BuildSmbios("MONSTER", "TULPAR T5 V21.7", "N.1.07Mon08", "GM5TG7Y").size(), si));
+  CHECK_EQ(si.memory.size(), static_cast<size_t>(3));
+  CHECK_EQ(si.memory[0].sizeMb, 16384);
+  CHECK_EQ(si.memory[0].typeCode, 0x1A);
+  CHECK_EQ(si.memory[0].formFactor, 0x0D);
+  CHECK_EQ(si.memory[0].ratedMts, 3200);
+  CHECK_EQ(si.memory[0].configuredMts, 3200);
+  CHECK_EQ(si.memory[0].locator, std::string("ChannelA-DIMM0"));
+  CHECK_EQ(si.memory[0].manufacturer, std::string("80CE"));
+  CHECK_EQ(si.memory[0].part, std::string("M471A2G43AB2-CWE"));
+  CHECK_EQ(si.memory[2].sizeMb, 0);                      // the empty slot is listed, with no size
+  // the parser has nowhere to put a serial number or an asset tag, and the fake ones from the table must not leak into a string field
+  for (const mgp::SmbiosMemory& m : si.memory)
+    for (const std::string& f : {m.locator, m.bank, m.manufacturer, m.part}) {
+      CHECK(f.find("FAKE") == std::string::npos);
+    }
+}
+
+TEST(smbios_type17_size_and_speed_encodings) {
+  auto parse = [](const std::vector<uint8_t>& mem) {
+    std::vector<uint8_t> t = SystemStruct();
+    t.insert(t.end(), mem.begin(), mem.end());
+    t.insert(t.end(), {127, 4, 0, 0, 0, 0});
+    mgp::SmbiosInfo si;
+    CHECK(mgp::ParseSmbiosStructures(t.data(), t.size(), si));
+    return si;
+  };
+  // 32 GB and larger: raw size 0x7FFF, real size in the extended field (MB)
+  mgp::SmbiosInfo a = parse(MemStruct(0x22, 0x7FFF, 0x22, 5600, 5200, {"SLOT", "BANK", "SK hynix", "SER", "ASSET", "HMCG88AGBSA095N"}, 65536));
+  CHECK_EQ(a.memory.size(), static_cast<size_t>(1));
+  CHECK_EQ(a.memory[0].sizeMb, 65536);
+  CHECK_EQ(a.memory[0].typeCode, 0x22);
+  CHECK_EQ(a.memory[0].ratedMts, 5600);
+  CHECK_EQ(a.memory[0].configuredMts, 5200);
+  // bit 15 set: the size is in KB
+  CHECK_EQ(parse(MemStruct(0x22, 0x8000 | 2048, 0x1A, 2400, 2400, {"A", "B", "M", "S", "T", "P"})).memory[0].sizeMb, 2);
+  // unknown (0xFFFF) and empty (0) are both "no usable size"
+  CHECK_EQ(parse(MemStruct(0x22, 0xFFFF, 0x1A, 2400, 2400, {"A"})).memory[0].sizeMb, 0);
+  CHECK_EQ(parse(MemStruct(0x22, 0, 0x1A, 2400, 2400, {"A"})).memory[0].sizeMb, 0);
+  // speed 0xFFFF: the extended speed fields of SMBIOS 3.3 carry the value
+  mgp::SmbiosInfo e = parse(MemStruct(0x5C, 8192, 0x22, 0xFFFF, 0xFFFF, {"A", "B", "M", "S", "T", "P"}, 0, 7200));
+  CHECK_EQ(e.memory[0].ratedMts, 7200);
+  // an old-format structure (no speed, no part number) is still understood, a structure cut off in the middle is skipped
+  mgp::SmbiosInfo old = parse(MemStruct(0x15, 4096, 0x13, 0, 0, {"DIMM1"}));
+  CHECK_EQ(old.memory.size(), static_cast<size_t>(1));
+  CHECK_EQ(old.memory[0].sizeMb, 4096);
+  CHECK_EQ(old.memory[0].ratedMts, 0);
+  CHECK(old.memory[0].part.empty());
+  CHECK_EQ(parse(MemStruct(0x10, 4096, 0x13, 0, 0, {})).memory.size(), static_cast<size_t>(0));
+}
+
+TEST(hostdata_memory_names_and_modules) {
+  CHECK_EQ(MemTypeName(0x1A), std::string("DDR4"));
+  CHECK_EQ(MemTypeName(0x22), std::string("DDR5"));
+  CHECK_EQ(MemTypeName(0x23), std::string("LPDDR5"));
+  CHECK_EQ(MemTypeName(0x01), std::string(""));
+  CHECK_EQ(MemMakerName("80CE"), std::string("Samsung"));
+  CHECK_EQ(MemMakerName("80ce"), std::string("Samsung"));
+  CHECK_EQ(MemMakerName("859B"), std::string("Crucial"));
+  CHECK_EQ(MemMakerName("Kingston"), std::string("Kingston"));
+  CHECK_EQ(MemMakerName("Unknown"), std::string(""));
+  CHECK_EQ(MemMakerName("0000"), std::string(""));
+  CHECK_EQ(MemMakerName("  Team  Group; Inc "), std::string("Team Group Inc"));
+  mgp::SmbiosInfo si;
+  const std::vector<uint8_t> raw = sim::BuildSmbios("A", "B", "C", "D");
+  CHECK(mgp::ParseRawSmbios(raw.data(), raw.size(), si));
+  const std::vector<MemModule> mods = MemModulesFromSmbios(si);
+  CHECK_EQ(mods.size(), static_cast<size_t>(2));       // the empty slot is left out
+  CHECK_EQ(mods[1].sizeMb, 16384);
+  CHECK_EQ(mods[1].type, std::string("DDR4"));
+  CHECK_EQ(mods[1].ratedMts, 3200);
+  CHECK_EQ(mods[1].runMts, 3200);
+  CHECK_EQ(mods[1].maker, std::string("Samsung"));
+  CHECK_EQ(mods[1].locator, std::string("ChannelB-DIMM0"));
+}
+
+TEST(hostdata_text_cleanup_and_drive_titles) {
+  CHECK_EQ(CleanText("  A|b;c\td  "), std::string("A b c d"));
+  CHECK_EQ(CleanText("x\x01y"), std::string("x y"));
+  CHECK_EQ(CleanText("abcdef", 4), std::string("abcd"));
+  CHECK_EQ(CleanText("\xC3\xA7\xC3\xA7\xC3\xA7", 3), std::string("\xC3\xA7"));   // never cut inside a UTF-8 character
+  CHECK_EQ(StorageTitle("WD Green SN3000 2TB"), std::string("WD Green SN3000"));
+  CHECK_EQ(StorageTitle("Crucial  CT1000P3SSD8   1TB"), std::string("Crucial CT1000P3SSD8"));
+  CHECK_EQ(StorageTitle("Foo 1.5TB"), std::string("Foo"));
+  CHECK_EQ(StorageTitle("Foo 500GB"), std::string("Foo"));
+  CHECK_EQ(StorageTitle("SAMSUNG MZVL21T0HCLR-00B00"), std::string("SAMSUNG MZVL21T0HCLR-00B00"));
+  CHECK_EQ(StorageTitle("2TB"), std::string("2TB"));                         // nothing left to show: unchanged
+  CHECK_EQ(StorageTitle("Foo TB"), std::string("Foo TB"));
+  CHECK_EQ(StorageTitle("Foo 5XB"), std::string("Foo 5XB"));
+  CHECK_EQ(DriveModelName("NVMe    ", "SAMSUNG MZVL21T0HCLR-00B00 "), std::string("SAMSUNG MZVL21T0HCLR-00B00"));
+  CHECK_EQ(DriveModelName("ATA     ", "Samsung SSD 860 EVO 1TB"), std::string("Samsung SSD 860 EVO 1TB"));
+  CHECK_EQ(DriveModelName("WDC", "WDC PC SN730 SDBQNTY-512G"), std::string("WDC PC SN730 SDBQNTY-512G"));
+  CHECK_EQ(DriveModelName("Intel", "SSDPEKNW512G8"), std::string("Intel SSDPEKNW512G8"));
+  CHECK_EQ(DriveModelName("", "Some Drive"), std::string("Some Drive"));
+  CHECK_EQ(DriveModelName("NVMe", ""), std::string("NVMe"));                 // nothing better to show than the vendor
+  CHECK_EQ(StorageBusName(0x11), std::string("NVMe"));
+  CHECK_EQ(StorageBusName(0x0B), std::string("SATA"));
+  CHECK_EQ(StorageBusName(0x07), std::string(""));                           // USB sticks are not internal storage
+  CHECK_EQ(StorageBusName(0x0E), std::string(""));                           // virtual disks neither
+}
+
+TEST(hostdata_nvme_health_log_and_storage_temperature) {
+  std::vector<uint8_t> log(512, 0);
+  log[0] = 0;
+  log[1] = 0x32; log[2] = 0x01;                  // 306 K = 33 C
+  log[3] = 100;                                  // available spare
+  log[5] = 7;                                    // percentage used
+  const uint64_t units = 10000000;               // data units written (1 unit = 512000 bytes) = 5120 GB
+  const uint64_t cycles = 3109, hours = 13439;
+  for (int i = 0; i < 8; i++) {
+    log[48 + i] = (units >> (8 * i)) & 0xFF;
+    log[112 + i] = (cycles >> (8 * i)) & 0xFF;
+    log[128 + i] = (hours >> (8 * i)) & 0xFF;
+  }
+  StorageDrive d;
+  CHECK(ParseNvmeHealth(log.data(), log.size(), &d));
+  CHECK_EQ(d.tempC, 33);
+  CHECK_EQ(d.sparePct, 100);
+  CHECK_EQ(d.wearPct, 7);
+  CHECK_EQ(d.critWarn, 0);
+  CHECK_EQ(d.powerCycles, 3109LL);
+  CHECK_EQ(d.powerOnHours, 13439LL);
+  CHECK_EQ(d.writtenGb, 5120LL);
+  // implausible values are "not reported", never shown as numbers
+  std::vector<uint8_t> bad(512, 0);
+  bad[3] = 200;                                  // spare > 100
+  bad[1] = 0; bad[2] = 0;                        // 0 K
+  bad[120] = 1;                                  // power cycles: high half of the 128-bit counter set = beyond 63 bits
+  StorageDrive e;
+  CHECK(ParseNvmeHealth(bad.data(), bad.size(), &e));
+  CHECK_EQ(e.tempC, -1);
+  CHECK_EQ(e.sparePct, -1);
+  CHECK_EQ(e.powerCycles, -1LL);
+  CHECK_EQ(e.powerOnHours, 0LL);
+  StorageDrive f;
+  CHECK(!ParseNvmeHealth(log.data(), 100, &f));  // too short
+  CHECK(!ParseNvmeHealth(nullptr, 512, &f));
+  // STORAGE_TEMPERATURE_DATA_DESCRIPTOR: the composite sensor (index 0) wins over other sensors, whatever the order
+  std::vector<uint8_t> t(24 + 2 * 16, 0);
+  t[12] = 2;
+  t[24] = 1; t[26] = 40;                         // sensor 1: 40 C
+  t[40] = 0; t[42] = 33;                         // composite: 33 C
+  CHECK_EQ(ParseStorageTemperature(t.data(), t.size()), 33);
+  t[40] = 3;                                     // no composite entry: the first valid one
+  CHECK_EQ(ParseStorageTemperature(t.data(), t.size()), 40);
+  t[26] = 0xFF; t[27] = 0x7F;                    // 32767 C: out of range, skipped
+  t[42] = 0xD8; t[43] = 0xFF;                    // -40 C is still a possible reading
+  CHECK_EQ(ParseStorageTemperature(t.data(), t.size()), -40);
+  CHECK_EQ(ParseStorageTemperature(t.data(), 20), -1);
+  std::vector<uint8_t> none(40, 0);
+  CHECK_EQ(ParseStorageTemperature(none.data(), none.size()), -1);   // zero sensors
+}
+
+TEST(hostdata_drive_sizes_and_device_summary) {
+  CHECK_EQ(FormatDriveSize(2000398934016ull), std::string("2 TB"));
+  CHECK_EQ(FormatDriveSize(1024209543168ull), std::string("1 TB"));
+  CHECK_EQ(FormatDriveSize(1920383410176ull), std::string("1.9 TB"));
+  CHECK_EQ(FormatDriveSize(4000787030016ull), std::string("4 TB"));
+  CHECK_EQ(FormatDriveSize(512110190592ull), std::string("512 GB"));
+  CHECK_EQ(FormatDriveSize(500107862016ull), std::string("500 GB"));
+  CHECK_EQ(FormatDriveSize(256060514304ull), std::string("256 GB"));
+  CHECK_EQ(FormatDriveSize(0), std::string(""));
+  // the report describes the machine but names nobody: no computer name, no serial numbers
+  sim::World w;
+  Controller c(w.hw(), [] { Controller::Options o; o.manual = true; o.mode = "sim"; return o; }());
+  c.Start();
+  const std::string text = DeviceSummary(c.Snapshot());
+  CHECK(text.find("Model: MONSTER TULPAR T5 V21.7 (GM5TG7Y)") != std::string::npos);
+  CHECK(text.find("CPU: 11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8 cores / 16 threads)") != std::string::npos);
+  CHECK(text.find("2 x") == std::string::npos);
+  CHECK(text.find("16 GB DDR4-3200 Samsung M471A2G43AB2-CWE; 16 GB DDR4-3200 Samsung M471A2G43AB2-CWE") != std::string::npos);
+  CHECK(text.find("WD Green SN3000 2TB (NVMe, 2 TB); SAMSUNG MZVL21T0HCLR-00B00 (NVMe, 1 TB)") != std::string::npos);
+  CHECK(text.find("SIM-TULPAR") == std::string::npos);
+  CHECK(text.find("FAKE") == std::string::npos);
+  CHECK(DeviceSummary(KV()).empty());
 }

@@ -47,6 +47,7 @@ WinWorld::WinWorld(WorldKind kind, const std::string& dataDir, const std::string
     power_.reset(new OsPower());
     oem_.reset(new OemServices(dataDir));
     light_.reset(new IteHid());
+    storage_.reset(new StorageWin());
     lock_.reset(new NamedApplyLock());
     hw_.ec = ec_.get();
     hw_.nv = nv_.get();
@@ -56,6 +57,7 @@ WinWorld::WinWorld(WorldKind kind, const std::string& dataDir, const std::string
     hw_.power = power_.get();
     hw_.oem = oem_.get();
     hw_.light = light_.get();
+    hw_.storage = storage_.get();
     hw_.applyLock = lock_.get();
   }
   if (deskSide) display_.reset(new OsDisplay());

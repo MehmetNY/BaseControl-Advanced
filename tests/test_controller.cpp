@@ -1379,3 +1379,104 @@ TEST(ctl_log_tail_and_error_state) {
   r.Set("ec.pl1", "100");
   CHECK(r.S().Str("log.tail").find("set ec.pl1=100 ok") != std::string::npos);
 }
+
+// ------------------------------------------------------------------------------------------------ Device info: CPU counts, memory modules, drives
+TEST(ctl_publishes_cpu_counts_and_memory_modules) {
+  Rig r;
+  const KV s = r.S();
+  CHECK_EQ(s.Int("host.cores"), 8LL);
+  CHECK_EQ(s.Int("host.threads"), 16LL);
+  CHECK_EQ(s.Int("host.cpu.mhz"), 2304LL);
+  CHECK_EQ(s.Int("host.mem.n"), 2LL);                    // the empty slot is not counted
+  CHECK_EQ(s.Int("host.mem.0.mb"), 16384LL);
+  CHECK_EQ(s.Str("host.mem.0.type"), std::string("DDR4"));
+  CHECK_EQ(s.Int("host.mem.0.rated"), 3200LL);
+  CHECK_EQ(s.Int("host.mem.0.run"), 3200LL);
+  CHECK_EQ(s.Str("host.mem.0.slot"), std::string("ChannelA-DIMM0"));
+  CHECK_EQ(s.Str("host.mem.1.maker"), std::string("Samsung"));   // the JEDEC id "80CE" is resolved
+  CHECK_EQ(s.Str("host.mem.1.part"), std::string("M471A2G43AB2-CWE"));
+  CHECK(!s.Has("host.mem.2.mb"));
+  // serial numbers and asset tags from the table never reach the snapshot
+  for (const auto& kv : s.All()) {
+    CHECK(kv.second.find("SERIAL-FAKE") == std::string::npos);
+    CHECK(kv.second.find("Asset-FAKE") == std::string::npos);
+  }
+}
+
+TEST(ctl_publishes_drives_and_refreshes_only_while_visible) {
+  Rig r;
+  KV s = r.S();
+  CHECK_EQ(s.Int("storage.n"), 2LL);
+  CHECK_EQ(s.Str("storage.0.model"), std::string("WD Green SN3000 2TB"));
+  CHECK_EQ(s.Str("storage.0.bus"), std::string("NVMe"));
+  CHECK(s.Bool("storage.0.ssd"));
+  CHECK_EQ(s.Str("storage.0.size"), std::string("2000398934016"));
+  CHECK_EQ(s.Int("storage.0.temp"), 33LL);
+  CHECK_EQ(s.Int("storage.0.cycles"), 927LL);
+  CHECK_EQ(s.Int("storage.0.hours"), 116LL);             // 4 days 20 hours
+  CHECK_EQ(s.Int("storage.0.wear"), 1LL);
+  CHECK_EQ(s.Int("storage.0.warn"), 0LL);
+  CHECK_EQ(s.Int("storage.0.written"), 3870LL);
+  CHECK_EQ(s.Str("storage.1.model"), std::string("SAMSUNG MZVL21T0HCLR-00B00"));
+  CHECK_EQ(s.Int("storage.1.cycles"), 3109LL);
+  CHECK_EQ(s.Int("storage.1.hours"), 559LL * 24 + 23);
+
+  // visible: refreshed every few seconds, not on every poll
+  const int reads0 = r.w.storage.healthReads;
+  r.w.storage.drives[0].tempC = 47;
+  r.Run(3);
+  CHECK_EQ(r.S().Int("storage.0.temp"), 33LL);
+  CHECK_EQ(r.w.storage.healthReads, reads0);
+  r.Run(7);
+  CHECK_EQ(r.S().Int("storage.0.temp"), 47LL);
+  CHECK(r.w.storage.healthReads > reads0);
+
+  // hidden window: the drives are left alone, however long it takes
+  r.c.SetInterest(false);
+  r.w.storage.drives[0].tempC = 52;
+  const int reads1 = r.w.storage.healthReads;
+  r.Run(120);
+  CHECK_EQ(r.w.storage.healthReads, reads1);
+  CHECK_EQ(r.S().Int("storage.0.temp"), 47LL);
+  r.c.SetInterest(true);
+  r.Run(9);
+  CHECK_EQ(r.S().Int("storage.0.temp"), 52LL);
+}
+
+TEST(ctl_drive_health_denied_or_failing_never_blanks_the_inventory) {
+  Rig r;
+  // rights missing: the inventory stays, the health values disappear (no stale numbers)
+  r.w.storage.healthDenied = true;
+  r.Run(10);
+  KV s = r.S();
+  CHECK_EQ(s.Int("storage.n"), 2LL);
+  CHECK_EQ(s.Str("storage.0.model"), std::string("WD Green SN3000 2TB"));
+  CHECK(!s.Has("storage.0.temp"));
+  CHECK(!s.Has("storage.0.cycles"));
+  CHECK(!s.Has("storage.0.hours"));
+  CHECK(!s.Has("storage.0.wear"));
+  // rights back
+  r.w.storage.healthDenied = false;
+  r.Run(10);
+  CHECK_EQ(r.S().Int("storage.0.temp"), 33LL);
+  // a failing read keeps the last good values instead of emptying the page
+  r.w.storage.failRead = true;
+  r.Run(20);
+  CHECK_EQ(r.S().Int("storage.n"), 2LL);
+  CHECK_EQ(r.S().Int("storage.1.temp"), 35LL);
+}
+
+TEST(ctl_first_drive_read_failing_publishes_nothing_and_is_not_hammered) {
+  sim::World w;
+  w.storage.failRead = true;
+  Controller c(w.hw(), Opts(""));
+  c.Start();
+  CHECK(!c.Snapshot().Has("storage.n"));                 // the page shows "not available", not "0 drives"
+  const int reads = w.storage.reads;
+  CHECK(reads >= 1);
+  for (int i = 0; i < 3; i++) { w.clock.Advance(1000); c.PollOnce(false); }
+  CHECK_EQ(w.storage.reads, reads);                      // retried every few seconds, not on every poll
+  w.storage.failRead = false;
+  for (int i = 0; i < 9; i++) { w.clock.Advance(1000); c.PollOnce(false); }
+  CHECK_EQ(c.Snapshot().Int("storage.n"), 2LL);
+}

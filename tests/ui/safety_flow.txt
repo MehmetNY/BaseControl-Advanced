@@ -1,0 +1,193 @@
+# Safety and service: the write-protection switches (risky ones ask first), the kill switch really blocks writes, confirmations given
+# elsewhere show up and can be reset, the OEM service is taken over and given back, the service buttons start the elevated helper
+# (recorded by the script, never run) and the diagnostics text can be copied.
+# Run: BaseControl.exe --sim --script tests/ui/safety_flow.txt --size 1360x1500
+say == 1. defaults: writes allowed, nothing unlocked, settings kept ==
+page safety
+expect cfg.readonly 0
+expect cfg.experimental 0
+expect cfg.keep 1
+expect dev.class verified
+expect svc.mode sim
+shot /tmp/shots/sf_default.png
+
+say == 2. the kill switch blocks a real hardware write, and lifting it lets the write through ==
+page prefs
+let fn snap:pref.fnlock
+page safety
+clickid sp#readonly
+wait 300
+expect cfg.readonly 1
+page prefs
+clickid sw#pref.fnlock
+wait 800
+say   (the Fn lock must not have changed)
+expect pref.fnlock $fn
+shot /tmp/shots/sf_readonly.png
+page safety
+clickid sp#readonly
+wait 300
+expect cfg.readonly 0
+page prefs
+clickid sw#pref.fnlock
+wait 800
+expect pref.fnlock !$fn
+clickid sw#pref.fnlock
+wait 800
+expect pref.fnlock $fn
+
+say == 3. experimental writes ask first; Cancel changes nothing, Allow turns it on, the switch turns it off without asking ==
+page safety
+clickid sp#experimental
+wait 300
+shot /tmp/shots/sf_modal_experimental.png
+clickid modal#0
+wait 300
+expect cfg.experimental 0
+clickid sp#experimental
+clickid modal#1
+wait 300
+expect cfg.experimental 1
+clickid sp#experimental
+wait 300
+expect cfg.experimental 0
+
+say == 4. the unrecognised-model switch is not offered on a recognised laptop ==
+clickid sp#unknown
+wait 300
+expect cfg.unknownModel
+
+say == 5. administrators only: asks first, turning it off does not ==
+clickid sp#adminonly
+wait 300
+clickid modal#0
+wait 300
+expect cfg.adminOnly
+clickid sp#adminonly
+clickid modal#1
+wait 300
+expect cfg.adminOnly 1
+shot /tmp/shots/sf_adminonly.png
+clickid sp#adminonly
+wait 300
+expect cfg.adminOnly 0
+
+say == 6. keeping settings applied: apply-at-start follows it ==
+clickid sp#onstart
+wait 300
+expect cfg.applyOnStart 0
+clickid sp#onstart
+wait 300
+expect cfg.applyOnStart 1
+clickid sp#keep
+wait 300
+expect cfg.keep 0
+say   (with keeping off, the apply-at-start switch is disabled and does nothing)
+clickid sp#onstart
+wait 300
+expect cfg.applyOnStart 1
+shot /tmp/shots/sf_keepoff.png
+clickid sp#keep
+wait 300
+expect cfg.keep 1
+
+say == 7. a confirmation given on another page shows here and can be taken back ==
+page custom
+dragid sl#ec.pl2 0.95
+clickid ok#ec.pl2
+wait 400
+shot /tmp/shots/sf_consent_modal.png
+clickid modal#1
+wait 1500
+expect cfg.consent.ec_pl_high 1
+page safety
+shot /tmp/shots/sf_consents.png
+clickid cs#reset
+wait 600
+expect cfg.consent.ec_pl_high
+
+say == 8. the OEM service: taking over asks first and can be refused by Windows, then it works, then it is given back ==
+page safety
+expect oem.installed 1
+expect oem.running 1
+expect cfg.takeover 0
+clickid oem#takeover
+wait 300
+shot /tmp/shots/sf_modal_takeover.png
+clickid modal#0
+wait 300
+expect oem.running 1
+external oem.fail 1
+clickid oem#takeover
+clickid modal#1
+wait 1500
+expect oem.running 1
+expect cfg.takeover 0
+expect last.error ~could not stop the OEM service
+external oem.fail 0
+clickid oem#takeover
+clickid modal#1
+wait 1800
+expect oem.running 0
+expect cfg.takeover 1
+shot /tmp/shots/sf_takenover.png
+clickid oem#restore
+wait 1800
+expect oem.running 1
+expect cfg.takeover 0
+external oem.installed 0
+wait 3500
+expect oem.installed 0
+shot /tmp/shots/sf_no_oem.png
+external oem.installed 1
+wait 3500
+expect oem.installed 1
+
+say == 9. the service buttons: each starts the elevated helper with its own verb; stop and remove ask first ==
+external svc.state running
+page safety
+clickid sv#stop
+wait 300
+shot /tmp/shots/sf_modal_stop.png
+clickid modal#0
+wait 300
+expectui elev.last
+clickid sv#stop
+clickid modal#1
+wait 300
+expectui elev.last --stop-service
+external svc.state stopped
+wait 300
+shot /tmp/shots/sf_svc_stopped.png
+clickid sv#start
+wait 300
+expectui elev.last --start-service
+clickid sv#remove
+wait 300
+shot /tmp/shots/sf_modal_remove.png
+clickid modal#1
+wait 300
+expectui elev.last --uninstall-service
+external svc.state missing
+wait 300
+shot /tmp/shots/sf_svc_missing.png
+clickid sv#install
+wait 300
+expectui elev.last --install-service
+
+say == 10. diagnostics: the report can be copied and the hardware check can run again ==
+external svc.state running
+page safety
+clickid dg#copy
+wait 300
+expectui clip.last ~BaseControl Advanced
+expectui clip.last ~Capabilities
+say   (the report carries the device summary: model, support level, memory and drives, but no serial numbers)
+expectui clip.last ~Support level: verified
+expectui clip.last ~WD Green SN3000
+expectui clip.last ~Samsung
+clickid dg#probe
+wait 2000
+expect dev.class verified
+expect ec.link connected
+shot /tmp/shots/sf_end.png

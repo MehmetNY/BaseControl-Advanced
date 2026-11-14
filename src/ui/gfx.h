@@ -57,7 +57,7 @@ enum class Align { Left, Center, Right };
 enum class IconId {
   None, Overview, Settings, Performance, Profiles, Fan, Custom, Apps, Lighting, Battery, Display, Info, Shield, Bolt, Plug, Cpu, Gpu, Ram,
   Thermo, Wifi, Bluetooth, Camera, Touchpad, Keyboard, Check, Cross, Warn, Lock, ChevronR, ChevronD, Plus, Trash, Refresh, Undo, External,
-  Copy, Power, Eye, Log, Gamepad, Chip, Sliders, Sun, Moon, Key, Folder, Download, Service, Leaf
+  Copy, Power, Eye, Log, Gamepad, Chip, Sliders, Sun, Moon, Key, Folder, Download, Service, Leaf, Drive
 };
 
 class Gfx {

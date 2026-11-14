@@ -66,7 +66,7 @@ int Help() {
       "BaseControl Advanced %s\n\n"
       "  BaseControl.exe                 open the window (service mode)\n"
       "  --local                         window + in-process controller (administrator)\n"
-      "  --sim                           window on a simulated laptop\n"
+      "  --sim [--sim-model exact|family|unknown]   window on a simulated laptop\n"
       "  --tray                          start hidden in the tray\n"
       "  --lang en|tr                    interface language\n"
       "  --service-console               run the service in this console\n"
@@ -148,6 +148,7 @@ int WINAPI WinMain(HINSTANCE hi, HINSTANCE, LPSTR, int show) {
     if (s == "--probe") return Probe();
     if (s == "--local") o.mode = "local";
     else if (s == "--sim") o.mode = "sim";
+    else if (s == "--sim-model" && i + 1 < a.size()) o.simModel = a[++i];
     else if (s == "--tray") o.tray = true;
     else if (s == "--lang" && i + 1 < a.size()) o.lang = a[++i];
     else if (s == "--shot" && i + 2 < a.size()) {

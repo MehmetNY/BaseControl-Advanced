@@ -169,16 +169,50 @@ class ICrossProcessLock {
 };
 
 // ------------------------------------------------------------------------------------------------ identity / misc
+// One populated memory slot (or soldered package) as the firmware describes it (SMBIOS type 17). Serial numbers are never read.
+struct MemModule {
+  int sizeMb = 0;
+  std::string type;          // "DDR4", "LPDDR5" ... ("" when the firmware code is unknown)
+  int ratedMts = 0;          // speed the module is rated for (0 = not reported)
+  int runMts = 0;            // speed it runs at now (0 = not reported)
+  std::string locator, maker, part;
+};
+
 struct HostInfo {
   std::string os, cpu, ram, machineName;
   std::string gpus;   // display adapters installed in Windows, ';' separated (integrated first when the driver lists it first)
   std::string biosVendor, biosVersion, sysVendor, sysProduct, boardName;
+  int cpuCores = 0, cpuThreads = 0, cpuBaseMhz = 0;   // 0 = not reported
+  std::vector<MemModule> memory;                      // populated slots only
   bool elevated = true;
 };
 class IHostInfo {
  public:
   virtual ~IHostInfo() = default;
   virtual HostInfo Get() = 0;
+};
+
+// ------------------------------------------------------------------------------------------------ storage (read-only inventory + health)
+struct StorageDrive {
+  std::string model;           // as the drive reports it, whitespace collapsed
+  std::string bus;             // "NVMe" | "SATA" | "SAS" | "SCSI" | "RAID" | "ATA"
+  bool ssd = false;
+  uint64_t sizeBytes = 0;
+  // Health. -1 = not reported (the drive, the driver or this process's rights did not provide it).
+  int tempC = -1;
+  long long powerCycles = -1;
+  long long powerOnHours = -1;
+  int wearPct = -1;            // NVMe "percentage used" (100 = rated endurance reached; may exceed 100)
+  int sparePct = -1;           // NVMe "available spare"
+  int critWarn = -1;           // NVMe critical-warning bit field (0 = none)
+  long long writtenGb = -1;    // total host data written, decimal GB
+};
+
+class IStorage {
+ public:
+  virtual ~IStorage() = default;
+  // Lists the internal drives. With health=false only the inventory is read (no SMART/log-page queries).
+  virtual bool Read(std::vector<StorageDrive>* out, bool health) = 0;
 };
 
 // Everything the controller needs, owned by the composition root (service / UI host / simulator).
@@ -197,6 +231,7 @@ struct Hardware {
   IOemControl* oem = nullptr;
   ILightHid* light = nullptr;
   IHostInfo* host = nullptr;
+  IStorage* storage = nullptr;             // optional (Device info page)
   IFpsSource* fps = nullptr;               // optional
   ICrossProcessLock* applyLock = nullptr;  // optional
 };

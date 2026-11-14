@@ -7,6 +7,7 @@
 #include "../mgp/core/hardware_identity_guard.h"
 #include "../mgp/core/smbios.h"
 #include "fsutil.h"
+#include "hostdata.h"
 #include "profile_text.h"
 #include "registers.h"
 #include "util.h"
@@ -126,6 +127,7 @@ KV Controller::Snapshot() const {
   std::lock_guard<std::mutex> g(snapMu_);
   KV out;
   out.Merge(sStatic_); out.Merge(sCaps_); out.Merge(sEc_); out.Merge(sGpu_); out.Merge(sMsr_); out.Merge(sOs_); out.Merge(sMisc_);
+  out.Merge(sStor_);
   out.Merge(sStatus_);
   return out;
 }
@@ -215,6 +217,13 @@ void Controller::PollOnce(bool full) {
     lastOs_ = now;
     did = true;
   }
+  // Drive health: read while the window is open (every few seconds) and once at start; never while the UI is hidden, so a sleeping
+  // drive is not woken for nobody.
+  if (hw_.storage && (!storageKnown_ || ((full || vis) && now - lastStorage_ >= (full ? 3000u : 5000u)))) {
+    PollStorage();
+    lastStorage_ = now;
+    did = true;
+  }
   if (full || now - lastHk_ >= 1000) {
     Housekeeping();
     lastHk_ = now;
@@ -302,6 +311,22 @@ void Controller::PublishStatic() {
     s.Set("host.product", h.sysProduct);
     s.Set("host.board", h.boardName);
     s.SetB("host.elevated", h.elevated);
+    if (h.cpuCores > 0) s.SetI("host.cores", h.cpuCores);
+    if (h.cpuThreads > 0) s.SetI("host.threads", h.cpuThreads);
+    if (h.cpuBaseMhz > 0) s.SetI("host.cpu.mhz", h.cpuBaseMhz);
+    int n = 0;
+    for (const MemModule& m : h.memory) {
+      if (n >= 8) break;
+      const std::string p = Fmt("host.mem.%d.", n++);
+      s.SetI(p + "mb", m.sizeMb);
+      if (!m.type.empty()) s.Set(p + "type", CleanText(m.type, 12));
+      if (m.ratedMts > 0) s.SetI(p + "rated", m.ratedMts);
+      if (m.runMts > 0) s.SetI(p + "run", m.runMts);
+      if (!m.locator.empty()) s.Set(p + "slot", CleanText(m.locator, 40));
+      if (!m.maker.empty()) s.Set(p + "maker", CleanText(m.maker, 40));
+      if (!m.part.empty()) s.Set(p + "part", CleanText(m.part, 40));
+    }
+    s.SetI("host.mem.n", n);
   }
   std::lock_guard<std::mutex> g(snapMu_);
   sStatic_ = s;

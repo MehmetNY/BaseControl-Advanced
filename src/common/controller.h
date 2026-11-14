@@ -137,6 +137,9 @@ class Controller {
   Result SetOsCpu(const std::string& key, int value);
   bool MsrR(uint32_t m, uint64_t* v);
 
+  // ---- storage inventory and drive health, read-only (ctl_storage.cpp)
+  void PollStorage();
+
   // ---- misc (ctl_misc.cpp)
   void ProbeMisc();
   void PollMisc();
@@ -179,7 +182,7 @@ class Controller {
 
   // ---- state (touched on the worker only, except under snapMu_)
   mutable std::mutex snapMu_;
-  KV sStatic_, sCaps_, sEc_, sGpu_, sMsr_, sOs_, sMisc_, sStatus_;
+  KV sStatic_, sCaps_, sEc_, sGpu_, sMsr_, sOs_, sMisc_, sStor_, sStatus_;
   std::vector<std::string> log_;  // ring tail for diagnostics
   KV cfg_;
   std::map<std::string, KV> profiles_;
@@ -199,7 +202,8 @@ class Controller {
   std::atomic<bool> stop_{false};
   std::atomic<bool> visible_{true};
   bool started_ = false;
-  uint64_t lastFast_ = 0, lastSlow_ = 0, lastOs_ = 0, lastHk_ = 0, lastLight_ = 0;
+  uint64_t lastFast_ = 0, lastSlow_ = 0, lastOs_ = 0, lastHk_ = 0, lastLight_ = 0, lastStorage_ = 0;
+  bool storageKnown_ = false;             // PollStorage has read the drives at least once
   std::vector<std::string> pendingEvents_;
   uint64_t reapplyAt_ = 0;
   std::string reapplyWhy_;

@@ -6,6 +6,7 @@
 #include <cstring>
 
 #include "../common/fsutil.h"
+#include "../common/hostdata.h"
 #include "../common/util.h"
 #include "../common/version.h"
 #include "app_internal.h"
@@ -116,7 +117,8 @@ void App::ApplyAccent() {
 void App::MakeBackend() {
   Impl& d = *d_;
   if (opt_.mode == "sim") {
-    d.simWorld.reset(new sim::World(sim::Model::Exact, true));
+    const sim::Model sm = opt_.simModel == "unknown" ? sim::Model::Unknown : opt_.simModel == "family" ? sim::Model::Family : sim::Model::Exact;
+    d.simWorld.reset(new sim::World(sm, true));
     Controller::Options co;
     co.mode = "sim";
     co.version = BC_VERSION;
@@ -521,6 +523,8 @@ void* App::WindowHandle() const { return d_ ? static_cast<void*>(d_->hwnd) : nul
 
 void App::OpenUrl(const std::string& url) {
   if (url.compare(0, 8, "https://") != 0) return;
+  Str("url.last") = url;
+  if (shot_) return;
   ShellExecuteW(nullptr, L"open", Wide(url).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 }
 
@@ -544,6 +548,11 @@ void App::OpenWindowsTool(const std::string& id) {
 }
 
 void App::CopyText(const std::string& text) {
+  if (shot_) {   // offscreen renders and scripts never touch the real clipboard; the text is kept for the script to check
+    Str("clip.last") = text;
+    ui_.Toast(T("Copied to the clipboard"), ToastKind::Ok);
+    return;
+  }
   const std::wstring w = Wide(text);
   if (!OpenClipboard(d_->hwnd)) return;
   EmptyClipboard();
@@ -565,6 +574,11 @@ void App::CopyText(const std::string& text) {
 
 void App::RunElevated(const std::wstring& args, const std::string& doneToast) {
   if (d_->elevProc) return;
+  Str("elev.last") = Narrow(args);
+  if (shot_) {   // offscreen renders and scripts never ask Windows for administrator rights; the request is kept for the script to check
+    ui_.Toast(doneToast.empty() ? T("Done") : doneToast, ToastKind::Ok);
+    return;
+  }
   SHELLEXECUTEINFOW sei = {};
   sei.cbSize = sizeof sei;
   sei.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC;
@@ -606,11 +620,11 @@ void App::SetAutostart(bool on) {
 }
 
 std::string App::ProbeReport() const {
-  std::string o;
-  o += Fmt("BaseControl Advanced %s (mode: %s)\n", BC_VERSION, mode_.c_str());
-  o += Fmt("Model: %s %s | board %s | BIOS %s\n", S("host.vendor").c_str(), S("host.product").c_str(), S("host.board").c_str(), S("host.bios").c_str());
-  o += Fmt("CPU: %s | RAM: %s | OS: %s\n", S("host.cpu").c_str(), S("host.ram").c_str(), S("host.os").c_str());
-  o += Fmt("Device class: %s (EC project %s) | elevated: %s\n", S("dev.class").c_str(), S("dev.project").c_str(), S("host.elevated").c_str());
+  // The same plain-text description the Device info page copies (model, firmware, processor, graphics, memory, drives: no serial numbers,
+  // no computer or user name), then what the controller detected and what it logged.
+  std::string o = "BaseControl Advanced diagnostics\n\n";
+  o += DeviceSummary(snap_);
+  o += Fmt("Window mode: %s | EC project: %s | elevated: %s\n", mode_.c_str(), S("dev.project").c_str(), S("host.elevated").c_str());
   o += "\nCapabilities:\n";
   for (const auto& p : snap_.All()) {
     if (p.first.compare(0, 4, "cap.") != 0) continue;

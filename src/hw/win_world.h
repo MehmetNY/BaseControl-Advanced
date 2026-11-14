@@ -19,6 +19,7 @@
 #include "os_display.h"
 #include "os_power.h"
 #include "pawnio_msr.h"
+#include "storage_win.h"
 #include "winutil.h"
 
 namespace bc {
@@ -67,6 +68,7 @@ class WinWorld {
   std::unique_ptr<OemServices> oem_;
   std::unique_ptr<IteHid> light_;
   std::unique_ptr<HostInfoWin> host_;
+  std::unique_ptr<StorageWin> storage_;
   std::unique_ptr<NamedApplyLock> lock_;
   Hardware hw_;
 };

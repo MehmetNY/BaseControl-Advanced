@@ -1,0 +1,45 @@
+# Custom profiles: a slider only DRAFTS a value; nothing reaches the hardware until Confirm is pressed.
+# Run: BaseControl.exe --sim --script tests/ui/custom_flow.txt   (simulator, Wine or Windows)
+say == 1. moving a slider changes nothing ==
+page custom
+expect ec.pl1 120
+expect ec.pl2 120
+dragid sl#ec.pl1 0.3
+expectdraft ec.pl1 1
+wait 800
+expect ec.pl1 120
+expect ec.pl2 120
+shot /tmp/shots/s1_draft.png
+
+say == 2. Confirm sends exactly that value ==
+dump ec.pl1
+clickid ok#ec.pl1
+wait 1500
+dump ec.pl1
+expectdraft ec.pl1 0
+expect ec.pl2 120
+
+say == 3. the LIVE reading follows another program ==
+external ec.pl2 135
+wait 1500
+expect ec.pl2 135
+shot /tmp/shots/s3_external.png
+
+say == 4. a draft that breaks PL1 <= PL2 cannot be confirmed ==
+dragid sl#ec.pl1 0.95
+expectdraft ec.pl1 1
+clickid ok#ec.pl1
+wait 600
+dump ec.pl1
+shot /tmp/shots/s4_invalid.png
+clickid dc#ec.pl1
+expectdraft ec.pl1 0
+
+say == 5. Discard drops every draft ==
+dragid sl#ec.pl2 0.2
+dragid sl#nv.offset.core 0.7
+expectdraft ec.pl2 1
+expectdraft nv.offset.core 1
+clickid cu#discard
+expectdraft ec.pl2 0
+expectdraft nv.offset.core 0

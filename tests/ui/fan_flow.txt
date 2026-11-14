@@ -1,0 +1,89 @@
+# Fan settings: dragging a curve point only makes a draft; the hardware changes on Apply / Save only; boost and the mode follow the same rules.
+# Run: BaseControl.exe --sim --script tests/ui/fan_flow.txt --size 1360x1500
+say == 1. the page starts in Auto with nothing drafted ==
+page fan
+expect fan.mode auto
+let storedBefore snap:cfg.fan.cpu
+let ecBefore snap:fan.cpu.curve
+dump fan.cpu.curve
+expectui fan.d.cpu
+expectui fan.d.gpu
+
+say == 2. dragging a handle only makes a draft ==
+dragby fh#3 0 -50
+expectui fan.d.cpu *
+expect fan.cpu.curve $ecBefore
+expect cfg.fan.cpu $storedBefore
+expect fan.mode auto
+shot /tmp/shots/f1_draft.png
+
+say == 3. discard drops the draft ==
+clickid fan.discard
+expectui fan.d.cpu
+
+say == 4. Save curves stores the draft but leaves the fans alone ==
+dragby fh#3 0 -50
+let draft ui:fan.d.cpu
+clickid fan.save
+wait 800
+expectui fan.d.cpu
+expect cfg.fan.cpu $draft
+expect cfg.fan.cpu !$storedBefore
+expect fan.mode auto
+expect fan.cpu.curve $ecBefore
+
+say == 5. Apply and use them writes the curves and switches to Custom ==
+dragby fh#5 0 -30
+let draft2 ui:fan.d.cpu
+clickid fan.applyuse
+wait 1200
+expect fan.mode custom
+expect fan.cpu.curve $draft2
+expectui fan.d.cpu
+shot /tmp/shots/f2_custom.png
+
+say == 6. a click on a box selects the point and the arrow keys move it (still a draft) ==
+clickid fb#2
+key 0x26
+key 0x26
+key 0x27
+expectui fan.d.cpu *
+expect fan.cpu.curve $draft2
+clickid fan.discard
+expectui fan.d.cpu
+
+say == 7. link: one curve for both fans ==
+clickid pr#fan.link
+expectpref fan.link 1
+dragby fh#2 0 -40
+let both ui:fan.d.cpu
+expectui fan.d.gpu $both
+clickid fan.apply
+wait 1200
+expect fan.cpu.curve $both
+expect fan.gpu.curve $both
+clickid pr#fan.link
+expectpref fan.link 0
+
+say == 8. boost is an immediate switch that remembers the previous mode ==
+clickid tg#fan.boost
+wait 700
+expect fan.mode boost
+clickid tg#fan.boost
+wait 700
+expect fan.mode custom
+
+say == 9. the cooling mode needs Confirm ==
+clickid cmb#fan.mode
+clickid opt#0
+expect fan.mode custom
+clickid ok#fan.mode
+wait 700
+expect fan.mode auto
+
+say == 10. fixed-speed sliders only draft until Confirm ==
+dragid sl#fan.fixed.cpu 0.8
+expectdraft fan.fixed.cpu 1
+expect fan.fixed.cpu 0
+expect fan.mode auto
+shot /tmp/shots/f3_fixed_draft.png

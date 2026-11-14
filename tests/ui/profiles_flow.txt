@@ -1,0 +1,55 @@
+# Performance profiles: cards apply a profile, the power-source rule is stored, profiles can be saved and deleted.
+# Run: BaseControl.exe --sim --script tests/ui/profiles_flow.txt --size 1360x900
+say == 1. a card applies its profile ==
+page profiles
+expect profile.active
+clickid pc#Balanced
+wait 800
+expect profile.active Balanced
+expect ec.pl1 60
+expect ec.pl2 80
+clickid pc#Quiet
+wait 800
+expect profile.active Quiet
+expect ec.pl1 35
+shot /tmp/shots/p1_cards.png
+
+say == 2. power-source switching is stored and the combos work ==
+expect cfg.prof.auto
+clickid tg#prof.auto
+wait 600
+expect cfg.prof.auto 1
+clickid cb#prof.batt
+clickid opt#1
+wait 600
+expect cfg.prof.batt Balanced
+clickid cb#prof.ac
+clickid opt#3
+wait 600
+expect cfg.prof.ac Enthusiast
+shot /tmp/shots/p2_behaviour.png
+
+say == 3. a profile of your own: save, apply, delete ==
+clickid in#prof.save
+type Night
+clickid bt#prof.save
+wait 800
+expect profile.active Night
+expect profile.list Quiet,Balanced,Enthusiast,Overboost,Night
+clickid pc#Balanced
+wait 800
+expect ec.pl1 60
+clickid pd#Night
+clickid modal#0
+wait 400
+expect profile.list Quiet,Balanced,Enthusiast,Overboost,Night
+clickid pd#Night
+clickid modal#1
+wait 800
+expect profile.list Quiet,Balanced,Enthusiast,Overboost
+shot /tmp/shots/p3_after.png
+
+say == 4. a built-in name cannot be taken ==
+clickid in#prof.save
+type Quiet
+shot /tmp/shots/p4_reserved.png

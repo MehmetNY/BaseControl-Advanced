@@ -1,0 +1,92 @@
+# Application profiles: add a program with the editor, edit it, pick one that is open, reorder, remove, master switch, matching.
+# Run: BaseControl.exe --sim --script tests/ui/apps_flow.txt --size 1360x1100
+say == 1. add a program ==
+page apps
+expect cfg.app.0.exe
+clickid apps.add
+shot /tmp/shots/a1_add.png
+clickid in#apps.exe
+type  C:\Games\Night Game\Game
+clickid in#apps.name
+type My game
+clickid cb#apps.prof
+clickid opt#3
+clickid apps.save
+wait 900
+expect cfg.app.0.exe game.exe
+expect cfg.app.0.profile Overboost
+expect cfg.app.0.name My game
+expectui apps.exe
+say   (the editor closed itself after saving)
+shot /tmp/shots/a2_one.png
+
+say == 2. edit it ==
+clickid ae#0
+expectui apps.exe game.exe
+expectui apps.name My game
+clickid cb#apps.prof
+clickid opt#2
+shot /tmp/shots/a3_edit.png
+clickid apps.save
+wait 900
+expect cfg.app.0.profile Enthusiast
+
+say == 3. pick a program that is open now ==
+clickid apps.add
+clickid cb#apps.run
+clickid opt#1
+expectui apps.exe blender.exe
+expectui apps.name Blender
+clickid apps.save
+wait 900
+expect cfg.app.1.exe blender.exe
+expect cfg.app.1.name Blender
+
+say == 4. a duplicate is refused ==
+clickid apps.add
+clickid in#apps.exe
+type GAME
+clickid apps.save
+wait 500
+expect cfg.app.2.exe
+shot /tmp/shots/a4_duplicate.png
+clickid apps.cancel
+
+say == 5. order decides which program wins ==
+clickid au#1
+wait 600
+expect cfg.app.0.exe blender.exe
+expect cfg.app.1.exe game.exe
+expect cfg.app.1.name My game
+
+say == 6. matching follows the running programs and the master switch ==
+running game.exe
+wait 4500
+expect app.active game.exe
+expect profile.active Enthusiast
+clickid tg#app.auto
+wait 1500
+expect cfg.app.auto 0
+expect app.active
+clickid tg#app.auto
+wait 4500
+expect cfg.app.auto 1
+expect app.active game.exe
+running blender.exe game.exe
+wait 4500
+expect app.active blender.exe
+shot /tmp/shots/a5_active.png
+running
+
+say == 7. remove ==
+wait 4000
+expect app.active
+clickid ae#1
+clickid apps.remove
+clickid modal#0
+expect cfg.app.1.exe game.exe
+clickid apps.remove
+clickid modal#1
+wait 900
+expect cfg.app.1.exe
+expect cfg.app.0.exe blender.exe

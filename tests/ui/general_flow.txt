@@ -1,0 +1,52 @@
+# General settings: preferences, key mapping flow, overlay settings and the key actions (simulator).
+# Run: BaseControl.exe --sim --script tests/ui/general_flow.txt
+say == 1. preference switches write to ui.kv state ==
+page prefs
+clickid pr#keys.winlock
+expectpref keys.winlock 1
+clickid pr#keys.winlock
+expectpref keys.winlock 0
+clickid pr#tray.min
+expectpref tray.min 1
+
+say == 2. the OSD preview follows the settings ==
+page osd
+clickid pr#osd.on
+expectpref osd.on 1
+clickid pr#osd.mem
+expectpref osd.mem 1
+clickid seg#osd.corner#3
+expectpref osd.corner 3
+wait 600
+shot /tmp/shots/g_osd.png
+
+say == 3. a game name is normalised and added ==
+page osd
+clickid in#osd.game
+type Cyberpunk2077.EXE
+clickid bt#osd.game
+expectpref osd.games cyberpunk2077.exe
+
+say == 4. pick a key by pressing it, give it a job, see it in the list ==
+page keys
+clickid keys.detect
+capture 67
+clickid cmb#keys.act
+clickid opt#7
+clickid keys.map
+expectpref keys.map 67=osd_toggle
+shot /tmp/shots/g_keys.png
+
+say == 5. actions that talk to the controller ==
+fire profile_next
+wait 800
+dump profile.active
+fire fan_boost
+wait 800
+expect fan.mode boost
+fire fan_boost
+wait 800
+expect fan.mode auto
+fire touchpad_toggle
+wait 800
+dump dev.touchpad

@@ -1,0 +1,42 @@
+# About: version and reference, the language combo (same preference as the top bar and General settings), the credit tiles that open
+# the projects' pages (recorded by the script, never opened) and the copyable version text.
+# Run: BaseControl.exe --sim --script tests/ui/about_flow.txt --size 1360x1500
+say == 1. the page shows the version and the credits ==
+page about
+expect app.version 1.0.0
+shot /tmp/shots/ab_default.png
+
+say == 2. the language combo changes the stored language; Turkish shows at once, Automatic goes back to the system language ==
+clickid cb#lang
+shot /tmp/shots/ab_combo.png
+clickid opt#2
+expectpref lang tr
+shot /tmp/shots/ab_tr.png
+clickid cb#lang
+clickid opt#1
+expectpref lang en
+clickid cb#lang
+clickid opt#0
+expectpref lang auto
+
+say == 3. the buttons and the credit tiles open the right pages; a tile without a link does nothing ==
+expectui url.last
+clickid ab#site
+expectui url.last https://github.com/MehmetNY/BaseControl-Advanced
+clickid ab#issue
+expectui url.last https://github.com/MehmetNY/BaseControl-Advanced/issues/new
+clickid cr#0
+expectui url.last https://github.com/MehmetNY/BaseControl-Advanced/issues/new
+clickid cr#1
+expectui url.last https://github.com/MehmetNY/Monster-XMG-Gpu-Power-Control
+clickid cr#10
+expectui url.last https://github.com/namazso/PawnIO
+
+say == 4. the version text can be copied ==
+clickid ab#copy
+expectui clip.last ~BaseControl Advanced 1.0.0
+expectui clip.last ~OEM Control Center 4.9.47.11
+expectui clip.last ~GNU GPL v3
+hoverid cr#4
+wait 700
+shot /tmp/shots/ab_hover.png

@@ -165,7 +165,7 @@ float PageOverview(App& a, const Rect& r) {
       ui.Bar(Rect(bar.x, bar.y + 2, bar.w, 8), static_cast<float>(pct / 100.0), bc2, 4);
       k.Gap(2);
       k.Info(T("Power source"), ac ? T("AC adapter") : T("Battery"), ac ? 0 : th.amber);
-      if (a.Has("batt.full") && a.Has("batt.design") && a.N("batt.design") > 0) k.Info(T("Battery health"), Num(100.0 * a.N("batt.full") / a.N("batt.design")) + " %");
+      if (a.Has("batt.full") && a.Has("batt.design") && a.N("batt.design") > 0) k.Info(T("Battery health"), Pct(100.0 * a.N("batt.full") / a.N("batt.design")));
       else k.Gap(kRowInfo);
     };
     if (!stack) {
@@ -298,7 +298,7 @@ float PageOverview(App& a, const Rect& r) {
     {
       Card k(c, m, T("Active settings"), T("Click a line to change it"), IconId::Sliders, 7 * 40);
       std::string prof = a.S("profile.active");
-      LinkRow(k, "prof", T("Performance profile"), prof.empty() ? T("Custom values") : (prof == "Quiet" || prof == "Balanced" || prof == "Enthusiast" || prof == "Overboost" ? T(prof) : prof), Page::Profiles);
+      LinkRow(k, "prof", T("Performance profile"), prof.empty() ? T("Custom values") : ProfileLabel(prof), Page::Profiles);
       LinkRow(k, "pl", T("CPU power limits"), a.Has("ec.pl1") ? Num(a.N("ec.pl1")) + " / " + Num(a.N("ec.pl2")) + " / " + Num(a.N("ec.pl4")) + " W" : Dash(), Page::Custom);
       LinkRow(k, "ctgp", T("GPU power (cTGP)"), a.Has("gpu.ctgp") ? With(a.N("gpu.ctgp"), 0, "W") : Dash(), Page::Custom);
       LinkRow(k, "fan", T("Cooling"), a.Has("fan.mode") ? EnumNice(a.S("fan.mode")) : Dash(), Page::Fan);
@@ -307,7 +307,7 @@ float PageOverview(App& a, const Rect& r) {
       LinkRow(k, "kbd", T("Keyboard light"), kb, Page::Lighting);
       LinkRow(k, "batt", T("Charge profile"), a.Has("batt.mode") ? EnumNice(a.S("batt.mode")) : Dash(), Page::Battery);
       std::string disp = Dash();
-      if (a.Has("disp.refresh")) disp = Num(a.N("disp.refresh")) + " Hz" + (a.Has("disp.bright") ? "  \xC2\xB7  " + Num(a.N("disp.bright")) + " %" : "");
+      if (a.Has("disp.refresh")) disp = Num(a.N("disp.refresh")) + " Hz" + (a.Has("disp.bright") ? "  \xC2\xB7  " + Pct(a.N("disp.bright")) : "");
       LinkRow(k, "disp", T("Display"), disp, Page::Display);
     }
     // ---- quick profiles
@@ -316,18 +316,12 @@ float PageOverview(App& a, const Rect& r) {
       const std::string list = a.S("profile.list");
       if (!list.empty()) names = Split(list, ',');
       const std::string active = a.S("profile.active");
-      static const char* const kBuiltin[] = {"Quiet", "Balanced", "Enthusiast", "Overboost"};
-      auto builtin = [&](const std::string& n) {
-        for (const char* b : kBuiltin)
-          if (n == b) return true;
-        return false;
-      };
       const float inner = m.InnerW();
       float x = 0, yy = 0;
       struct Item { std::string name; Rect r; };
       std::vector<Item> items;
       for (const std::string& n : names) {
-        const float w = std::min(inner, g.TextW(builtin(n) ? T(n) : n, FontId::Label) + 40);
+        const float w = std::min(inner, g.TextW(ProfileLabel(n), FontId::Label) + 40);
         if (x > 0 && x + w > inner) { x = 0; yy += 46; }
         items.push_back({n, Rect(x, yy, w, 38)});
         x += w + 10;
@@ -337,7 +331,7 @@ float PageOverview(App& a, const Rect& r) {
       for (const Item& it : items) {
         const Rect rc(k.x0 + it.r.x, k.y + it.r.y, it.r.w, it.r.h);
         const bool isActive = it.name == active;
-        const std::string shown = builtin(it.name) ? T(it.name) : it.name;
+        const std::string shown = ProfileLabel(it.name);
         const std::string nm = it.name;
         if (ui.Button("qp#" + it.name, rc, shown, isActive ? Btn::Primary : Btn::Normal, isActive ? IconId::Check : IconId::None, !a.Pending("cmd:profile.apply"))) {
           KV args;

@@ -88,7 +88,8 @@ void App::ApplyShotState() {
   }
   if (opt_.shotDrafts) {
     struct D { const char* key; int delta; };
-    static const D kDrafts[] = {{"ec.pl1", 50}, {"ec.pl2", 70}, {"nv.offset.core", 100}, {"os.max", -8}};
+    // modest edits (a bit quieter, a small GPU offset): the screenshots must not look like a recommendation to overclock
+    static const D kDrafts[] = {{"ec.pl1", -25}, {"ec.pl2", -10}, {"nv.offset.core", 50}, {"os.max", -8}};
     for (const D& d : kDrafts) {
       const SettingDef* def = FindSetting(d.key);
       if (!def) continue;
@@ -445,6 +446,14 @@ int App::RunShot() {
         } else {
           check(lineNo, "ui " + key, Str(key), want);
         }
+      } else if (cmd == "expectmodal") {
+        // whether a dialog is on screen: 1 = open, 0 = closed
+        int want = 0;
+        ss >> want;
+        step(2, 20);
+        const bool open = ui_.ModalOpen();
+        if (open == (want != 0)) std::printf("ok   line %d: dialog is %s\n", lineNo, open ? "open" : "closed");
+        else { std::printf("FAIL line %d: dialog is %s, expected %s\n", lineNo, open ? "open" : "closed", want != 0 ? "open" : "closed"); failures++; }
       } else if (cmd == "expectint") {
         // a number the page keeps in App::Int (a tile choice, a tab)
         std::string key, want;
@@ -504,6 +513,8 @@ int App::RunShot() {
     Cfg("cfg.prof.auto", "1");
     Cfg("cfg.prof.batt", "Quiet");
     step(12, 30);
+    const double calm = NowSeconds() + 4.6;   // let the "applied" toasts of the set-up above fade out before the picture is taken
+    while (NowSeconds() < calm) step(1, 40);
   }
   if (opt_.shotDrafts && known && p == Page::Apps) {
     // a lived-in Application profiles page: four programs, one of them running right now

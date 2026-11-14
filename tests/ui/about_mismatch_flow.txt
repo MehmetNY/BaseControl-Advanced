@@ -1,0 +1,7 @@
+# About when the background service comes from another build than the window (an upgrade that did not restart the service): the page says so.
+# Run: BaseControl.exe --sim --sim-version 0.9.0 --script tests/ui/about_mismatch_flow.txt --size 1360x1500
+page about
+expect app.version 0.9.0
+shot /tmp/shots/ab_mismatch.png
+clickid ab#copy
+expectui clip.last ~Service: 0.9.0

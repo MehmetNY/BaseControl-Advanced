@@ -7,6 +7,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "../common/msgtext.h"
+
 namespace bc {
 namespace ui {
 namespace {
@@ -28,6 +30,15 @@ const std::unordered_map<std::string, std::string>& Table() {
     return t;
   }();
   return m;
+}
+
+const bc::MsgTemplates& Templates() {
+  static const bc::MsgTemplates t = [] {
+    bc::MsgTemplates m;
+    for (const Pair& p : kTr) m.Add(p.en, p.tr);
+    return m;
+  }();
+  return t;
 }
 }  // namespace
 
@@ -51,6 +62,17 @@ const std::string& T(const std::string& en) {
   const auto& t = Table();
   auto it = t.find(en);
   return it == t.end() ? en : it->second;
+}
+
+std::string TMsg(const std::string& msg) {
+  if (msg.empty()) return msg;
+  if (g_lang == Lang::En) return bc::CapitalizeMessage(msg);
+  const auto& t = Table();
+  auto it = t.find(msg);
+  if (it != t.end()) return it->second;
+  std::string out;
+  if (Templates().Translate(msg, &out)) return out;
+  return bc::CapitalizeMessage(msg);
 }
 
 std::string Tf(const std::string& en, ...) {

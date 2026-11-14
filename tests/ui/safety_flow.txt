@@ -41,8 +41,22 @@ page safety
 clickid sp#experimental
 wait 300
 shot /tmp/shots/sf_modal_experimental.png
+say   (Enter must not answer the dialog; Esc cancels it)
+expectmodal 1
+key ENTER
+wait 300
+expectmodal 1
+expect cfg.experimental 0
+key ESC
+wait 300
+expectmodal 0
+expect cfg.experimental 0
+clickid sp#experimental
+wait 300
+expectmodal 1
 clickid modal#0
 wait 300
+expectmodal 0
 expect cfg.experimental 0
 clickid sp#experimental
 clickid modal#1

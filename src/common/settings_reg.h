@@ -23,7 +23,7 @@ struct SettingDef {
   const char* unit;          // "W", "C", "%", "mV", "ms", ""
   Ev ev;
   const char* cap;           // capability key that must read "ok" ("" = always available)
-  bool needsExperimental;    // refused unless Settings > Safety > "Allow experimental writes" is on
+  bool needsExperimental;    // refused unless Safety and service > "Allow experimental writes" is on
   const char* enumNames;     // comma separated, for Kind::Enum
 };
 

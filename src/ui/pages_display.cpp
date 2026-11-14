@@ -458,9 +458,9 @@ float PageDisplay(App& a, const Rect& r) {
     t.unit = "K";
     k.Slider(t);
     const struct { const char* key; const char* title; const char* desc; } ch[3] = {
-        {"disp.c.r", "Red", "Takes some red out of the picture. 100 % leaves the channel alone."},
-        {"disp.c.g", "Green", "Takes some green out of the picture. 100 % leaves the channel alone."},
-        {"disp.c.b", "Blue", "Takes some blue out of the picture. 100 % leaves the channel alone."}};
+        {"disp.c.r", N_("Red"), N_("Takes some red out of the picture. 100 % leaves the channel alone.")},
+        {"disp.c.g", N_("Green"), N_("Takes some green out of the picture. 100 % leaves the channel alone.")},
+        {"disp.c.b", N_("Blue"), N_("Takes some blue out of the picture. 100 % leaves the channel alone.")}};
     for (const auto& e : ch) {
       SliderCfg s;
       s.key = e.key;

@@ -46,12 +46,19 @@ std::vector<std::string> Args() {
   return out;
 }
 
+// A GUI-subsystem program has no console of its own. Reach for the parent's console only for the output that is not already going
+// somewhere: `BaseControl.exe --probe > probe.txt` and `| more` keep working, a plain run from a prompt prints to the prompt.
 void AttachParentConsole() {
-  if (AttachConsole(ATTACH_PARENT_PROCESS)) {
-    FILE* f = nullptr;
-    freopen_s(&f, "CONOUT$", "w", stdout);
-    freopen_s(&f, "CONOUT$", "w", stderr);
-  }
+  auto usable = [](DWORD which) {
+    HANDLE h = GetStdHandle(which);
+    return h != nullptr && h != INVALID_HANDLE_VALUE && GetFileType(h) != FILE_TYPE_UNKNOWN;
+  };
+  const bool haveOut = usable(STD_OUTPUT_HANDLE), haveErr = usable(STD_ERROR_HANDLE);
+  if (haveOut && haveErr) return;
+  if (!AttachConsole(ATTACH_PARENT_PROCESS)) return;
+  FILE* f = nullptr;
+  if (!haveOut) freopen_s(&f, "CONOUT$", "w", stdout);
+  if (!haveErr) freopen_s(&f, "CONOUT$", "w", stderr);
 }
 
 void Log(const std::string& line) {
@@ -66,7 +73,7 @@ int Help() {
       "BaseControl Advanced %s\n\n"
       "  BaseControl.exe                 open the window (service mode)\n"
       "  --local                         window + in-process controller (administrator)\n"
-      "  --sim [--sim-model exact|family|unknown]   window on a simulated laptop\n"
+      "  --sim [--sim-model exact|family|unknown] [--sim-version X.Y.Z]   window on a simulated laptop\n"
       "  --tray                          start hidden in the tray\n"
       "  --lang en|tr                    interface language\n"
       "  --service-console               run the service in this console\n"
@@ -149,6 +156,7 @@ int WINAPI WinMain(HINSTANCE hi, HINSTANCE, LPSTR, int show) {
     if (s == "--local") o.mode = "local";
     else if (s == "--sim") o.mode = "sim";
     else if (s == "--sim-model" && i + 1 < a.size()) o.simModel = a[++i];
+    else if (s == "--sim-version" && i + 1 < a.size()) o.simVersion = a[++i];
     else if (s == "--tray") o.tray = true;
     else if (s == "--lang" && i + 1 < a.size()) o.lang = a[++i];
     else if (s == "--shot" && i + 2 < a.size()) {

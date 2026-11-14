@@ -5,6 +5,7 @@
 
 #include "colorramp.h"
 #include "controller.h"
+#include "i18n_mark.h"
 #include "lightfx.h"
 #include "profile_text.h"
 #include "registers.h"
@@ -42,7 +43,7 @@ void Controller::ProbeMisc() {
   SetCap("disp.refresh", di.ok && di.refreshRates.size() > 1 ? "ok" : "absent", "");
   SetCap("disp.color", hw_.display ? "ok" : "absent", "");
   SetCap("disp.sat", !hw_.display ? "absent" : (hw_.display->SaturationSupported() ? "ok" : "unsupported"),
-         hw_.display && !hw_.display->SaturationSupported() ? "Needs the Windows colour-effect API (Magnification.dll), which is not available." : "");
+         hw_.display && !hw_.display->SaturationSupported() ? N_("Needs the Windows colour-effect API (Magnification.dll), which is not available.") : "");
   if (hw_.devices) {
     SetCap("dev.wifi", hw_.devices->Get(Dev::Wifi) >= 0 ? "ok" : "absent");
     SetCap("dev.bt", hw_.devices->Get(Dev::Bluetooth) >= 0 ? "ok" : "absent");
@@ -55,16 +56,16 @@ void Controller::ProbeMisc() {
     std::string why;
     const bool ok = hw_.fps && hw_.fps->Available(&why);
     fpsOk_ = ok;
-    SetCap("fps", ok ? "ok" : "absent", ok ? "" : (hw_.fps ? why : std::string("the frame counter needs the BaseControl service (event tracing)")));
+    SetCap("fps", ok ? "ok" : "absent", ok ? "" : (hw_.fps ? why : std::string(N_("frame counting is not available in this version"))));
   }
   std::string info;
   std::vector<LightZone> zones;
   if (hw_.light) zones = hw_.light->Detect(&info);
   bool z[4] = {false, false, false, false};
   for (LightZone l : zones) z[static_cast<int>(l)] = true;
-  SetCap("light.kbd", z[0] ? "ok" : "absent", z[0] ? "" : "no ITE 048D keyboard controller found");
-  SetCap("light.bar", z[2] ? "ok" : "absent", z[2] ? "" : "no light bar controller (this model has none)");
-  SetCap("light.logo", z[3] ? "ok" : "absent", z[3] ? "" : "no logo controller found");
+  SetCap("light.kbd", z[0] ? "ok" : "absent", z[0] ? "" : N_("no ITE 048D keyboard controller found"));
+  SetCap("light.bar", z[2] ? "ok" : "absent", z[2] ? "" : N_("no light bar controller (this model has none)"));
+  SetCap("light.logo", z[3] ? "ok" : "absent", z[3] ? "" : N_("no logo controller found"));
   for (int i : {0, 2, 3}) {
     light_[i].present = z[i];
     std::string p = std::string("cfg.light.") + ZoneName(i) + ".";
@@ -237,7 +238,7 @@ Result Controller::SetDevice(const std::string& key, bool on) {
   std::string why;
   if (!hw_.devices->Set(d, on, &why)) return Fail("failed.hw", why);
   if (hw_.clock) hw_.clock->SleepMs(300);
-  if (hw_.devices->Get(d) != (on ? 1 : 0)) return Fail("reverted", "the device did not change state");
+  if (hw_.devices->Get(d) != (on ? 1 : 0)) return Fail("reverted", N_("the device did not change state"));
   return Ok();
 }
 
@@ -355,7 +356,7 @@ void Controller::LightEvent(const std::string& ev) {
 // The UI's idle watcher (it can see the user's input; this process, running as SYSTEM in session 0, cannot) reports the state: on=1 once
 // the idle time has passed and again every few seconds while it lasts, on=0 on the next key press or mouse move.
 Result Controller::LightIdleState(const KV& args) {
-  if (!hw_.light || !light_[0].present) return Fail("unsupported", "no keyboard lighting");
+  if (!hw_.light || !light_[0].present) return Fail("unsupported", N_("no keyboard lighting"));
   const bool on = args.Int("on", 0) != 0;
   const uint64_t now = hw_.clock ? hw_.clock->NowMs() : 0;
   if (on && cfg_.Int("cfg.light.idle", 0) <= 0) return Ok();   // switched off meanwhile: ignore a late report
@@ -381,13 +382,13 @@ Result Controller::SetLight(const std::string& key, const std::string& raw) {
   }
   std::string prop;
   int z = ZoneIndex(key, &prop);
-  if (z < 0 || !light_[z].present || !hw_.light) return Fail("unsupported", "lighting zone not present");
+  if (z < 0 || !light_[z].present || !hw_.light) return Fail("unsupported", N_("lighting zone not present"));
   LightZoneState& s = light_[z];
   const std::string pfx = std::string("cfg.light.") + ZoneName(z) + ".";
   if (prop == "power") s.power = raw == "1";
   else if (prop == "color") {
     Rgb c;
-    if (!ParseColor(raw, &c)) return Fail("range", "bad colour");
+    if (!ParseColor(raw, &c)) return Fail("range", N_("bad colour"));
     s.r = c.r; s.g = c.g; s.b = c.b;
   } else if (prop == "bright") s.bright = std::atoi(raw.c_str());
   else if (prop == "effect") {
@@ -441,13 +442,13 @@ bool ValidUtf8(const std::string& s) {
 
 Result Controller::SaveProfile(const std::string& name) {
   std::string n = Trim(name);
-  if (n.empty() || n.size() > 32) return Fail("range", "profile name must be 1..32 characters");
-  if (!ValidUtf8(n)) return Fail("range", "profile names must be valid UTF-8 text");
+  if (n.empty() || n.size() > 32) return Fail("range", N_("profile name must be 1..32 characters"));
+  if (!ValidUtf8(n)) return Fail("range", N_("profile names must be valid UTF-8 text"));
   for (char c : n) {
     const unsigned char u = static_cast<unsigned char>(c);
-    if (!(u >= 0x80 || std::isalnum(u) || c == ' ' || c == '-' || c == '_')) return Fail("range", "profile names may contain letters, digits, space, - and _");
+    if (!(u >= 0x80 || std::isalnum(u) || c == ' ' || c == '-' || c == '_')) return Fail("range", N_("profile names may contain letters, digits, space, - and _"));
   }
-  if (IsBuiltinProfile(n)) return Fail("range", "that name belongs to a built-in profile; pick another name");
+  if (IsBuiltinProfile(n)) return Fail("range", N_("that name belongs to a built-in profile; pick another name"));
   profiles_[n] = CaptureProfileValues();
   activeProfile_ = n;
   SaveProfiles();
@@ -456,8 +457,8 @@ Result Controller::SaveProfile(const std::string& name) {
 }
 
 Result Controller::DeleteProfile(const std::string& name) {
-  if (IsBuiltinProfile(name)) return Fail("range", "built-in profiles cannot be deleted (edit and save them under another name)");
-  if (!profiles_.erase(name)) return Fail("unknown", "no such profile");
+  if (IsBuiltinProfile(name)) return Fail("range", N_("built-in profiles cannot be deleted (edit and save them under another name)"));
+  if (!profiles_.erase(name)) return Fail("unknown", N_("no such profile"));
   if (activeProfile_ == name) activeProfile_.clear();
   SaveProfiles();
   SyncSnapshot();
@@ -566,29 +567,29 @@ bool ParseSlot(const KV& args, const char* key, int* out) {
 
 Result Controller::AppSet(const KV& args) {
   std::string exe;
-  if (!NormalizeExe(args.Str("exe"), &exe)) return Fail("range", "the program must be a plain file name such as game.exe");
+  if (!NormalizeExe(args.Str("exe"), &exe)) return Fail("range", N_("the program must be a plain file name such as game.exe"));
   const std::string profile = Trim(args.Str("profile"));
   if (profiles_.count(profile) == 0) return Fail("unknown", "no such profile: " + profile);
   std::string name = Trim(args.Str("name"));
-  if (name.size() > 48 || !ValidUtf8(name)) return Fail("range", "the display name must be valid text of at most 48 bytes");
+  if (name.size() > 48 || !ValidUtf8(name)) return Fail("range", N_("the display name must be valid text of at most 48 bytes"));
 
   int slot = -1;
   const bool editing = !Trim(args.Str("i")).empty();
   if (editing && !ParseSlot(args, "i", &slot)) return Fail("range", "bad slot");
-  if (editing && !ReadAppSlot(cfg_, slot).Used()) return Fail("range", "that slot is empty");
+  if (editing && !ReadAppSlot(cfg_, slot).Used()) return Fail("range", N_("that slot is empty"));
   int last = -1, firstFree = -1;
   for (int i = 0; i < kAppSlots; i++) {
     const AppEntry e = ReadAppSlot(cfg_, i);
     if (e.Used()) {
       last = i;
-      if (e.exe == exe && i != slot) return Fail("range", "that program is already in the list");
+      if (e.exe == exe && i != slot) return Fail("range", N_("that program is already in the list"));
     } else if (firstFree < 0) {
       firstFree = i;
     }
   }
   if (!editing) {
     slot = last + 1 < kAppSlots ? last + 1 : firstFree;
-    if (slot < 0) return Fail("range", "the list is full (32 programs)");
+    if (slot < 0) return Fail("range", N_("the list is full (32 programs)"));
   }
   AppEntry e;
   e.exe = exe;
@@ -604,7 +605,7 @@ Result Controller::AppSet(const KV& args) {
 
 Result Controller::AppDelete(const KV& args) {
   int slot = 0;
-  if (!ParseSlot(args, "i", &slot) || !ReadAppSlot(cfg_, slot).Used()) return Fail("range", "no such entry");
+  if (!ParseSlot(args, "i", &slot) || !ReadAppSlot(cfg_, slot).Used()) return Fail("range", N_("no such entry"));
   WriteAppSlot(cfg_, slot, AppEntry());
   SaveConfig();
   appRecheck_ = true;
@@ -615,11 +616,11 @@ Result Controller::AppDelete(const KV& args) {
 
 Result Controller::AppMove(const KV& args) {
   int slot = 0;
-  if (!ParseSlot(args, "i", &slot) || !ReadAppSlot(cfg_, slot).Used()) return Fail("range", "no such entry");
+  if (!ParseSlot(args, "i", &slot) || !ReadAppSlot(cfg_, slot).Used()) return Fail("range", N_("no such entry"));
   const int dir = Trim(args.Str("dir")) == "-1" ? -1 : 1;
   int other = slot + dir;
   while (other >= 0 && other < kAppSlots && !ReadAppSlot(cfg_, other).Used()) other += dir;
-  if (other < 0 || other >= kAppSlots) return Fail("range", "already at the end of the list");
+  if (other < 0 || other >= kAppSlots) return Fail("range", N_("already at the end of the list"));
   const AppEntry a = ReadAppSlot(cfg_, slot), b = ReadAppSlot(cfg_, other);
   WriteAppSlot(cfg_, slot, b);
   WriteAppSlot(cfg_, other, a);
@@ -752,11 +753,11 @@ Result Controller::OemTakeover(bool takeover) {
   if (!hw_.oem) return Fail("unsupported", "no service interface");
   std::string why;
   if (takeover) {
-    if (!hw_.oem->StopAndDisable(&why)) return Fail("failed.hw", "could not stop the OEM service: " + why);
+    if (!hw_.oem->StopAndDisable(&why)) return Fail("failed.hw", Fmt(N_("could not stop the OEM service: %s"), why.c_str()));
     cfg_.Set("cfg.takeover", "1");
     L(mgp::LogLevel::Info, "OEM services stopped and disabled (reversible)");
   } else {
-    if (!hw_.oem->EnableAndStart(&why)) return Fail("failed.hw", "could not restore the OEM service: " + why);
+    if (!hw_.oem->EnableAndStart(&why)) return Fail("failed.hw", Fmt(N_("could not restore the OEM service: %s"), why.c_str()));
     cfg_.Set("cfg.takeover", "0");
     L(mgp::LogLevel::Info, "OEM services restored");
   }

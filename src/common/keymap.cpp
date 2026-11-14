@@ -3,31 +3,32 @@
 #include <algorithm>
 #include <cstdlib>
 
+#include "i18n_mark.h"
 #include "util.h"
 
 namespace bc {
 
 const std::vector<KeyAction>& KeyActions() {
   static const std::vector<KeyAction> k = {
-      {"mic_mute", "Mute / unmute the microphone", false},
-      {"vol_mute", "Mute / unmute the sound", false},
-      {"vol_up", "Volume up", true},
-      {"vol_down", "Volume down", true},
-      {"media_play", "Play / pause media", false},
-      {"media_next", "Next track", false},
-      {"media_prev", "Previous track", false},
-      {"osd_toggle", "Show / hide the in-game overlay", false},
-      {"profile_next", "Next performance profile", false},
-      {"fan_boost", "Maximum fans on / off", false},
-      {"kbd_light", "Cycle the keyboard backlight", false},
-      {"touchpad_toggle", "Touchpad on / off", false},
-      {"wifi_toggle", "Wi-Fi on / off", false},
-      {"cam_toggle", "Camera on / off", false},
-      {"screenshot", "Take a screenshot (Snipping Tool)", false},
-      {"calculator", "Open Calculator", false},
-      {"show_window", "Open BaseControl", false},
-      {"lock", "Lock the computer", false},
-      {"disable", "Disable this key", false},
+      {"mic_mute", N_("Mute / unmute the microphone"), false},
+      {"vol_mute", N_("Mute / unmute the sound"), false},
+      {"vol_up", N_("Volume up"), true},
+      {"vol_down", N_("Volume down"), true},
+      {"media_play", N_("Play / pause media"), false},
+      {"media_next", N_("Next track"), false},
+      {"media_prev", N_("Previous track"), false},
+      {"osd_toggle", N_("Show / hide the in-game overlay"), false},
+      {"profile_next", N_("Next performance profile"), false},
+      {"fan_boost", N_("Maximum fans on / off"), false},
+      {"kbd_light", N_("Cycle the keyboard backlight"), false},
+      {"touchpad_toggle", N_("Touchpad on / off"), false},
+      {"wifi_toggle", N_("Wi-Fi on / off"), false},
+      {"cam_toggle", N_("Camera on / off"), false},
+      {"screenshot", N_("Take a screenshot (Snipping Tool)"), false},
+      {"calculator", N_("Open Calculator"), false},
+      {"show_window", N_("Open BaseControl"), false},
+      {"lock", N_("Lock the computer"), false},
+      {"disable", N_("Disable this key"), false},
   };
   return k;
 }

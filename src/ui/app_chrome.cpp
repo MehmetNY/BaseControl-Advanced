@@ -20,22 +20,22 @@ struct Meta {
 };
 
 const Meta kMeta[] = {
-    {Page::Overview, "Device", "Overview", "Live status of your laptop at a glance."},
-    {Page::Prefs, "General settings", "Preferences", "How BaseControl starts and looks, plus keyboard and power-on options."},
-    {Page::Devices, "General settings", "Device manager", "Switch the built-in radios and devices on or off."},
-    {Page::GpuInfo, "General settings", "GPU settings", "GPU power target, clock offsets and the graphics mode."},
-    {Page::Osd, "General settings", "In-game OSD", "Choose what is shown on top of your games."},
-    {Page::Keys, "General settings", "Key remapping", "Assign functions to keys and review the saved mappings."},
-    {Page::Profiles, "Performance", "Performance profiles", "One-click profiles that set power, fans and the Windows CPU policy together."},
-    {Page::Fan, "Performance", "Fan settings", "Fan mode, temperature curves and ramp speed."},
-    {Page::Custom, "Performance", "Custom profiles", "Set power limits, GPU targets and CPU policy yourself. Nothing is sent until you press Confirm."},
-    {Page::Apps, "Performance", "Application profiles", "Switch profiles automatically when a program starts."},
-    {Page::Lighting, "Lighting", "Lighting", "Keyboard backlight colour, effects and idle behaviour."},
-    {Page::Battery, "Battery", "Battery", "Charging profile and battery health."},
-    {Page::Display, "Display", "Display settings", "Brightness, refresh rate, colour and colour modes."},
-    {Page::DeviceInfo, "Device info", "Components and status", "Hardware components with live readings."},
-    {Page::About, "Device info", "About", "Version, licences and credits."},
-    {Page::Safety, "System", "Safety and service", "Safety switches, the OEM service and the BaseControl service."},
+    {Page::Overview, N_("Device"), N_("Overview"), N_("Live status of your laptop at a glance.")},
+    {Page::Prefs, N_("General settings"), N_("Preferences"), N_("How BaseControl starts and looks, plus keyboard and power-on options.")},
+    {Page::Devices, N_("General settings"), N_("Device manager"), N_("Switch the built-in radios and devices on or off.")},
+    {Page::GpuInfo, N_("General settings"), N_("GPU settings"), N_("GPU power target, clock offsets and the graphics mode.")},
+    {Page::Osd, N_("General settings"), N_("In-game OSD"), N_("Choose what is shown on top of your games.")},
+    {Page::Keys, N_("General settings"), N_("Key remapping"), N_("Assign functions to keys and review the saved mappings.")},
+    {Page::Profiles, N_("Performance"), N_("Performance profiles"), N_("One-click profiles that set power, fans and the Windows CPU policy together.")},
+    {Page::Fan, N_("Performance"), N_("Fan settings"), N_("Fan mode, temperature curves and ramp speed.")},
+    {Page::Custom, N_("Performance"), N_("Custom profiles"), N_("Set power limits, GPU targets and CPU policy yourself. Nothing is sent until you press Confirm.")},
+    {Page::Apps, N_("Performance"), N_("Application profiles"), N_("Switch profiles automatically when a program starts.")},
+    {Page::Lighting, N_("Lighting"), N_("Lighting"), N_("Keyboard backlight colour, effects and idle behaviour.")},
+    {Page::Battery, N_("Battery"), N_("Battery"), N_("Charging profile and battery health.")},
+    {Page::Display, N_("Display"), N_("Display settings"), N_("Brightness, refresh rate, colour and colour modes.")},
+    {Page::DeviceInfo, N_("Device info"), N_("Components and status"), N_("Hardware components with live readings.")},
+    {Page::About, N_("Device info"), N_("About"), N_("Version, licences and credits.")},
+    {Page::Safety, N_("System"), N_("Safety and service"), N_("Safety switches, the OEM service and the BaseControl service.")},
 };
 
 const Meta& MetaOf(Page p) {
@@ -52,13 +52,13 @@ struct Group {
 
 const std::vector<Group>& Groups() {
   static const std::vector<Group> g = {
-      {"Overview", IconId::Overview, {Page::Overview}},
-      {"General settings", IconId::Settings, {Page::Prefs, Page::Devices, Page::GpuInfo, Page::Osd, Page::Keys}},
-      {"Performance", IconId::Performance, {Page::Profiles, Page::Fan, Page::Custom, Page::Apps}},
-      {"Lighting", IconId::Lighting, {Page::Lighting}},
-      {"Battery", IconId::Battery, {Page::Battery}},
-      {"Display settings", IconId::Display, {Page::Display}},
-      {"Device info", IconId::Info, {Page::DeviceInfo, Page::About}},
+      {N_("Overview"), IconId::Overview, {Page::Overview}},
+      {N_("General settings"), IconId::Settings, {Page::Prefs, Page::Devices, Page::GpuInfo, Page::Osd, Page::Keys}},
+      {N_("Performance"), IconId::Performance, {Page::Profiles, Page::Fan, Page::Custom, Page::Apps}},
+      {N_("Lighting"), IconId::Lighting, {Page::Lighting}},
+      {N_("Battery"), IconId::Battery, {Page::Battery}},
+      {N_("Display settings"), IconId::Display, {Page::Display}},
+      {N_("Device info"), IconId::Info, {Page::DeviceInfo, Page::About}},
   };
   return g;
 }
@@ -220,7 +220,7 @@ void App::DrawTopBar(const Rect& r) {
     if (Has("power.ac")) {
       const bool ac = B("power.ac");
       std::string t = ac ? T("AC power") : T("Battery");
-      if (Has("power.batt.pct")) t += " " + Num(N("power.batt.pct")) + "%";
+      if (Has("power.batt.pct")) t += " " + Pct(N("power.batt.pct"), 0, true);
       chip(t, ac ? th.muted : th.amber, false, ac ? T("Running on the adapter") : T("Running on battery"));
     }
   }

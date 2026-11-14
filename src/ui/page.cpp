@@ -17,7 +17,16 @@ std::string Num(double v, int dec) {
   return b;
 }
 std::string UnitText(const std::string& unit) { return unit == "C" ? std::string("\xC2\xB0""C") : unit; }
-std::string With(double v, int dec, const char* unit) { return Num(v, dec) + (unit && *unit ? std::string(" ") + unit : std::string()); }
+std::string WithUnit(const std::string& num, const std::string& unit) {
+  if (unit.empty()) return num;
+  if (unit == "%" && GetLang() == Lang::Tr) return "%" + num;
+  return num + " " + unit;
+}
+std::string Pct(double v, int dec, bool tight) {
+  if (tight && GetLang() != Lang::Tr) return Num(v, dec) + "%";
+  return WithUnit(Num(v, dec), "%");
+}
+std::string With(double v, int dec, const char* unit) { return WithUnit(Num(v, dec), unit ? unit : ""); }
 std::string Watts(double v, int dec) { return With(v, dec, "W"); }
 
 uint32_t EvColor(const Theme& t, Ev e) {
@@ -179,7 +188,7 @@ bool Card::PrefSlider(const std::string& id, const std::string& label, int* v, i
   const Rect r = Row(kRowPrefSlider);
   Gfx& g = c.ui.gfx;
   const Theme& th = c.ui.th;
-  const std::string val = std::to_string(*v) + (unit.empty() ? std::string() : " " + UnitText(unit));
+  const std::string val = WithUnit(std::to_string(*v), UnitText(unit));
   const float cw = std::max(54.0f, c.ui.ChipW(val));
   g.Text(Rect(r.x, r.y + 2, r.w - cw - 10, 22), label, FontId::Body, enabled ? th.text : th.faint);
   c.ui.Chip(Rect(r.r() - cw, r.y + 3, cw, 20), val, enabled ? th.text : th.faint, th.elev);
@@ -272,7 +281,7 @@ void Card::BoolRow(const std::string& key, const std::string& label, const std::
       });
     }
   }
-  if (!capOk && d) c.ui.Tip(r, T("Unavailable") + ": " + c.app.CapState(d->cap) + (c.app.CapWhy(d->cap).empty() ? "" : " - " + c.app.CapWhy(d->cap)));
+  if (!capOk && d) c.ui.Tip(r, T("Unavailable") + ": " + c.app.CapStateText(d->cap) + (c.app.CapWhy(d->cap).empty() ? "" : " - " + c.app.CapWhy(d->cap)));
 }
 
 void Card::EnumRow(const std::string& key, const std::string& label, const std::string& desc, const std::vector<std::string>& shown) {
@@ -328,7 +337,7 @@ void Card::Slider(const SliderCfg& cfg) {
   const std::string unit = UnitText(cfg.unit.empty() ? std::string(def->unit) : cfg.unit);
   auto fmt = [&](int v) {
     if (cfg.fmt) return cfg.fmt(v);
-    return unit.empty() ? std::to_string(v) : std::to_string(v) + " " + unit;
+    return WithUnit(std::to_string(v), unit);
   };
   const bool haveLive = app.Has(liveKey) || cfg.fallback != INT_MIN;
   const int live = app.Has(liveKey) ? static_cast<int>(std::lround(app.N(liveKey))) : (haveLive ? cfg.fallback : INT_MIN);
@@ -400,7 +409,7 @@ void Card::Slider(const SliderCfg& cfg) {
   if (changed && ui.IconButton("dc#" + cfg.key, discard, IconId::Undo, true)) app.DiscardDraft(cfg.key);
   if (changed) ui.Tip(discard, T("Discard the draft"));
   const bool canConfirm = capOk && changed && !pending && err.empty();
-  const bool clicked = ui.Button("ok#" + cfg.key, confirm, pending ? T("Applying") : T("Confirm"), over ? Btn::Primary : Btn::Primary,
+  const bool clicked = ui.Button("ok#" + cfg.key, confirm, pending ? T("Applying") : T("Confirm"), Btn::Primary,
                                  pending ? IconId::None : IconId::Check, canConfirm);
   if (pending) ui.Spinner(Rect(confirm.x + 10, confirm.cy() - 8, 16, 16), th.muted);
   if (changed) {
@@ -525,7 +534,7 @@ void Card::ListConfirm(const std::string& key, const std::string& label, const s
   const bool capOk = app.CapOk(def->cap) && !values.empty();
   const bool pending = app.Pending(key);
   const std::string u = UnitText(unit.empty() ? std::string(def->unit) : unit);
-  auto name = [&](int v) { return std::to_string(v) + (u.empty() ? std::string() : " " + u); };
+  auto name = [&](int v) { return WithUnit(std::to_string(v), u); };
   const bool haveLive = app.Has(key);
   const int live = haveLive ? static_cast<int>(std::lround(app.N(key))) : INT_MIN;
   int liveIdx = -1;
@@ -670,6 +679,48 @@ void LineChart(Ui& ui, const Rect& r, const std::vector<const std::deque<float>*
     g.Poly(pts, cols[si], 2.0f);
   }
 }
+
+// ------------------------------------------------------------------------------------------------ buttons side by side
+static float BtnWidth(Ctx& c, const BtnSpec& b) { return std::max(110.0f, c.ui.gfx.TextW(b.label, FontId::Label) + (b.icon != IconId::None ? 58.0f : 40.0f)); }
+
+// Rows the buttons need when they wrap at `w`.
+int BtnRows(Ctx& c, float w, const std::vector<BtnSpec>& v) {
+  if (v.empty()) return 0;
+  int rows = 1;
+  float x = 0;
+  for (const BtnSpec& b : v) {
+    const float bw = std::min(BtnWidth(c, b), w);
+    if (x > 0 && x + bw > w) {
+      rows++;
+      x = 0;
+    }
+    x += bw + 10;
+  }
+  return rows;
+}
+
+// Draws the buttons left to right, wrapping to a new row when one does not fit. Returns the index of the one that was clicked, or -1.
+int BtnFlow(Card& k, const std::vector<BtnSpec>& v) {
+  int hit = -1;
+  float x = 0;
+  Rect row;
+  bool have = false;
+  for (size_t i = 0; i < v.size(); i++) {
+    const BtnSpec& b = v[i];
+    const float bw = std::min(BtnWidth(k.c, b), k.w);
+    if (!have || (x > 0 && x + bw > k.w)) {
+      row = k.Row(kRowButtons);
+      have = true;
+      x = 0;
+    }
+    const Rect r(row.x + x, row.y + 5, bw, 36);
+    if (k.c.ui.Button(b.id, r, b.label, b.style, b.icon, b.enabled)) hit = static_cast<int>(i);
+    k.c.ui.Tip(r, b.tip);
+    x += bw + 10;
+  }
+  return hit;
+}
+
 
 }  // namespace ui
 }  // namespace bc

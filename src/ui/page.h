@@ -100,6 +100,17 @@ class Card {
   static float Head(const std::string& sub) { return sub.empty() ? 54.0f : 70.0f; }
 };
 
+// Buttons side by side in one row, wrapping to further rows when they do not fit the width.
+struct BtnSpec {
+  std::string id, label;
+  Btn style = Btn::Normal;
+  IconId icon = IconId::None;
+  bool enabled = true;
+  std::string tip;
+};
+int BtnRows(Ctx& c, float w, const std::vector<BtnSpec>& v);   // how many rows BtnFlow uses at this width (for sizing the card)
+int BtnFlow(Card& k, const std::vector<BtnSpec>& v);           // draws them; returns the index of the one that was clicked, or -1
+
 // Height a Note() of this text will take inside a card of the masonry's column width.
 float NoteHeight(Ctx& c, const Masonry& m, const std::string& text, bool wide = false);
 // Sum of card chrome around `contentH` (header + paddings), for pages that place cards by hand.
@@ -109,6 +120,8 @@ inline float CardH(float contentH, bool header = true) { return (header ? 64.0f 
 std::string Num(double v, int dec = 0);
 std::string UnitText(const std::string& unit);   // registry unit -> display text ("C" -> "\xC2\xB0""C")
 std::string With(double v, int dec, const char* unit);        // "123.4 W"
+std::string WithUnit(const std::string& num, const std::string& unit);   // number + unit; a percent sign follows the number in English ("76 %") and leads it in Turkish ("%76")
+std::string Pct(double v, int dec = 0, bool tight = false);   // WithUnit(Num(v), "%"); tight drops the space in English ("76%")
 std::string Watts(double v, int dec = 0);
 uint32_t EvColor(const Theme& t, Ev e);
 std::string EvLabel(Ev e);

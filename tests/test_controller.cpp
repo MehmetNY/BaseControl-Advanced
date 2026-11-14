@@ -478,6 +478,59 @@ TEST(ctl_fixed_fan_and_watchdog) {
   CHECK_EQ(r.S().Str("fan.guard"), std::string("ok"));
 }
 
+// The watchdog must not get slower when the window is hidden (the full EC poll then runs every 5 s): while a custom or fixed fan
+// setting is active the temperatures it judges are read every second.
+namespace {
+int SecondsFromHotToTripped(bool visible) {
+  Rig r;
+  r.Cfg("cfg.experimental", "1");
+  r.Set("fan.fixed.cpu", "20");
+  r.Set("fan.fixed.gpu", "20");
+  r.Set("fan.mode", "fixed", Consent("fan_fixed"));
+  r.c.SetInterest(visible);
+  r.w.plat.SetLoad(1, 1);
+  int hotAt = -1, trippedAt = -1;
+  for (int t = 0; t < 900 && trippedAt < 0; t++) {
+    r.Run(1);
+    if (hotAt < 0 && (r.w.plat.cpuT >= 97 || r.w.plat.gpuT >= 92)) hotAt = t;
+    if (r.S().Str("fan.guard") == "tripped") trippedAt = t;
+  }
+  if (hotAt < 0 || trippedAt < 0) return -1;
+  return trippedAt - hotAt;
+}
+
+int EcReadsOver20Seconds(const char* fanMode) {
+  Rig r;
+  r.Cfg("cfg.experimental", "1");
+  if (std::string(fanMode) != "auto") {
+    r.Set("fan.fixed.cpu", "40");
+    r.Set("fan.fixed.gpu", "40");
+    r.Set("fan.mode", fanMode, Consent("fan_fixed"));
+  }
+  r.c.SetInterest(false);
+  r.Run(10);
+  const int before = r.w.plat.ecReads;
+  r.Run(20);
+  return r.w.plat.ecReads - before;
+}
+}  // namespace
+
+TEST(ctl_fan_watchdog_is_as_quick_with_a_hidden_window) {
+  const int shown = SecondsFromHotToTripped(true);
+  const int hidden = SecondsFromHotToTripped(false);
+  CHECK(shown >= 0);
+  CHECK(hidden >= 0);
+  CHECK(shown <= 4);
+  CHECK(hidden <= 4);
+}
+
+TEST(ctl_hidden_window_polls_two_extra_registers_only_while_a_fan_setting_is_active) {
+  const int autoReads = EcReadsOver20Seconds("auto");
+  const int fixedReads = EcReadsOver20Seconds("fixed");
+  CHECK(fixedReads > autoReads);              // the watchdog's temperature reads are there ...
+  CHECK(fixedReads - autoReads <= 2 * 20);    // ... and they are the two registers once a second, nothing more
+}
+
 TEST(ctl_stop_returns_fixed_fans_to_auto) {
   Rig r;
   r.Cfg("cfg.experimental", "1");

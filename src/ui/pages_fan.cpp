@@ -190,7 +190,7 @@ void DrawLiveMarker(App& a, Gfx& g, const Plot& pl, const Theme& th, bool cpu, b
     g.Dot({x, pl.Y(static_cast<float>(l.duty))}, 7.0f, WithAlpha(col, 55));
     g.Dot({x, pl.Y(static_cast<float>(l.duty))}, 3.8f, col);
   }
-  const std::string t = Num(l.temp) + " \xC2\xB0""C" + (l.duty >= 0 ? "  \xC2\xB7  " + Num(l.duty) + " %" : std::string());
+  const std::string t = Num(l.temp) + " \xC2\xB0""C" + (l.duty >= 0 ? "  \xC2\xB7  " + Pct(l.duty) : std::string());
   const float tw = g.TextW(t, FontId::Tiny) + 12;
   const float tx = std::min(pl.r.r() - tw, std::max(pl.r.x, x - tw * 0.5f));
   const Rect chip(tx, top ? pl.r.y + 3 : pl.r.b() - 21, tw, 18);
@@ -225,7 +225,7 @@ Edit PlotEditor(App& a, const Rect& area, fan::Curve* curve, const View& view, b
   for (int p = 0; p <= 100; p += 25) {
     const float y = pl.Y(static_cast<float>(p));
     g.Line({pl.r.x, y}, {pl.r.r(), y}, WithAlpha(th.line, p == 0 ? 200 : 100), 1);
-    g.Text(Rect(area.x, y - 8, 34, 16), Num(p) + "%", FontId::Tiny, th.faint, Align::Right);
+    g.Text(Rect(area.x, y - 8, 34, 16), Pct(p, 0, true), FontId::Tiny, th.faint, Align::Right);
   }
   g.StrokeRound(pl.r.Inset(-0.5f), 2, WithAlpha(th.line, 160), 1);
   DrawFloor(g, pl, th);
@@ -468,7 +468,7 @@ void ChartCard(Ctx& c, Masonry& m) {
       g.FillRound(b, 9, on ? WithAlpha(th.accent, 26) : (hov ? th.hover : th.inset));
       g.StrokeRound(b, 9, on ? WithAlpha(th.accent, 170) : th.line, 1);
       g.Text(Rect(b.x, b.y + 5, b.w, 16), Num(cr.temp) + " \xC2\xB0""C", FontId::Tiny, th.muted, Align::Center);
-      g.Text(Rect(b.x, b.y + 21, b.w, 20), i == 0 ? T("EC") : Num(cr.pct) + " %", FontId::Label, on ? th.accent : th.text, Align::Center);
+      g.Text(Rect(b.x, b.y + 21, b.w, 20), i == 0 ? T("EC") : Pct(cr.pct), FontId::Label, on ? th.accent : th.text, Align::Center);
       ui.Tip(b, i == 0 ? Tf("Up to %d \xC2\xB0""C the laptop's own control decides the fan speed.", cr.temp)
                        : Tf("Above %d up to %d \xC2\xB0""C the fan runs at %d %%.", curve[static_cast<size_t>(i - 1)].temp, cr.temp, cr.pct));
     }
@@ -495,7 +495,7 @@ void ChartCard(Ctx& c, Masonry& m) {
     if (stepBtn("fan.t+", "+", true)) nc = fan::MovePoint(curve, ptRef, sel.temp + 1, sel.pct);
     x += 14;
     if (stepBtn("fan.p-", "\xE2\x88\x92", !first && !last)) nc = fan::MovePoint(curve, ptRef, sel.temp, sel.pct - 1);
-    valueText(first ? T("EC") : Num(sel.pct) + " %", 50);
+    valueText(first ? T("EC") : Pct(sel.pct), 50);
     if (stepBtn("fan.p+", "+", !first && !last)) nc = fan::MovePoint(curve, ptRef, sel.temp, sel.pct + 1);
     const float addW = 116, remW = 126;
     const bool wideEnough = row.r() - x > addW + remW + 20;

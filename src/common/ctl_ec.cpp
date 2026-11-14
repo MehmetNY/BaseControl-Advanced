@@ -6,6 +6,7 @@
 #include "../mgp/core/hardware_identity_guard.h"
 #include "../mgp/core/smbios.h"
 #include "controller.h"
+#include "i18n_mark.h"
 #include "registers.h"
 #include "util.h"
 
@@ -71,8 +72,8 @@ void Controller::ProbeEc() {
     for (const char* c : kEcCaps) SetCap(c, "absent", why);
   };
   if (!hw_.ec || !gec_) {
-    SetCap("ec", "absent", "no EC driver interface");
-    allAbsent("no EC link");
+    SetCap("ec", "absent", N_("no EC driver interface"));
+    allAbsent(N_("no EC link"));
     return;
   }
   uint32_t werr = 0;
@@ -107,11 +108,11 @@ void Controller::ProbeEc() {
   auto rd = [&](uint16_t a, uint8_t* v) { return EcR(a, v); };
   uint8_t b1 = 0, b2 = 0, b4 = 0, t = 0;
   bool plOk = rd(kPl1, &b1) && rd(kPl2, &b2) && rd(kPl4, &b4);
-  if (!plOk) SetCap("pl.ec", "absent", "power-limit registers unreadable");
+  if (!plOk) SetCap("pl.ec", "absent", N_("power-limit registers unreadable"));
   else if (b1 < 5 || b2 < 5 || b4 < 5 || b2 < b1) SetCap("pl.ec", "implausible", Fmt("PL1=%u PL2=%u PL4raw=%u", b1, b2, b4));
   else SetCap("pl.ec", "ok");
 
-  if (!rd(kCpuTempLimitRead, &t)) SetCap("tcc", "absent", "0x0463 unreadable");
+  if (!rd(kCpuTempLimitRead, &t)) SetCap("tcc", "absent", N_("0x0463 unreadable"));
   else if ((t & 0x7F) > 40) SetCap("tcc", "implausible", Fmt("0x0463=0x%02X", t));
   else SetCap("tcc", "ok");
 
@@ -134,7 +135,7 @@ void Controller::ProbeEc() {
   SetCap("fnlock", rd(kFnLock, &r) ? "ok" : "absent");
   SetCap("acboot", rd(kAcAutoBoot, &r) ? "ok" : "absent");
   SetCap("usbpower", rd(kUsbPowerShare, &r) ? "ok" : "absent");
-  SetCap("gpu.db", "unsupported", "Dynamic Boost register semantics are unverified on this model");
+  SetCap("gpu.db", "unsupported", N_("Dynamic Boost register semantics are unverified on this model"));
 }
 
 // ------------------------------------------------------------------------------------------------ polling
@@ -236,10 +237,21 @@ void Controller::PollEc(bool full) {
     for (auto& p : k.All()) sEc_.Set(p.first, p.second);
 }
 
+// The two temperatures the fan watchdog judges (PollEc reads them too; this is the cheap path for a hidden window).
+void Controller::PollEcTemps() {
+  if (!ecConnected_) return;
+  KV k;
+  uint8_t v = 0;
+  if (EcR(kCpuTemp, &v) && v > 0 && v < 125) k.SetI("cpu.temp.ec", v);
+  if (EcR(kGpuTemp, &v) && v > 0 && v < 125) k.SetI("gpu.temp.ec", v);
+  std::lock_guard<std::mutex> g(snapMu_);
+  for (auto& p : k.All()) sEc_.Set(p.first, p.second);
+}
+
 // ------------------------------------------------------------------------------------------------ activation
 Result Controller::EcBringUp() {
-  if (!ecConnected_) return Fail("unsupported", "no EC link");
-  if (hw_.oem && hw_.oem->Probe().running) return Fail("gate.oem", "the OEM service is running; take over from it first (Settings > Safety)");
+  if (!ecConnected_) return Fail("unsupported", N_("no EC link"));
+  if (hw_.oem && hw_.oem->Probe().running) return Fail("gate.oem", N_("the OEM service is running; take over from it first (see Safety and service)"));
   L(mgp::LogLevel::Info, "EC bring-up: activation byte + PECI power loop bits");
   GuardedEc::InitScope scope(*gec_);
   if (cfg_.Bool("cfg.fullInit", false)) {
@@ -262,13 +274,13 @@ Result Controller::EcBringUp() {
 }
 
 Result Controller::EnsureEcActive() {
-  if (!ecConnected_) return Fail("unsupported", "no EC link");
+  if (!ecConnected_) return Fail("unsupported", N_("no EC link"));
   uint8_t a726 = 0, a727 = 0;
   bool peci = EcR(kAcAutoBoot, &a726) && EcR(kCustomProfile, &a727) && (a726 & 0x80) && (a727 & 0x40);
   if (EcActive() && peci) return Ok();
   if (!cfg_.Bool("cfg.takeover", false))
     return Fail("needs.activation", "the EC power-management loop is not active; the OEM service normally enables it. "
-                                    "Use Settings > Safety > Take over from the OEM Control Center");
+                                    "Use Safety and service > Take over from the OEM service");
   return EcBringUp();
 }
 
@@ -295,11 +307,11 @@ Result Controller::WriteEcTriple(int pl1, int pl2, int pl4) {
   EcR(kCpuTempLimitRead, &rt);
   const int scale = Pl4Scale();
   const int o1 = r1, o2 = r2, o4 = r4 * scale;
-  if (pl1 < 10 || pl2 < 10 || pl4 < 20) return Fail("range", "power limit below the minimum");
-  if (pl2 < pl1) return Fail("range", "PL2 must be >= PL1");
-  if (pl4 < pl2) return Fail("range", "PL4 must be >= PL2");
-  if (pl4 % scale) return Fail("range", "PL4 must be a multiple of 2 W on this firmware");
-  if (pl1 > 200 || pl2 > 200 || pl4 / scale > 250) return Fail("range", "power limit above the hard cap");
+  if (pl1 < 10 || pl2 < 10 || pl4 < 20) return Fail("range", N_("power limit below the minimum"));
+  if (pl2 < pl1) return Fail("range", N_("PL2 must be >= PL1"));
+  if (pl4 < pl2) return Fail("range", N_("PL4 must be >= PL2"));
+  if (pl4 % scale) return Fail("range", N_("PL4 must be a multiple of 2 W on this firmware"));
+  if (pl1 > 200 || pl2 > 200 || pl4 / scale > 250) return Fail("range", N_("power limit above the hard cap"));
   // consent is about *raising* a value beyond the OEM maximum profile; keeping or lowering a value that is already high needs none
   const bool high = (pl1 > 120 && pl1 > o1) || (pl2 > 120 && pl2 > o2) || (pl4 > 200 && pl4 > o4);
   if (high && !cfg_.Bool("cfg.consent.ec_pl_high", false)) {
@@ -310,7 +322,7 @@ Result Controller::WriteEcTriple(int pl1, int pl2, int pl4) {
   const bool raising = pl1 > o1 || pl2 > o2 || pl4 > o4;
   int temp = 0;
   { std::lock_guard<std::mutex> g(snapMu_); temp = static_cast<int>(sEc_.Int("cpu.temp.ec", 0)); }
-  if (raising && temp >= 92) return Fail("gate.thermal", Fmt("CPU is at %d C; refusing to raise power limits above 92 C", temp));
+  if (raising && temp >= 92) return Fail("gate.thermal", Fmt(N_("CPU is at %d C; refusing to raise power limits above 92 C"), temp));
   if (pl1 == o1 && pl2 == o2 && pl4 == o4) return Ok("already set");
 
   int off = rt & 0x7F;
@@ -328,7 +340,7 @@ Result Controller::WriteEcTriple(int pl1, int pl2, int pl4) {
     gec_->WriteRollback(kPl1, r1);
     gec_->WriteRollback(kPl2, r2);
     gec_->WriteRollback(kPl4, r4);
-    return Fail("reverted", "EC did not keep the new limits; previous values restored");
+    return Fail("reverted", N_("EC did not keep the new limits; previous values restored"));
   }
   KV d;
   d.SetI("pl1", pl1); d.SetI("pl2", pl2); d.SetI("pl4", pl4);
@@ -356,14 +368,14 @@ Result Controller::SetTcc(int celsius) {
   Result act = EnsureEcActive();
   if (!act.ok) return act;
   const int off = 105 - celsius;
-  if (off < 5 || off > 35) return Fail("range", "temperature target out of range");
+  if (off < 5 || off > 35) return Fail("range", N_("temperature target out of range"));
   uint8_t prev = 0;
   EcR(kCpuTempLimitRead, &prev);
   if (!EcW(kTccWrite, static_cast<uint8_t>(0x80 | off))) return Fail("failed.hw", "TCC write failed: " + lastError_);
   // 0x0463 refreshes on the EC polling cycle (~300-900 ms)
   if (!EcVerify(kCpuTempLimitRead, 0x7F, static_cast<uint8_t>(off), 10, 250)) {
     if ((prev & 0x7F) <= 35) gec_->WriteRollback(kTccWrite, static_cast<uint8_t>(0x80 | (prev & 0x7F)));
-    return Fail("reverted", "EC did not report the new temperature target; previous value restored");
+    return Fail("reverted", N_("EC did not report the new temperature target; previous value restored"));
   }
   return Ok();
 }
@@ -407,7 +419,7 @@ Result Controller::WriteFanTable(const fan::Curve* cpu, const fan::Curve* gpu) {
       uint8_t a, b, c;
       if (!EcR(p.base + i, &a) || !EcR(p.base + 0x10 + i, &b) || !EcR(p.base + 0x20 + i, &c) || a != p.img.up[i] || b != p.img.down[i] || c != p.img.duty[i]) {
         rollback();
-        return Fail("reverted", "fan table read-back differs; previous table restored");
+        return Fail("reverted", N_("fan table read-back differs; previous table restored"));
       }
     }
   }
@@ -467,7 +479,7 @@ Result Controller::SetFanMode(int mode) {
     }
     case 3: {  // fixed duty (bypasses EC protection; guarded by the watchdog)
       if (!cfg_.Bool("cfg.experimental", false))
-        return Fail("gate.experimental", "fixed fan duty uses registers with a single source; enable Settings > Safety > Allow experimental writes");
+        return Fail("gate.experimental", "fixed fan duty uses registers with a single source; enable Safety and service > Allow experimental writes");
       if (!cfg_.Bool("cfg.consent.fan_fixed", false)) {
         Result r = Fail("gate.consent", "fixed fan duty bypasses the EC's thermal logic; the BaseControl watchdog is the only protection");
         r.data.Set("consent", "fan_fixed");
@@ -488,7 +500,7 @@ Result Controller::SetFanMode(int mode) {
             : mode == 1 ? (n751 & 0x40) != 0
             : mode == 2 ? (n7c5 & 0x80) && (n7c6 & 0x04)
                         : (n759 & 0x80) && (n75a & 0x80);
-  if (!good) { undo(); return Fail("reverted", "EC did not accept the fan mode; previous state restored"); }
+  if (!good) { undo(); return Fail("reverted", N_("EC did not accept the fan mode; previous state restored")); }
   return Ok();
 }
 
@@ -509,7 +521,7 @@ Result Controller::SetFanRamp(int v) {
   if (!EcW(kFanSwitchSpeed, static_cast<uint8_t>(0x80 | v))) return Fail("failed.hw", lastError_);
   if (!EcVerify(kFanSwitchSpeed, 0xFF, static_cast<uint8_t>(0x80 | v), 3, 100)) {
     gec_->WriteRollback(kFanSwitchSpeed, prev);
-    return Fail("reverted", "EC did not keep the fan ramp value");
+    return Fail("reverted", N_("EC did not keep the fan ramp value"));
   }
   return Ok();
 }
@@ -518,7 +530,8 @@ void Controller::FanWatchdog() {
   if (!ecConnected_) return;
   KV s = Snapshot();
   const std::string mode = s.Str("fan.mode");
-  if (mode != "custom" && mode != "fixed") { fanOverTempTicks_ = 0; return; }
+  fanWatch_ = mode == "custom" || mode == "fixed";
+  if (!fanWatch_) { fanOverTempTicks_ = 0; return; }
   int cpu = static_cast<int>(s.Int("cpu.temp.ec", s.Int("cpu.temp", 0)));
   int gpu = static_cast<int>(s.Int("gpu.temp.ec", s.Int("gpu.temp", 0)));
   if (cpu >= 97 || gpu >= 92) fanOverTempTicks_++;
@@ -541,7 +554,7 @@ Result Controller::SetBattMode(int m) {
   if (!EcRmw(kBatteryMode, 0x38, bits)) return Fail("failed.hw", "battery mode write failed: " + lastError_);
   if (!EcVerify(kBatteryMode, 0x38, bits, 4, 150)) {
     gec_->WriteRollback(kBatteryMode, prev);
-    return Fail("reverted", "EC did not keep the charging profile");
+    return Fail("reverted", N_("EC did not keep the charging profile"));
   }
   return Ok();
 }
@@ -579,11 +592,11 @@ Result Controller::SetUsbVsBoot(bool usbPower, bool on) {
   if (!EcVerify(a, m, on ? m : 0, 4, 120)) {
     gec_->WriteRollback(kAcAutoBoot, p726);
     gec_->WriteRollback(kUsbPowerShare, p767);
-    return Fail("reverted", "EC did not keep the value");
+    return Fail("reverted", N_("EC did not keep the value"));
   }
   return Ok();
 }
 
-Result Controller::SetGpuDb(bool) { return Fail("unsupported", "Dynamic Boost control is not available on this model in this release"); }
+Result Controller::SetGpuDb(bool) { return Fail("unsupported", N_("Dynamic Boost control is not available on this model in this release")); }
 
 }  // namespace bc

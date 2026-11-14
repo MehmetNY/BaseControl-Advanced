@@ -47,55 +47,6 @@ Svc ServiceState(App& a) {
 
 float WrapH(Ctx& c, float w, const std::string& text) { return c.ui.gfx.Wrapped(Rect(0, 0, w, 3000), text, FontId::Small, 0, false); }
 
-// ---- buttons side by side ------------------------------------------------------------------------------------------------------
-struct BtnSpec {
-  std::string id, label;
-  Btn style = Btn::Normal;
-  IconId icon = IconId::None;
-  bool enabled = true;
-  std::string tip;
-};
-
-float BtnWidth(Ctx& c, const BtnSpec& b) { return std::max(110.0f, c.ui.gfx.TextW(b.label, FontId::Label) + (b.icon != IconId::None ? 58.0f : 40.0f)); }
-
-// Rows the buttons need when they wrap at `w`.
-int BtnRows(Ctx& c, float w, const std::vector<BtnSpec>& v) {
-  if (v.empty()) return 0;
-  int rows = 1;
-  float x = 0;
-  for (const BtnSpec& b : v) {
-    const float bw = std::min(BtnWidth(c, b), w);
-    if (x > 0 && x + bw > w) {
-      rows++;
-      x = 0;
-    }
-    x += bw + 10;
-  }
-  return rows;
-}
-
-// Draws the buttons left to right, wrapping to a new row when one does not fit. Returns the index of the one that was clicked, or -1.
-int BtnFlow(Card& k, const std::vector<BtnSpec>& v) {
-  int hit = -1;
-  float x = 0;
-  Rect row;
-  bool have = false;
-  for (size_t i = 0; i < v.size(); i++) {
-    const BtnSpec& b = v[i];
-    const float bw = std::min(BtnWidth(k.c, b), k.w);
-    if (!have || (x > 0 && x + bw > k.w)) {
-      row = k.Row(kRowButtons);
-      have = true;
-      x = 0;
-    }
-    const Rect r(row.x + x, row.y + 5, bw, 36);
-    if (k.c.ui.Button(b.id, r, b.label, b.style, b.icon, b.enabled)) hit = static_cast<int>(i);
-    k.c.ui.Tip(r, b.tip);
-    x += bw + 10;
-  }
-  return hit;
-}
-
 // ---- modal helpers -------------------------------------------------------------------------------------------------------------
 // Asks first; `go` runs only when the user presses the confirming button.
 void Ask(App& a, const std::string& title, const std::string& body, const std::string& confirm, Btn style, std::function<void()> go) {
@@ -344,7 +295,7 @@ void CardDiagnostics(Ctx& c, Masonry& m) {
          T("Embedded-controller registers BaseControl has written since it started."));
   k.Info(T("Writes refused by the guard"), a.Has("ec.refused") ? Tf("%d", static_cast<int>(a.I("ec.refused"))) : Dash(), a.I("ec.refused") > 0 ? th.amber : 0,
          T("A write outside the allow-list or its value limits is refused before it reaches the hardware."));
-  k.Info(T("Fan watchdog"), tripped ? T("Forced full speed") : T("Quiet"), tripped ? th.red : 0,
+  k.Info(T("Fan watchdog"), tripped ? T("Forced full speed") : T("Not triggered"), tripped ? th.red : 0,
          tripped ? a.S("fan.guard.why") : T("It forces full fan speed when a fixed or custom fan setting lets the CPU or GPU get dangerously hot."));
   k.Info(T("Last error"), err.empty() ? T("None") : g.Fit(err, FontId::Body, k.w * 0.55f), err.empty() ? 0 : th.amber, err);
   k.Gap(8);

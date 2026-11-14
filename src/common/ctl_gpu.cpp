@@ -4,6 +4,7 @@
 
 #include "../mgp/core/persist_txn.h"
 #include "controller.h"
+#include "i18n_mark.h"
 #include "util.h"
 
 namespace bc {
@@ -17,10 +18,10 @@ void Controller::ProbeGpu() {
     int a, b, c, d;
     offs = hw_.gpu->OffsetRange(&a, &b, &c, &d);
   }
-  SetCap("gpu.offsets", offs ? "ok" : "absent", offs ? "" : "the NVIDIA driver does not expose clock offsets");
+  SetCap("gpu.offsets", offs ? "ok" : "absent", offs ? "" : N_("the NVIDIA driver does not expose clock offsets"));
   engineReady_ = false;
   if (!engine_) {
-    SetCap("gpu.ctgp", "absent", "power engine unavailable (no EC/NVML/SMBIOS access)");
+    SetCap("gpu.ctgp", "absent", N_("power engine unavailable (no EC/NVML/SMBIOS access)"));
     SetCap("oem.sync", "absent");
     return;
   }
@@ -71,13 +72,13 @@ void Controller::PollGpu() {
     std::string state = "ok", why;
     if (s.identity.verdict != mgp::IdentityVerdict::Exact) {
       state = "off";
-      why = "not the verified GM5TG7Y (" + s.identity.summary + ")";
+      why = Fmt(N_("not the verified GM5TG7Y (%s)"), s.identity.summary.c_str());
     } else if (!s.driverProbed || s.driver == mgp::DriverState::Absent) {
       state = "absent";
-      why = "EC driver absent";
+      why = N_("EC driver absent");
     } else if (!s.CanWrite()) {
       state = "blocked";
-      why = s.blockerDetails.empty() ? "blocked" : s.blockerDetails[0];
+      why = s.blockerDetails.empty() ? N_("blocked") : s.blockerDetails[0];
     }
     SetCap("gpu.ctgp", state, why);
     if (engine_->FaultLatched()) k.Set("gpu.fault", "1");
@@ -112,7 +113,7 @@ Result MapOutcome(Controller* self, const mgp::ApplyResult& r, std::string* msgO
 }  // namespace
 
 Result Controller::SetCtgp(int watts, const KV& args) {
-  if (!engine_ || !engineReady_) return Fail("unsupported", "GPU power engine unavailable");
+  if (!engine_ || !engineReady_) return Fail("unsupported", N_("GPU power engine unavailable"));
   mgp::ApplyOptions o;
   o.consentOverOem = cfg_.Bool("cfg.consent.ctgp_over_oem", false);
   o.consentUnverified = cfg_.Bool("cfg.consent.ctgp_unverified", false);
@@ -132,7 +133,7 @@ Result Controller::SetCtgp(int watts, const KV& args) {
     ~LockGuard() { if (held) l->Release(); }
   } lock{hw_.applyLock};
   if (hw_.applyLock) {
-    if (!hw_.applyLock->Acquire(5000)) return Fail("busy", "another program is applying a GPU power change right now; try again");
+    if (!hw_.applyLock->Acquire(5000)) return Fail("busy", N_("another program is applying a GPU power change right now; try again"));
     lock.held = true;
   }
 
@@ -156,7 +157,7 @@ Result Controller::SetCtgp(int watts, const KV& args) {
         res.data.Set("sha", t.pre.sha);
         res.data.SetI("oem.target", t.pre.target);
         return res;
-      case mgp::TxnClass::Aborted: return Fail("busy", "the OEM profile changed after it was approved; nothing was applied");
+      case mgp::TxnClass::Aborted: return Fail("busy", N_("the OEM profile changed after it was approved; nothing was applied"));
       case mgp::TxnClass::OemUnavailable: return Fail("gate.oem", std::string("OEM profile module locked: ") + mgp::oem::LockName(t.pre.lock));
       case mgp::TxnClass::LiveFailed: {
         std::string m;
@@ -173,9 +174,9 @@ Result Controller::SetCtgp(int watts, const KV& args) {
         SaveConfig();
         return Ok("applied live and written to the OEM profile");
       }
-      case mgp::TxnClass::OemFailedLiveRestored: return Fail("reverted", "OEM profile write failed; the live change was undone");
-      case mgp::TxnClass::OemFailedRestoreUnverified: return Fail("failed.verify", "OEM profile write failed and the live change could not be verified as undone");
-      case mgp::TxnClass::OemFailedLiveUnchanged: return Fail("failed.hw", "OEM profile write failed");
+      case mgp::TxnClass::OemFailedLiveRestored: return Fail("reverted", N_("OEM profile write failed; the live change was undone"));
+      case mgp::TxnClass::OemFailedRestoreUnverified: return Fail("failed.verify", N_("OEM profile write failed and the live change could not be verified as undone"));
+      case mgp::TxnClass::OemFailedLiveUnchanged: return Fail("failed.hw", N_("OEM profile write failed"));
     }
     return Fail("internal", "unclassified transaction");
   }
@@ -186,7 +187,7 @@ Result Controller::SetCtgp(int watts, const KV& args) {
     lastError_ = res.code + ": " + m;
     L(mgp::LogLevel::Warn, "cTGP apply failed: " + lastError_);
   }
-  if (res.ok && oemRunning) res.msg = "applied live; the OEM service is running and may restore its own value (Settings > Safety)";
+  if (res.ok && oemRunning) res.msg = "applied live; the OEM service is running and may restore its own value (see Safety and service)";
   return res;
 }
 
@@ -194,7 +195,7 @@ Result Controller::SetNvOffset(bool core, int mhz) {
   if (!hw_.gpu) return Fail("unsupported", "no GPU interface");
   int cmin, cmax, mmin, mmax;
   if (!hw_.gpu->OffsetRange(&cmin, &cmax, &mmin, &mmax)) return Fail("unsupported", "offset range unavailable");
-  if (core ? (mhz < cmin || mhz > cmax) : (mhz < mmin || mhz > mmax)) return Fail("range", Fmt("offset outside the driver range %d..%d", core ? cmin : mmin, core ? cmax : mmax));
+  if (core ? (mhz < cmin || mhz > cmax) : (mhz < mmin || mhz > mmax)) return Fail("range", Fmt(N_("offset outside the driver range %d..%d"), core ? cmin : mmin, core ? cmax : mmax));
   GpuInfo before;
   hw_.gpu->Read(&before);
   std::string why;
@@ -207,7 +208,7 @@ Result Controller::SetNvOffset(bool core, int mhz) {
     std::string w2;
     if (core) hw_.gpu->SetCoreOffset(before.coreOffsetMhz, &w2);
     else hw_.gpu->SetMemOffset(before.memOffsetMhz, &w2);
-    return Fail("reverted", "driver did not keep the offset");
+    return Fail("reverted", N_("driver did not keep the offset"));
   }
   return Ok();
 }

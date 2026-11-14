@@ -5,6 +5,7 @@
 #include <cmath>
 
 #include "controller.h"
+#include "i18n_mark.h"
 #include "util.h"
 
 namespace bc {
@@ -39,33 +40,33 @@ void Controller::ProbeCpu() {
       units_ = rapl::DecodeUnits(u);
       msrOk_ = true;
     } else {
-      why = "MSR read failed (is the IntelMSR module loaded for this CPU?)";
+      why = N_("MSR read failed (is the IntelMSR module loaded for this CPU?)");
     }
   }
   const char* kMsrCaps[] = {"msr.pkg", "msr.psys", "msr.bdp", "msr.icc", "msr.volt", "msr.pf"};
   if (!msrOk_) {
-    SetCap("msr", "absent", why.empty() ? "PawnIO driver / IntelMSR module not available" : why);
-    for (const char* c : kMsrCaps) SetCap(c, "absent", "needs the PawnIO MSR driver");
+    SetCap("msr", "absent", why.empty() ? N_("PawnIO driver / IntelMSR module not available") : why);
+    for (const char* c : kMsrCaps) SetCap(c, "absent", N_("needs the PawnIO MSR driver"));
   } else {
     SetCap("msr", "ok", hw_.msr->Name());
     uint64_t v;
     if (MsrR(rapl::kMsrPkgPowerLimit, &v)) {
-      if (rapl::DecodePkgLimit(v, units_).lock) SetCap("msr.pkg", "locked", "MSR 0x610 is locked by the firmware until reboot");
+      if (rapl::DecodePkgLimit(v, units_).lock) SetCap("msr.pkg", "locked", N_("MSR 0x610 is locked by the firmware until reboot"));
       else SetCap("msr.pkg", "ok");
     } else SetCap("msr.pkg", "absent");
     if (MsrR(rapl::kMsrPlatformPowerLimit, &v)) {
-      if (rapl::DecodePkgLimit(v, units_).lock) SetCap("msr.psys", "locked", "MSR 0x65C (platform power limit) is locked by the firmware until reboot");
+      if (rapl::DecodePkgLimit(v, units_).lock) SetCap("msr.psys", "locked", N_("MSR 0x65C (platform power limit) is locked by the firmware until reboot"));
       else SetCap("msr.psys", "ok");
-    } else SetCap("msr.psys", "absent", "this CPU does not expose the platform (PSys) power limit");
+    } else SetCap("msr.psys", "absent", N_("this CPU does not expose the platform (PSys) power limit"));
     if (MsrR(rapl::kMsrPowerCtl, &v)) SetCap("msr.bdp", "ok");
-    else SetCap("msr.bdp", "absent", "MSR 0x1FC (POWER_CTL) cannot be read");
+    else SetCap("msr.bdp", "absent", N_("MSR 0x1FC (POWER_CTL) cannot be read"));
     if (MsrR(rapl::kMsrVrCurrentConfig, &v)) {
-      if (rapl::IccLocked(v)) SetCap("msr.icc", "locked", "MSR 0x601 is locked by the firmware");
+      if (rapl::IccLocked(v)) SetCap("msr.icc", "locked", N_("MSR 0x601 is locked by the firmware"));
       else SetCap("msr.icc", "ok");
     } else SetCap("msr.icc", "absent");
     uint64_t resp = 0;
     if (OcCall(hw_.msr, rapl::OcReadVoltageCmd(0), &resp)) SetCap("msr.volt", "ok");
-    else SetCap("msr.volt", "locked", "the voltage mailbox is closed by the BIOS (typical for 11th-gen undervolt protection)");
+    else SetCap("msr.volt", "locked", N_("the voltage mailbox is closed by the BIOS (typical for 11th-gen undervolt protection)"));
     if (MsrR(0x1A4, &v)) SetCap("msr.pf", "ok");
     else SetCap("msr.pf", "absent");
   }
@@ -182,20 +183,20 @@ void Controller::PollMsr(bool full) {
 Result Controller::SetMsr(const std::string& key, int value) {
   if (!msrOk_ || !hw_.msr) return Fail("unsupported", "MSR backend unavailable");
   if (!cfg_.Bool("cfg.consent.msr_write", false)) {
-    Result r = Fail("gate.consent", "direct CPU register writes can destabilise the system; confirmation required");
+    Result r = Fail("gate.consent", N_("direct CPU register writes can destabilise the system; confirmation required"));
     r.data.Set("consent", "msr_write");
     return r;
   }
   const bool raising = (key == "msr.pl1" || key == "msr.pl2" || key == "msr.psys.pl1" || key == "msr.psys.pl2");
   KV snap = Snapshot();
   if (raising && snap.Int("cpu.temp", snap.Int("cpu.temp.msr", 0)) >= 92 && value > snap.Int(key, 0))
-    return Fail("gate.thermal", "CPU is hotter than 92 C; refusing to raise a power limit");
+    return Fail("gate.thermal", N_("CPU is hotter than 92 C; refusing to raise a power limit"));
 
   if (key == "msr.pl1" || key == "msr.pl2" || key == "msr.tau1" || key == "msr.tau2" || key == "msr.pl1.en" || key == "msr.pl2.en" || key == "msr.clamp") {
     uint64_t old;
     if (!MsrR(rapl::kMsrPkgPowerLimit, &old)) return Fail("failed.hw", "cannot read MSR 0x610");
     rapl::PkgLimit p = rapl::DecodePkgLimit(old, units_);
-    if (p.lock) return Fail("unsupported", "MSR 0x610 is locked until the next reboot");
+    if (p.lock) return Fail("unsupported", N_("MSR 0x610 is locked until the next reboot"));
     if (key == "msr.pl1") p.pl1W = value;
     else if (key == "msr.pl2") p.pl2W = value;
     else if (key == "msr.tau1") p.tau1S = value;
@@ -203,15 +204,15 @@ Result Controller::SetMsr(const std::string& key, int value) {
     else if (key == "msr.pl1.en") p.pl1En = value != 0;
     else if (key == "msr.pl2.en") p.pl2En = value != 0;
     else p.pl1Clamp = p.pl2Clamp = value != 0;
-    if (p.pl2W < p.pl1W) return Fail("range", "PL2 must be >= PL1");
+    if (p.pl2W < p.pl1W) return Fail("range", N_("PL2 must be >= PL1"));
     uint64_t nv;
-    if (!rapl::EncodePkgLimit(old, p, units_, &nv)) return Fail("range", "value cannot be represented in the RAPL fields");
-    if (!hw_.msr->Write(rapl::kMsrPkgPowerLimit, nv)) return Fail("failed.hw", "MSR write refused by the driver");
+    if (!rapl::EncodePkgLimit(old, p, units_, &nv)) return Fail("range", N_("value cannot be represented in the RAPL fields"));
+    if (!hw_.msr->Write(rapl::kMsrPkgPowerLimit, nv)) return Fail("failed.hw", N_("MSR write refused by the driver"));
     if (hw_.clock) hw_.clock->SleepMs(120);
     uint64_t back = 0;
     if (!MsrR(rapl::kMsrPkgPowerLimit, &back) || ((back ^ nv) & 0x7FFFFFFFFFFFFFFFULL) != 0) {
       hw_.msr->Write(rapl::kMsrPkgPowerLimit, old);
-      return Fail("reverted", "the value did not stick (the EC/firmware rewrote MSR 0x610); previous value restored");
+      return Fail("reverted", N_("the value did not stick (the EC/firmware rewrote MSR 0x610); previous value restored"));
     }
     return Ok();
   }
@@ -219,20 +220,20 @@ Result Controller::SetMsr(const std::string& key, int value) {
     uint64_t old;
     if (!MsrR(rapl::kMsrPlatformPowerLimit, &old)) return Fail("failed.hw", "cannot read MSR 0x65C");
     rapl::PkgLimit p = rapl::DecodePkgLimit(old, units_);
-    if (p.lock) return Fail("unsupported", "MSR 0x65C is locked until the next reboot");
+    if (p.lock) return Fail("unsupported", N_("MSR 0x65C is locked until the next reboot"));
     if (key == "msr.psys.pl1") p.pl1W = value;
     else if (key == "msr.psys.pl2") p.pl2W = value;
     else if (key == "msr.psys.pl1.en") p.pl1En = value != 0;
     else p.pl2En = value != 0;
-    if (p.pl2W < p.pl1W) return Fail("range", "platform PL2 must be >= PL1");
+    if (p.pl2W < p.pl1W) return Fail("range", N_("platform PL2 must be >= PL1"));
     uint64_t nv;
-    if (!rapl::EncodePkgLimit(old, p, units_, &nv)) return Fail("range", "value cannot be represented in the RAPL fields");
-    if (!hw_.msr->Write(rapl::kMsrPlatformPowerLimit, nv)) return Fail("failed.hw", "MSR write refused by the driver");
+    if (!rapl::EncodePkgLimit(old, p, units_, &nv)) return Fail("range", N_("value cannot be represented in the RAPL fields"));
+    if (!hw_.msr->Write(rapl::kMsrPlatformPowerLimit, nv)) return Fail("failed.hw", N_("MSR write refused by the driver"));
     if (hw_.clock) hw_.clock->SleepMs(120);
     uint64_t back = 0;
     if (!MsrR(rapl::kMsrPlatformPowerLimit, &back) || ((back ^ nv) & 0x7FFFFFFFFFFFFFFFULL) != 0) {
       hw_.msr->Write(rapl::kMsrPlatformPowerLimit, old);
-      return Fail("reverted", "the value did not stick (the firmware rewrote MSR 0x65C); previous value restored");
+      return Fail("reverted", N_("the value did not stick (the firmware rewrote MSR 0x65C); previous value restored"));
     }
     return Ok();
   }
@@ -242,7 +243,7 @@ Result Controller::SetMsr(const std::string& key, int value) {
     const uint64_t bit = 1ULL << rapl::kPowerCtlBdProchotBit;
     const uint64_t nv = value ? (old | bit) : (old & ~bit);
     if (nv == old) return Ok();
-    if (!hw_.msr->Write(rapl::kMsrPowerCtl, nv)) return Fail("failed.hw", "MSR write refused by the driver");
+    if (!hw_.msr->Write(rapl::kMsrPowerCtl, nv)) return Fail("failed.hw", N_("MSR write refused by the driver"));
     uint64_t back = 0;
     if (!MsrR(rapl::kMsrPowerCtl, &back) || ((back ^ nv) & bit) != 0) {
       hw_.msr->Write(rapl::kMsrPowerCtl, old);
@@ -254,7 +255,7 @@ Result Controller::SetMsr(const std::string& key, int value) {
     uint64_t old, nv;
     if (!MsrR(rapl::kMsrVrCurrentConfig, &old)) return Fail("failed.hw", "cannot read MSR 0x601");
     if (!rapl::EncodeIccMax(old, value, &nv)) return Fail("unsupported", "Icc max is locked or out of range");
-    if (!hw_.msr->Write(rapl::kMsrVrCurrentConfig, nv)) return Fail("failed.hw", "MSR write refused by the driver");
+    if (!hw_.msr->Write(rapl::kMsrVrCurrentConfig, nv)) return Fail("failed.hw", N_("MSR write refused by the driver"));
     if (hw_.clock) hw_.clock->SleepMs(120);
     uint64_t back = 0;
     if (!MsrR(rapl::kMsrVrCurrentConfig, &back) || (back & 0x1FFF) != (nv & 0x1FFF)) {
@@ -264,17 +265,17 @@ Result Controller::SetMsr(const std::string& key, int value) {
     return Ok();
   }
   if (StartsWith(key, "msr.volt.")) {
-    if (value > 0) return Fail("range", "only undervolt (negative) offsets are accepted");
+    if (value > 0) return Fail("range", N_("only undervolt (negative) offsets are accepted"));
     const int plane = PlaneFor(key);
     uint64_t resp = 0;
     int prev = 0;
-    if (!OcCall(hw_.msr, rapl::OcReadVoltageCmd(plane), &resp)) return Fail("unsupported", "voltage mailbox is closed by the BIOS");
+    if (!OcCall(hw_.msr, rapl::OcReadVoltageCmd(plane), &resp)) return Fail("unsupported", N_("voltage mailbox is closed by the BIOS"));
     prev = rapl::OcDecodeOffsetMv(resp);
     if (!OcCall(hw_.msr, rapl::OcWriteVoltageCmd(plane, value), nullptr)) return Fail("failed.hw", "mailbox write was rejected");
     if (hw_.clock) hw_.clock->SleepMs(100);
     if (!OcCall(hw_.msr, rapl::OcReadVoltageCmd(plane), &resp) || std::abs(rapl::OcDecodeOffsetMv(resp) - value) > 3) {
       OcCall(hw_.msr, rapl::OcWriteVoltageCmd(plane, prev), nullptr);
-      return Fail("reverted", "the BIOS ignored the voltage offset; previous value restored");
+      return Fail("reverted", N_("the BIOS ignored the voltage offset; previous value restored"));
     }
     return Ok();
   }
@@ -283,7 +284,7 @@ Result Controller::SetMsr(const std::string& key, int value) {
     uint64_t old;
     if (!MsrR(0x1A4, &old)) return Fail("failed.hw", "cannot read MSR 0x1A4");
     uint64_t nv = value ? (old & ~(1ULL << bit)) : (old | (1ULL << bit));  // bit set = prefetcher DISABLED
-    if (!hw_.msr->Write(0x1A4, nv)) return Fail("failed.hw", "MSR write refused by the driver");
+    if (!hw_.msr->Write(0x1A4, nv)) return Fail("failed.hw", N_("MSR write refused by the driver"));
     uint64_t back = 0;
     if (!MsrR(0x1A4, &back) || back != nv) {
       hw_.msr->Write(0x1A4, old);
@@ -303,10 +304,10 @@ Result Controller::SetOsCpu(const std::string& key, int value) {
   if (key == "os.boost") p.boost = value;
   else if (key == "os.epp") p.epp = value;
   else if (key == "os.min") {
-    if (cur.maxPct >= 0 && value > cur.maxPct) return Fail("range", "minimum processor state cannot exceed the maximum");
+    if (cur.maxPct >= 0 && value > cur.maxPct) return Fail("range", N_("minimum processor state cannot exceed the maximum"));
     p.minPct = value;
   } else if (key == "os.max") {
-    if (cur.minPct >= 0 && value < cur.minPct) return Fail("range", "maximum processor state cannot be below the minimum");
+    if (cur.minPct >= 0 && value < cur.minPct) return Fail("range", N_("maximum processor state cannot be below the minimum"));
     p.maxPct = value;
   } else p.parkMinPct = value;
   std::string why;
@@ -314,7 +315,7 @@ Result Controller::SetOsCpu(const std::string& key, int value) {
   CpuPolicy back;
   hw_.power->GetCpuPolicy(&back);
   int got = key == "os.boost" ? back.boost : key == "os.epp" ? back.epp : key == "os.min" ? back.minPct : key == "os.max" ? back.maxPct : back.parkMinPct;
-  if (got != value) return Fail("reverted", "Windows did not keep the setting");
+  if (got != value) return Fail("reverted", N_("Windows did not keep the setting"));
   return Ok();
 }
 

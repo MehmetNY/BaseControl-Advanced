@@ -7,6 +7,7 @@
 #include "../mgp/core/hardware_identity_guard.h"
 #include "../mgp/core/smbios.h"
 #include "fsutil.h"
+#include "i18n_mark.h"
 #include "hostdata.h"
 #include "profile_text.h"
 #include "registers.h"
@@ -209,6 +210,13 @@ void Controller::PollOnce(bool full) {
     PollEc(true);
     PollMsr(true);
     lastSlow_ = now;
+    did = true;
+  }
+  // The fan watchdog judges the temperatures of the last poll. While a custom or fixed fan setting is active that must not depend on
+  // whether the window is open (the full poll then runs every 5 s): two register reads a second, not the whole table.
+  if (!vis && fanWatch_ && now - lastFast_ >= 1000 && now - lastWatch_ >= 1000) {
+    PollEcTemps();
+    lastWatch_ = now;
     did = true;
   }
   if (full || now - lastOs_ >= osMs) {
@@ -440,19 +448,19 @@ Result Controller::Run(const Request& r) {
 
 Result Controller::Gate(const SettingDef& d) {
   if (d.ev != Ev::Os) {
-    if (cfg_.Bool("cfg.readonly", false)) return Fail("gate.readonly", "read-only mode (kill switch) is on");
+    if (cfg_.Bool("cfg.readonly", false)) return Fail("gate.readonly", N_("read-only mode (kill switch) is on"));
   }
   // Family-tier mechanisms (same EC family, independently documented, plausibility-probed at start-up) are enabled by default
   // only on the exactly identified unit; on other models, and for anything Experimental, the explicit toggle is required.
   bool needExp = d.needsExperimental;
   if (needExp && d.ev == Ev::Family && devClass_ == "verified") needExp = false;
   if (needExp && !cfg_.Bool("cfg.experimental", false))
-    return Fail("gate.experimental", std::string(d.key) + " is " + EvName(d.ev) + "; enable Settings > Safety > Allow experimental writes");
+    return Fail("gate.experimental", std::string(d.key) + " is " + EvName(d.ev) + "; enable Safety and service > Allow experimental writes");
   const std::string k = d.key;
   const bool hwWrite = StartsWith(k, "ec.") || StartsWith(k, "fan.") || StartsWith(k, "batt.") || StartsWith(k, "pref.") ||
                        StartsWith(k, "gpu.") || StartsWith(k, "msr.") || StartsWith(k, "nv.");
   if (hwWrite && devClass_ == "unknown" && !cfg_.Bool("cfg.unknownModel", false))
-    return Fail("gate.model", "unrecognised hardware model; hardware writes are disabled (Settings > Safety)");
+    return Fail("gate.model", N_("unrecognised hardware model; hardware writes are disabled (see Safety and service)"));
   Result ok;
   ok.ok = true;
   ok.code = "ok";

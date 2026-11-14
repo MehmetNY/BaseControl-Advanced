@@ -121,7 +121,7 @@ void App::MakeBackend() {
     d.simWorld.reset(new sim::World(sm, true));
     Controller::Options co;
     co.mode = "sim";
-    co.version = BC_VERSION;
+    co.version = opt_.simVersion.empty() ? std::string(BC_VERSION) : opt_.simVersion;
     d.ctl.reset(new Controller(d.simWorld->hw(), co));
     d.ctl->Start();
     backend_.reset(new LocalBackend(*d.ctl, "sim"));
@@ -331,6 +331,21 @@ void App::ChainNext(const std::shared_ptr<ChainSt>& st) {
   });
 }
 
+std::string App::CapStateText(const std::string& cap) const {
+  static const struct {
+    const char* state;
+    const char* words;
+  } kStates[] = {
+      {"ok", N_("available")},           {"absent", N_("not present")},      {"denied", N_("access denied")},
+      {"error", N_("failed to start")},  {"locked", N_("locked")},           {"implausible", N_("implausible readings")},
+      {"unsupported", N_("not supported")}, {"off", N_("switched off")},     {"blocked", N_("blocked by a safety check")},
+  };
+  const std::string s = CapState(cap);
+  for (const auto& e : kStates)
+    if (s == e.state) return T(e.words);
+  return T("unknown");
+}
+
 std::string App::CodeText(const std::string& code) const {
   if (code == "range") return T("The value is outside the allowed range.");
   if (code == "gate.readonly") return T("Read-only mode is on (Safety & service).");
@@ -378,7 +393,7 @@ void App::OnResult(const Op& op, const Result& r) {
   if (r.code == "needs.approval") return AskApproval(op, r);
 
   const std::string what = op.label.empty() ? op.req.key : op.label;
-  ui_.Toast(Tf("Could not apply: %s", what.c_str()), ToastKind::Error, CodeText(r.code) + (r.msg.empty() ? std::string() : "\n" + r.msg));
+  ui_.Toast(Tf("Could not apply: %s", what.c_str()), ToastKind::Error, CodeText(r.code) + (r.msg.empty() ? std::string() : "\n" + TMsg(r.msg)));
   if (op.done) op.done(r);
 }
 
@@ -454,7 +469,7 @@ void App::AskExperimental(const Op& op) {
   m.title = T("Experimental setting");
   m.body = Tf("\"%s\" is marked %s: the mechanism is plausible but unproven on this laptop, or it bypasses a firmware protection.\n\n"
               "Allowing experimental writes is a global switch (Safety & service). You can turn it off again at any time.",
-              (op.label.empty() ? op.req.key : op.label).c_str(), d ? EvLabel(d->ev).c_str() : "experimental");
+              (op.label.empty() ? op.req.key : op.label).c_str(), d ? EvLabel(d->ev).c_str() : T("Experimental").c_str());
   m.icon = IconId::Warn;
   m.iconColor = ui_.th.amber;
   m.buttons = {{T("Cancel"), Btn::Ghost, 0}, {T("Allow and apply"), Btn::Primary, 1}};

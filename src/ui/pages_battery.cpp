@@ -120,7 +120,7 @@ void DrawHistory(Ui& ui, const Rect& r, const std::vector<Sample>& h, int stepSe
   for (int i = 0; i <= 4; i++) {
     const float y = plot.b() - plot.h * static_cast<float>(i) / 4.0f;
     g.Line({plot.x, y}, {plot.r(), y}, WithAlpha(th.line, i == 0 ? 210 : 110), 1);
-    g.Text(Rect(r.x, y - 8, 36, 16), Num(i * 25) + " %", FontId::Tiny, th.faint, Align::Right);
+    g.Text(Rect(r.x, y - 8, 36, 16), Pct(i * 25), FontId::Tiny, th.faint, Align::Right);
   }
   const long windowSec = static_cast<long>(kWindowSamples) * std::max(1, stepSec);
   const int hours = static_cast<int>(std::lround(windowSec / 3600.0));

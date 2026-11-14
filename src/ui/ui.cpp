@@ -559,9 +559,12 @@ void Ui::DrawModal() {
     if (Button("modal#" + std::to_string(i), br, b.label, b.style)) chosen = b.id;
     bx -= bw + 10;
   }
+  // Escape cancels. Enter does not answer the dialog: every dialog asks about something with consequences (a risky write, the
+  // service, a deletion) and a stray Enter - often still on its way from the control that opened it - must never be the "yes".
+  // The confirming button has to be clicked. Enter is swallowed so it cannot reach the page underneath.
   for (auto& k : in.keys) {
     if (k.vk == VK_ESCAPE) { chosen = 0; k.vk = 0; }
-    else if (k.vk == VK_RETURN && !sp.buttons.empty()) { chosen = sp.buttons.back().id; k.vk = 0; }
+    else if (k.vk == VK_RETURN) k.vk = 0;
   }
   if (chosen != -2) {
     auto cb = std::move(modal_.done);

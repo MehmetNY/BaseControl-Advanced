@@ -31,6 +31,7 @@ enum class Page {
 struct Options {
   std::string mode = "auto";   // auto | local | sim
   std::string simModel;        // simulator only: exact (default) | family | unknown - which laptop the simulation pretends to be
+  std::string simVersion;      // simulator only: the version the simulated service reports (tests the "service and window differ" note)
   std::string lang;            // "" = stored preference / system language
   bool tray = false;           // start hidden in the tray
   // offscreen rendering for documentation (--shot)
@@ -78,7 +79,8 @@ class App {
   bool B(const std::string& k, bool def = false) const { return snap_.Bool(k, def); }
   bool CapOk(const std::string& cap) const { return cap.empty() || snap_.Str("cap." + cap) == "ok"; }
   std::string CapState(const std::string& cap) const { return snap_.Str("cap." + cap, "unknown"); }
-  std::string CapWhy(const std::string& cap) const { return snap_.Str("capwhy." + cap); }
+  std::string CapStateText(const std::string& cap) const;                           // CapState() in words, translated
+  std::string CapWhy(const std::string& cap) const { return TMsg(snap_.Str("capwhy." + cap)); }   // why it is unavailable, translated
   std::string Fmt1(const std::string& k, int dec = 1, const char* unit = "") const;  // "—" when absent
 
   Draft& GetDraft(const std::string& key) { return drafts_[key]; }

@@ -106,6 +106,7 @@ class Controller {
   bool EcVerify(uint16_t a, uint8_t mask, uint8_t want, int tries = 6, uint32_t delayMs = 150);
   void ProbeEc();
   void PollEc(bool full);
+  void PollEcTemps();   // only the two temperatures the fan watchdog judges
   bool EcActive();
   Result EnsureEcActive();
   Result EcBringUp();
@@ -202,7 +203,7 @@ class Controller {
   std::atomic<bool> stop_{false};
   std::atomic<bool> visible_{true};
   bool started_ = false;
-  uint64_t lastFast_ = 0, lastSlow_ = 0, lastOs_ = 0, lastHk_ = 0, lastLight_ = 0, lastStorage_ = 0;
+  uint64_t lastFast_ = 0, lastSlow_ = 0, lastOs_ = 0, lastHk_ = 0, lastLight_ = 0, lastStorage_ = 0, lastWatch_ = 0;
   bool storageKnown_ = false;             // PollStorage has read the drives at least once
   std::vector<std::string> pendingEvents_;
   uint64_t reapplyAt_ = 0;
@@ -223,6 +224,7 @@ class Controller {
   mgp::LiveState lastLive_;
   bool engineReady_ = false;
   int fanOverTempTicks_ = 0;
+  std::atomic<bool> fanWatch_{false};   // a custom or fixed fan setting is active: the watchdog needs fresh temperatures even while the window is hidden
   std::string fanGuard_;  // non-empty = the watchdog forced fan boost (cleared when the user picks a fan mode)
 
   // lighting state machine

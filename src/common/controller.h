@@ -1,4 +1,4 @@
-// Controller: the brain of BaseControl Advanced. It owns the hardware access policy:
+// Controller: the brain of Control Center Advanced. It owns the hardware access policy:
 //  * probes what the machine can do (capabilities + evidence tier + plausibility checks),
 //  * polls hardware into a snapshot (KV) that the UI renders (live sliders follow it),
 //  * executes validated requests (typed settings only, never raw addresses) with read-back verification + rollback,
@@ -48,7 +48,7 @@ class Controller {
     std::string dataDir;        // "" = no persistence (tests)
     bool manual = false;        // no worker thread: tests call PollOnce()/ExecuteSync()
     std::string mode = "local"; // "service" | "local" | "sim" (shown in the UI)
-    std::string version = "1.0.0";
+    std::string version = "1.0.0-beta";
   };
 
   Controller(const Hardware& hw, const Options& opt);

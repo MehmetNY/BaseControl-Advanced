@@ -26,7 +26,7 @@ const std::vector<KeyAction>& KeyActions() {
       {"cam_toggle", N_("Camera on / off"), false},
       {"screenshot", N_("Take a screenshot (Snipping Tool)"), false},
       {"calculator", N_("Open Calculator"), false},
-      {"show_window", N_("Open BaseControl"), false},
+      {"show_window", N_("Open Control Center Advanced"), false},
       {"lock", N_("Lock the computer"), false},
       {"disable", N_("Disable this key"), false},
   };

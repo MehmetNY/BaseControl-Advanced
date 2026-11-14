@@ -1,6 +1,6 @@
 # Safety
 
-BaseControl Advanced can change things your laptop's firmware normally keeps to itself: CPU and GPU power limits, fan behaviour, charging profile. A wrong value can make the machine unstable, hot, or - in the worst case - damage it. This page says what the program does to keep that unlikely, what it does *not* protect you from, and how to get back to a clean state.
+Control Center Advanced can change things your laptop's firmware normally keeps to itself: CPU and GPU power limits, fan behaviour, charging profile. A wrong value can make the machine unstable, hot, or - in the worst case - damage it. This page says what the program does to keep that unlikely, what it does *not* protect you from, and how to get back to a clean state.
 
 > **Read this first.** The program is licensed GPL-3.0 *without any warranty*. Everything in it was verified with a cross-compiler, the Wine compatibility layer, a simulator and unit tests. **No release has been tested on real hardware by anyone but the owner's own measurements that the register map is built on** (see [CAPABILITIES](CAPABILITIES.md)). Treat the first run like the first run of any overclocking tool: start with the defaults, change one thing at a time, watch the temperatures.
 
@@ -62,13 +62,13 @@ When the service is stopped on purpose (*Stop the service*, uninstalling, shutti
 
 ## The OEM service
 
-The OEM Control Center's background service (GCUBridge) can write to the same registers and undo your changes. The Safety page shows whether it is installed and running, and offers *Take over from the OEM service*: it stops the service and sets it to Disabled so it cannot start again with Windows. This is reversible from the same page (*Give the OEM service back*), *Remove the service* does it automatically, and `BaseControl.exe --restore-oem` does it from a command prompt. While the OEM service is running, the program refuses to bring the EC's power-management loop up itself.
+The OEM Control Center's background service (GCUBridge) can write to the same registers and undo your changes. The Safety page shows whether it is installed and running, and offers *Take over from the OEM service*: it stops the service and sets it to Disabled so it cannot start again with Windows. This is reversible from the same page (*Give the OEM service back*), *Remove the service* does it automatically, and `ControlCenterAdvanced.exe --restore-oem` does it from a command prompt. While the OEM service is running, the program refuses to bring the EC's power-management loop up itself.
 
 ## The service and the window
 
 - The window needs no administrator rights. The service (LocalSystem) does the privileged work.
-- The service only ever runs a binary from a protected folder: installing from a portable copy first copies the program below `Program Files\BaseControl Advanced`, so a normal user cannot swap the file the service runs.
-- The pipe between them accepts local clients only, is protected against squatting and rate-limited, and has an *Only administrators can change settings* option for shared computers (to turn that off again you have to start BaseControl as administrator).
+- The service only ever runs a binary from a protected folder: installing from a portable copy first copies the program below `Program Files\Control Center Advanced`, so a normal user cannot swap the file the service runs.
+- The pipe between them accepts local clients only, is protected against squatting and rate-limited, and has an *Only administrators can change settings* option for shared computers (to turn that off again you have to start Control Center Advanced as administrator).
 - Everything that crosses the pipe is a typed request; a malformed or oversized one is dropped.
 
 ## What the program cannot protect you from
@@ -84,8 +84,8 @@ The OEM Control Center's background service (GCUBridge) can write to the same re
 
 1. *Safety and service → Read-only mode* stops all hardware writes immediately.
 2. On the *Fan* page, *Auto* hands the fans back to the firmware. Applying a built-in profile on *Performance profiles* replaces the values you set by hand with the profile's.
-3. *Remove the service* (or `BaseControl.exe --uninstall-service` as administrator) stops BaseControl's service and gives the OEM service back.
-4. A restart of the laptop is the last resort: values the firmware does not keep across a restart are gone, values BaseControl re-applies at start-up are re-applied only while its service is installed and *Apply my settings when the service starts* is on.
+3. *Remove the service* (or `ControlCenterAdvanced.exe --uninstall-service` as administrator) stops Control Center Advanced's service and gives the OEM service back.
+4. A restart of the laptop is the last resort: values the firmware does not keep across a restart are gone, values Control Center Advanced re-applies at start-up are re-applied only while its service is installed and *Apply my settings when the service starts* is on.
 5. The uninstaller removes the program and, when you agree, its saved settings. The OEM Control Center is untouched.
 
 ## Reporting a problem

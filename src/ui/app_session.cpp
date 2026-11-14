@@ -247,7 +247,7 @@ void App::RunAction(const std::string& id) {
   } else if (id == "profile_next") {
     const std::vector<std::string> names = Split(S("profile.list"), ',');
     if (names.empty() || !connected()) {
-      Announce(T("Performance profile"), T("Not connected to the BaseControl service."));
+      Announce(T("Performance profile"), T("Not connected to the Control Center Advanced service."));
       return;
     }
     const std::string cur = S("profile.active");

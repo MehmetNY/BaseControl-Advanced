@@ -183,12 +183,12 @@ void AdvancedCards(Ctx& c, Masonry& m) {
 
   if (!a.CapOk("msr")) {
     const std::string why = a.CapWhy("msr").empty() ? T("The register driver is not available.") : a.CapWhy("msr");
-    const std::string body = T("The advanced panel writes CPU registers through the PawnIO driver with its IntelMSR module. BaseControl does not ship them. Follow docs/SETUP.md to install both once, then restart the service.");
+    const std::string body = T("The advanced panel writes CPU registers through the PawnIO driver with its IntelMSR module. Control Center Advanced does not ship them. Follow docs/SETUP.md to install both once, then restart the service.");
     const float nh = NoteHeight(c, m, why) + NoteHeight(c, m, body);
     Card k(c, m, T("Advanced CPU registers unavailable"), T("Direct register access is switched off"), IconId::Lock, nh + kRowButtons);
     k.Note(why, th.amber);
     k.Note(body);
-    if (k.Button("cu#setup", T("Open the setup guide"), Btn::Normal, IconId::External)) a.OpenUrl("https://github.com/MehmetNY/BaseControl-Advanced/blob/main/docs/SETUP.md");
+    if (k.Button("cu#setup", T("Open the setup guide"), Btn::Normal, IconId::External)) a.OpenUrl("https://github.com/MehmetNY/Control-Center-Advanced/blob/main/docs/SETUP.md");
     return;
   }
 
@@ -498,9 +498,9 @@ float PageCustom(App& a, const Rect& r) {
       const Rect r1 = k.Row(kRowToggle);
       const float tw = r1.w - 70;
       g.Text(Rect(r1.x, r1.y + 6, tw, 22), T("Keep my settings after sleep and display wake"), FontId::Body, th.text);
-      g.Text(Rect(r1.x, r1.y + 28, tw, 18), T("The firmware drops cTGP after a display off/on. BaseControl re-applies it."), FontId::Small, th.muted);
-      c.ui.Tip(Rect(r1.x, r1.y + 28, tw, 18), g.TextW(T("The firmware drops cTGP after a display off/on. BaseControl re-applies it."), FontId::Small) > tw
-                                                    ? T("The firmware drops cTGP after a display off/on. BaseControl re-applies it.")
+      g.Text(Rect(r1.x, r1.y + 28, tw, 18), T("The firmware drops cTGP after a display off/on. Control Center Advanced re-applies it."), FontId::Small, th.muted);
+      c.ui.Tip(Rect(r1.x, r1.y + 28, tw, 18), g.TextW(T("The firmware drops cTGP after a display off/on. Control Center Advanced re-applies it."), FontId::Small) > tw
+                                                    ? T("The firmware drops cTGP after a display off/on. Control Center Advanced re-applies it.")
                                                     : "");
       if (c.ui.Switch("sw#cfg.keep", Rect(r1.r() - 44, r1.cy() - 11, 44, 22), a.B("cfg.keep", true), true)) a.Cfg("cfg.keep", a.B("cfg.keep", true) ? "0" : "1");
       const Rect r2 = k.Row(kRowToggle);

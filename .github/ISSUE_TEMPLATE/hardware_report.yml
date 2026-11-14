@@ -5,14 +5,14 @@ body:
   - type: markdown
     attributes:
       value: |
-        Almost everything in BaseControl Advanced has only been tried against a simulator ([what has never been run](https://github.com/MehmetNY/BaseControl-Advanced/blob/main/docs/CAPABILITIES.md#what-has-never-been-run)). Whatever you found, working or not, helps.
+        Almost everything in Control Center Advanced has only been tried against a simulator ([what has never been run](https://github.com/MehmetNY/Control-Center-Advanced/blob/main/docs/CAPABILITIES.md#what-has-never-been-run)). Whatever you found, working or not, helps.
 
         Please change one thing at a time, watch the temperatures, and keep the read-only switch (Safety and service) in mind. Other models of the same laptop family may behave differently; the program locks hardware writes on models it does not recognise, and a report is how that can be improved safely.
   - type: input
     id: version
     attributes:
-      label: BaseControl version
-      placeholder: "1.0.0"
+      label: Control Center Advanced version
+      placeholder: "1.0.0-beta"
     validations:
       required: true
   - type: input

@@ -47,7 +47,7 @@ bool IsProfileKey(const std::string& k) {
   return false;
 }
 
-// Built-in presets. Values are BaseControl defaults, not OEM profile equivalents.
+// Built-in presets. Values are Control Center Advanced defaults, not OEM profile equivalents.
 KV Preset(const std::string& name) {
   KV k;
   if (name == "Quiet") {

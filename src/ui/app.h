@@ -1,4 +1,4 @@
-// The BaseControl window: owns the backend (service pipe / in-process controller / simulator), the Ui, the snapshot copy
+// The Control Center Advanced window: owns the backend (service pipe / in-process controller / simulator), the Ui, the snapshot copy
 // the pages read from, the request bookkeeping (drafts, pending operations, consent / experimental / activation dialogs)
 // and the Win32 window, tray icon and offscreen renderer used for the README screenshots.
 #pragma once

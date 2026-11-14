@@ -31,7 +31,7 @@ The application icon is a bolt in the same peach on a dark rounded square. `asse
 ## Layout
 
 - **Navigation rail**, 236 px wide: the brand, then seven groups - *Overview*, *General settings*, *Performance*, *Lighting*, *Battery*, *Display settings*, *Device info* - and *Safety and service* pinned to the bottom with the model and board name above it. Below 1000 px of window width the rail shrinks to 68 px of icons with tooltips.
-- **Top bar**: a breadcrumb (*BaseControl / page*) on the left; on the right, from the edge inwards, the **EN | TR** switch, a **mode chip** (*Service* in green, *Local (admin)* in blue, *SIMULATION* in amber, *Offline* in red), the **active profile** and the **power source** with the battery level.
+- **Top bar**: a breadcrumb (*Control Center Advanced / page*) on the left; on the right, from the edge inwards, the **EN | TR** switch, a **mode chip** (*Service* in green, *Local (admin)* in blue, *SIMULATION* in amber, *Offline* in red), the **active profile** and the **power source** with the battery level.
 - **Page header**: a small section label, the page title, a sentence of explanation and, for groups with several pages, a row of tabs (*General settings* has five, *Performance* four, *Device info* two).
 - **Pages are masonry grids of cards**: one to four columns (mostly two) depending on the window width, each card one idea (a title, a subtitle, rows of controls or readings). The page scrolls as a whole.
 - **The Advanced CPU panel** on *Custom profiles* is the ThrottleStop-style set of values (power-limit windows, current limits, voltage offsets, prefetchers and so on). When the content area is at least 980 px wide it docks to the right (470 px) and the main cards stay visible beside it; on a narrower window the same cards are drawn inline in the page. The *Advanced CPU...* button on the page opens it and turns into *Hide advanced CPU*.
@@ -64,7 +64,7 @@ Title  [Verified]                      ● LIVE  95 W  →  120 W     [↶] [ Co
 
 - It is on every Windows installation: nothing to ship, nothing to patch, no runtime to update.
 - An immediate-mode toolkit (draw the frame from the current state, repaint only when something changed) is small, needs no widget tree to keep in sync with the hardware snapshot, and can be driven offscreen by the same code that draws the real window - which is how the screenshots and the scripted UI tests in `tests/ui` are made.
-- The window ticks every 100 ms while it is visible and once a second while it is hidden; a repaint happens only when the state changed, and a 16 ms animation timer exists only while something is animating (a hover fade, a dialog opening). A hidden BaseControl therefore wakes up about once a second.
+- The window ticks every 100 ms while it is visible and once a second while it is hidden; a repaint happens only when the state changed, and a 16 ms animation timer exists only while something is animating (a hover fade, a dialog opening). A hidden Control Center Advanced therefore wakes up about once a second.
 - Text measurements and wrapped lines are cached.
 
 ## Known gaps

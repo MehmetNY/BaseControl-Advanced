@@ -1,6 +1,6 @@
 # Lighting: preset colours, the picker, hex entry, effects, brightness with Confirm, power switch, idle timeout, battery dimming,
 # display and sleep events, restore defaults.
-# Run: BaseControl.exe --sim --script tests/ui/lighting_flow.txt --size 1360x1500
+# Run: ControlCenterAdvanced.exe --sim --script tests/ui/lighting_flow.txt --size 1360x1500
 say == 1. defaults ==
 page lighting
 expect light.kbd.power 1

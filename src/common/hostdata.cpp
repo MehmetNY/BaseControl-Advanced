@@ -187,7 +187,7 @@ std::string DeviceSummary(const KV& s) {
   auto line = [&](const std::string& k, const std::string& v) {
     if (!v.empty()) out += k + ": " + v + "\n";
   };
-  line("BaseControl", s.Str("app.version") + (s.Str("svc.mode").empty() ? "" : " (" + s.Str("svc.mode") + ")"));
+  line("Control Center Advanced", s.Str("app.version") + (s.Str("svc.mode").empty() ? "" : " (" + s.Str("svc.mode") + ")"));
   std::string model = Trim(s.Str("host.vendor") + " " + s.Str("host.product"));
   if (!s.Str("host.board").empty()) model += (model.empty() ? "" : " ") + std::string("(") + s.Str("host.board") + ")";
   line("Model", model);

@@ -1,7 +1,7 @@
 // Intel RAPL / MSR field codecs (pure functions, unit-tested). Layouts follow the Intel SDM Vol. 4
 // (MSR_RAPL_POWER_UNIT, MSR_PKG_POWER_LIMIT, MSR_PKG_POWER_INFO, MSR_TEMPERATURE_TARGET, OC mailbox).
 // Whether a given write is permitted is decided elsewhere (PawnIO's IntelMSR module has its own allowlist;
-// BaseControl additionally refuses anything that is locked, out of range or not read back identically).
+// Control Center Advanced additionally refuses anything that is locked, out of range or not read back identically).
 #pragma once
 #include <cstdint>
 

@@ -19,10 +19,10 @@ namespace bc {
 namespace svc {
 namespace {
 
-const wchar_t kName[] = L"BaseControl";
-const wchar_t kDisplay[] = L"BaseControl Advanced";
+const wchar_t kName[] = L"ControlCenterAdvanced";
+const wchar_t kDisplay[] = L"Control Center Advanced";
 const wchar_t kDescription[] =
-    L"Hardware access for BaseControl Advanced (embedded controller, power limits, fans, GPU, lighting). The user interface talks to it over a local named pipe.";
+    L"Hardware access for Control Center Advanced (embedded controller, power limits, fans, GPU, lighting). The user interface talks to it over a local named pipe.";
 
 const GUID& kConsoleDisplayState = hw::kGuidConsoleDisplayState;
 const GUID& kAcDcPowerSource = hw::kGuidAcDcPowerSource;
@@ -222,7 +222,7 @@ int RunInConsole() {
   g_console = true;
   g_stop = CreateEventW(nullptr, TRUE, FALSE, nullptr);
   SetConsoleCtrlHandler(ConsoleHandler, TRUE);
-  std::printf("BaseControl service (console mode) - Ctrl+C stops it\n");
+  std::printf("Control Center Advanced service (console mode) - Ctrl+C stops it\n");
   const DWORD rc = RunCore();
   CloseHandle(g_stop);
   g_stop = nullptr;
@@ -238,9 +238,9 @@ bool Install(std::string* why) {
   std::wstring exe = hw::SelfPath();
   if (!InProtectedFolder(exe)) {
     // portable copy somewhere user-writable: install a private copy below Program Files
-    std::wstring dir = hw::ProgramFiles() + L"\\" + L"BaseControl Advanced";
+    std::wstring dir = hw::ProgramFiles() + L"\\" + L"Control Center Advanced";
     CreateDirectoryW(dir.c_str(), nullptr);
-    std::wstring target = dir + L"\\BaseControl.exe";
+    std::wstring target = dir + L"\\ControlCenterAdvanced.exe";
     // a running copy would be locked: stop the service first (ignore failures, the copy reports its own)
     {
       std::string ignore;

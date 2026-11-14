@@ -1,6 +1,6 @@
 # Development
 
-BaseControl Advanced is plain C++17 with no third-party libraries at build time: the interface is GDI+ and the Win32 API, the controller is portable C++. The Windows executable is cross-compiled on Linux with mingw-w64; the controller logic is tested natively on any host against a simulator.
+Control Center Advanced is plain C++17 with no third-party libraries at build time: the interface is GDI+ and the Win32 API, the controller is portable C++. The Windows executable is cross-compiled on Linux with mingw-w64; the controller logic is tested natively on any host against a simulator.
 
 ## What you need
 
@@ -19,8 +19,8 @@ A Windows machine with MSYS2/MinGW can build the same way; nothing in the makefi
 
 ```sh
 make test -j8                       # translation check, then all unit tests (AddressSanitizer + UBSan)
-make -f Makefile.win -j8            # build/win/BaseControl.exe (debug symbols) and BaseControl.min.exe (stripped, the release binary)
-python3 -I tools/verify_pe.py build/win/BaseControl.min.exe --version 1.0.0   # 28 checks on the file itself
+make -f Makefile.win -j8            # build/win/ControlCenterAdvanced.exe (debug symbols) and ControlCenterAdvanced.min.exe (stripped, the release binary)
+python3 -I tools/verify_pe.py build/win/ControlCenterAdvanced.min.exe --version 1.0.0-beta   # 28 checks on the file itself
 python3 -I tools/gen_docs.py --check                                          # docs/SETTINGS.md and docs/REGISTERS.md are current
 ```
 
@@ -34,7 +34,7 @@ The same `Frame()` code that draws the real window can run offscreen against the
 Xvfb :99 -screen 0 1920x1200x24 &
 tools/run_ui_flows.sh                 # all of them, takes ten minutes or more
 tools/run_ui_flows.sh battery display # only these
-EXE=build/win/BaseControl.exe WINE= tools/run_ui_flows.sh   # natively on Windows (Git Bash)
+EXE=build/win/ControlCenterAdvanced.exe WINE= tools/run_ui_flows.sh   # natively on Windows (Git Bash)
 ```
 
 A script is a text file; the first lines say how to run it (`# Run: ... --size 1360x1500`, optionally `--sim-model family` or `--sim-version 0.9.0`). The commands are `page`, `click`, `clickid`, `hoverid`, `dragby`, `wheel`, `key`, `type`, `wait`, `shot <file.png>`, `say`, and the checks `expect <key> <value>` (a snapshot value), `expectui`, `expectpref`, `expectint`, `expectdraft`. A line that starts with `#` is a comment. `shot` writes the frame so you can look at it.
@@ -42,16 +42,16 @@ A script is a text file; the first lines say how to run it (`# Run: ... --size 1
 ### Screenshots
 
 ```sh
-build/win/BaseControl.exe --sim --font Inter --shot custom out.png --size 1360x1700 [--advanced] [--drafts] [--lang tr]
+build/win/ControlCenterAdvanced.exe --sim --font Inter --shot custom out.png --size 1360x1700 [--advanced] [--drafts] [--lang tr]
 ```
 
 `--advanced` opens the *Advanced CPU* panel and `--drafts` shows sliders with an unconfirmed draft. Every screenshot made this way is labelled SIMULATION.
 
 ### Release
 
-`tools/make_release.sh` runs the host tests, builds the Windows executable, runs the generated-documentation and translation checks and `tools/verify_pe.py` on the exact file that is shipped, then writes into `dist/`: the installer (`...-Setup.exe`, built with NSIS from `installer/BaseControl.nsi`), the bare program (`...-portable.exe`), a zip with the program, licence, notices, `README.txt` and the documentation, and `SHA256SUMS.txt`. Nothing is signed or uploaded; the script prints the `gh release create` command for a pre-release. `SKIP_TESTS=1` skips `make test`; `VERSION=x.y.z` overrides the version. `installer/README.txt` is the plain-text read-me (English and Turkish) that the installer puts next to the program.
+`tools/make_release.sh` runs the host tests, builds the Windows executable, runs the generated-documentation and translation checks and `tools/verify_pe.py` on the exact file that is shipped, then writes into `dist/`: the installer (`...-Setup.exe`, built with NSIS from `installer/ControlCenterAdvanced.nsi`), the bare program (`...-portable.exe`), a zip with the program, licence, notices, `README.txt` and the documentation, and `SHA256SUMS.txt`. Nothing is signed or uploaded; the script prints the `gh release create` command for a pre-release. `SKIP_TESTS=1` skips `make test`; `VERSION=x.y.z` overrides the version. `installer/README.txt` is the plain-text read-me (English and Turkish) that the installer puts next to the program.
 
-The program itself is built to be reproducible: it is linked without a timestamp and stripped with `SOURCE_DATE_EPOCH=0`, so building the same source with the same toolchain (the release was made with mingw-w64 GCC 13 and binutils 2.41 on Linux) gives a byte-identical `BaseControl.exe`. That was checked from two different directories; it was not checked with any other compiler. The installer is not byte-for-byte reproducible, because NSIS embeds file times.
+The program itself is built to be reproducible: it is linked without a timestamp and stripped with `SOURCE_DATE_EPOCH=0`, so building the same source with the same toolchain (the release was made with mingw-w64 GCC 13 and binutils 2.41 on Linux) gives a byte-identical `ControlCenterAdvanced.exe`. That was checked from two different directories; it was not checked with any other compiler. The installer is not byte-for-byte reproducible, because NSIS embeds file times.
 
 The pictures in the README come from `tools/render_screenshots.sh`: it renders the main pages from the simulator in English and Turkish into `docs/images/` (every picture shows SIMULATION in its top bar, because none of them was taken from a real laptop) and then calls `tools/make_banner.py` for the two banners. Run it after an interface change so the README matches the program.
 

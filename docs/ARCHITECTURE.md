@@ -1,20 +1,20 @@
 # Architecture
 
-BaseControl Advanced is one statically linked Windows executable (`BaseControl.exe`, about 3.7 MB, no runtime to install) that plays several roles depending on how it is started. The window, the SYSTEM service and the simulator run the *same* control logic; only the hardware underneath differs.
+Control Center Advanced is one statically linked Windows executable (`ControlCenterAdvanced.exe`, about 3.7 MB, no runtime to install) that plays several roles depending on how it is started. The window, the SYSTEM service and the simulator run the *same* control logic; only the hardware underneath differs.
 
 ```mermaid
 flowchart LR
   subgraph U["User session"]
-    W["Window / tray<br/>BaseControl.exe"]
+    W["Window / tray<br/>ControlCenterAdvanced.exe"]
     UC["Session controller<br/>display, touchpad"]
   end
-  subgraph S["SYSTEM service (BaseControl.exe --service)"]
+  subgraph S["SYSTEM service (ControlCenterAdvanced.exe --service)"]
     PS["Pipe server<br/>typed requests only"]
     C["Controller<br/>probe · validate · gate · apply · verify · roll back"]
     G["Write guard<br/>allow-list + never-write list"]
     FW["Fan watchdog"]
   end
-  W -- "named pipe<br/>\\\\.\\pipe\\BaseControl.v1" --> PS --> C
+  W -- "named pipe<br/>\\\\.\\pipe\\ControlCenterAdvanced.v1" --> PS --> C
   W --- UC
   C --> G --> EC[("Embedded controller<br/>OEM ACPIDriver device")]
   C --> MSR["CPU registers<br/>PawnIO (optional)"]
@@ -28,12 +28,12 @@ flowchart LR
 
 | Start | Role |
 |---|---|
-| `BaseControl.exe` | The window. Talks to the service over a named pipe; needs no administrator rights. The display settings (brightness, refresh rate, colour) and the touchpad switch are handled by a second, small controller inside the window's own session, because they need the user's desktop; the window merges its snapshot with the service's. The same process also owns the keyboard hook (Windows-key lock, Num Lock lock, key remapping), the overlay hotkey and the touchpad corner tap, which only make sense in the signed-in session. |
+| `ControlCenterAdvanced.exe` | The window. Talks to the service over a named pipe; needs no administrator rights. The display settings (brightness, refresh rate, colour) and the touchpad switch are handled by a second, small controller inside the window's own session, because they need the user's desktop; the window merges its snapshot with the service's. The same process also owns the keyboard hook (Windows-key lock, Num Lock lock, key remapping), the overlay hotkey and the touchpad corner tap, which only make sense in the signed-in session. |
 | `--tray` | The same window, started hidden in the notification area (this is the command *Start with Windows* writes to the user's Run key). |
 | `--service` | The Windows service: LocalSystem, delayed automatic start, restarted after a crash (after 5, 15 and 60 s). Owns all privileged hardware access, applies the saved settings at start-up and after sleep, runs the lighting effects and the fan watchdog. |
 | `--local` | Window and controller in one process, for use without the service. Needs administrator rights; started without them, the program asks Windows to restart it elevated. |
 | `--sim` | Window on a *simulated* laptop (a small physical model plus an EC memory image). Used by the tests and for the README screenshots; every such screenshot says SIMULATION. |
-| `--service-console`, `--probe`, `--install-service`, `--uninstall-service`, `--start-service`, `--stop-service`, `--restore-oem` | Command-line verbs (see `BaseControl.exe --help`). |
+| `--service-console`, `--probe`, `--install-service`, `--uninstall-service`, `--start-service`, `--stop-service`, `--restore-oem` | Command-line verbs (see `ControlCenterAdvanced.exe --help`). |
 | `--script <file>` | Scripted UI test on the simulator, offscreen. |
 
 ## Source layout

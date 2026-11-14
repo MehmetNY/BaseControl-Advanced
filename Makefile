@@ -1,4 +1,4 @@
-# BaseControl Advanced - host build (tests, simulator) and Windows cross build (mingw-w64).
+# Control Center Advanced - host build (tests, simulator) and Windows cross build (mingw-w64).
 CXX      ?= g++
 STD      := -std=c++17
 WARN     := -Wall -Wextra -Wpedantic -Wshadow

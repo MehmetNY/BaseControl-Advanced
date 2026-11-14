@@ -1,5 +1,5 @@
 # Performance profiles: cards apply a profile, the power-source rule is stored, profiles can be saved and deleted.
-# Run: BaseControl.exe --sim --script tests/ui/profiles_flow.txt --size 1360x900
+# Run: ControlCenterAdvanced.exe --sim --script tests/ui/profiles_flow.txt --size 1360x900
 say == 1. a card applies its profile ==
 page profiles
 expect profile.active

@@ -7,7 +7,7 @@
 
 namespace bc {
 
-// The four profiles that ship with BaseControl, in display order. They always exist and can be neither deleted nor overwritten.
+// The four profiles that ship with Control Center Advanced, in display order. They always exist and can be neither deleted nor overwritten.
 const std::vector<std::string>& BuiltinProfiles();
 bool IsBuiltinProfile(const std::string& name);   // not case-sensitive
 

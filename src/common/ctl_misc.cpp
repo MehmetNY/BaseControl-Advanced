@@ -169,7 +169,7 @@ Result Controller::SetDisplay(const std::string& key, int value) {
   ColorSettings c = StoredColor();
   std::string mode = cfg_.Str("cfg.disp.mode", "standard");
   if (key == "disp.mode") {
-    // The image profiles are colour curves of BaseControl's own (the panel's factory calibration is not touched).
+    // The image profiles are colour curves of Control Center Advanced's own (the panel's factory calibration is not touched).
     const SettingDef* d = FindSetting("disp.mode");
     mode = EnumName(*d, value);
     if (const ColorSettings* p = FindColorPreset(mode)) c = *p;

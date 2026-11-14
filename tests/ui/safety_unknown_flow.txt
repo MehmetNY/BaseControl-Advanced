@@ -1,6 +1,6 @@
-# Safety and service on a laptop BaseControl does not recognise: a write first asks about experimental writes, then the model gate
+# Safety and service on a laptop Control Center Advanced does not recognise: a write first asks about experimental writes, then the model gate
 # refuses it until the user allows writes on this model (which asks first), and the switch can be taken back.
-# Run: BaseControl.exe --sim --sim-model unknown --script tests/ui/safety_unknown_flow.txt --size 1360x1500
+# Run: ControlCenterAdvanced.exe --sim --sim-model unknown --script tests/ui/safety_unknown_flow.txt --size 1360x1500
 say == 1. an unrecognised laptop: a write first asks about experimental writes; Cancel changes nothing ==
 page safety
 expect dev.class unknown

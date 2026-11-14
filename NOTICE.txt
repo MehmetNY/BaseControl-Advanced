@@ -1,7 +1,7 @@
-BaseControl Advanced
+Control Center Advanced
 Copyright (C) 2026 MehmetNY and contributors
 
-BaseControl Advanced is free software: you can redistribute it and/or modify it under the terms of the
+Control Center Advanced is free software: you can redistribute it and/or modify it under the terms of the
 GNU General Public License as published by the Free Software Foundation, either version 3 of the License,
 or (at your option) any later version. It is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
@@ -14,7 +14,7 @@ The same list is shown in the program on Device info > About.
 1. What is in the program
 -------------------------
 
-* BaseControl Advanced itself: written from scratch for this project.
+* Control Center Advanced itself: written from scratch for this project.
 
 * MONSTER GPU POWER (source folder src/mgp): the author's own GPU power project, GPL-3.0.
   https://github.com/MehmetNY/Monster-XMG-Gpu-Power-Control
@@ -32,7 +32,7 @@ The same list is shown in the program on Device info > About.
 ---------------------------------------------------
 
 These projects were read to understand how the hardware behaves and how a control centre can be
-organised. No source file, text or data file of any of them is included in BaseControl Advanced.
+organised. No source file, text or data file of any of them is included in Control Center Advanced.
 Facts about the hardware (which register means what) are not copyrightable; docs/REGISTERS.md lists the
 registers the program uses and what is known about each. Licences were read from the projects' own files.
 
@@ -77,7 +77,7 @@ Where a project states no licence, nothing was copied from it.
 
 * The OEM Control Center (version 4.9.47.11 was the reference for the feature list): no OEM code, driver,
   image, string table, certificate or file is included, and none of the OEM's server addresses,
-  credentials, keys or identifiers is in the program. BaseControl reaches the embedded controller through
+  credentials, keys or identifiers is in the program. Control Center Advanced reaches the embedded controller through
   the OEM's own ACPIDriver device when it is installed on the laptop; it neither ships nor modifies it.
 
 * PawnIO (https://github.com/namazso/PawnIO; driver GPL-2.0, modules LGPL-2.1-or-later): the signed driver
@@ -88,7 +88,7 @@ Where a project states no licence, nothing was copied from it.
 4. Names
 --------
 
-BaseControl Advanced is an independent project. It is not made, approved or supported by Monster
+Control Center Advanced is an independent project. It is not made, approved or supported by Monster
 Notebook, XMG, Tongfang, Uniwill, Intel or NVIDIA. Their names, and "Windows", are trademarks of their
 owners and are used only to say which hardware and system the program works with.
 

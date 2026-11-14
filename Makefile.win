@@ -1,9 +1,9 @@
 # Windows build (cross-compiled with mingw-w64):   make -f Makefile.win -j8
-#   VERSION=1.0.0 overrides the version string.  Output: build/win/BaseControl.exe
+#   VERSION=1.0.0-beta overrides the version string.  Output: build/win/ControlCenterAdvanced.exe
 CXX     := x86_64-w64-mingw32-g++
 WINDRES := x86_64-w64-mingw32-windres
 STRIP   := x86_64-w64-mingw32-strip
-VERSION ?= 1.0.0
+VERSION ?= 1.0.0-beta
 VER_NUM := $(shell echo $(VERSION) | awk -F. '{printf "%d,%d,%d,0", $$1, $$2, $$3}')
 
 CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -Wpedantic -Wshadow -D__USE_MINGW_ANSI_STDIO=1 -DBC_VERSION=\"$(VERSION)\" -Isrc
@@ -13,7 +13,7 @@ LDLIBS   := -lgdiplus -lsetupapi -lhid -lwlanapi -lpowrprof -lversion -lshell32 
 SRC := src/main.cpp $(wildcard src/common/*.cpp) $(wildcard src/mgp/core/*.cpp) $(wildcard src/mgp/win/*.cpp) \
        $(wildcard src/hw/*.cpp) $(wildcard src/svc/*.cpp) $(wildcard src/sim/*.cpp) $(wildcard src/ui/*.cpp)
 OBJ := $(patsubst src/%.cpp,build/win/obj/%.o,$(SRC))
-EXE := build/win/BaseControl.exe
+EXE := build/win/ControlCenterAdvanced.exe
 
 all: $(EXE)
 
@@ -31,8 +31,8 @@ build/win/obj/res.o: res/app.rc res/app.ico res/app.manifest build/win/version_r
 
 $(EXE): $(OBJ) build/win/obj/res.o
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
-	SOURCE_DATE_EPOCH=0 $(STRIP) --strip-all -o build/win/BaseControl.min.exe $@   # the release binary: no COFF symbol table (tools/verify_pe.py checks it); a fixed timestamp keeps it byte-identical whichever directory builds it
-	@ls -l $@ build/win/BaseControl.min.exe
+	SOURCE_DATE_EPOCH=0 $(STRIP) --strip-all -o build/win/ControlCenterAdvanced.min.exe $@   # the release binary: no COFF symbol table (tools/verify_pe.py checks it); a fixed timestamp keeps it byte-identical whichever directory builds it
+	@ls -l $@ build/win/ControlCenterAdvanced.min.exe
 
 clean:
 	rm -rf build/win

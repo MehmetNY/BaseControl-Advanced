@@ -387,7 +387,7 @@ void Card::Slider(const SliderCfg& cfg) {
     g.Dot({xr - livTag - 9, row.y + 12}, 3.2f, storedTag ? th.faint : th.green);
   }
   ui.Tip(Rect(xr - livTag - 16, row.y, row.r() - xr + livTag + 16, 24),
-         storedTag ? T("The value BaseControl has stored. The hardware does not use it until the matching mode is switched on.")
+         storedTag ? T("The value Control Center Advanced has stored. The hardware does not use it until the matching mode is switched on.")
                    : T("The value the hardware reports right now. It follows changes made by other programs."));
   const float rightReserved = (row.r() - xr) + livTag + 22;
   float tx = row.x;
@@ -431,10 +431,10 @@ void Card::Slider(const SliderCfg& cfg) {
     text = err;
     col = th.amber;
   } else if (changed && haveLive && d.liveAtStart != INT_MIN && d.liveAtStart != live) {
-    text = Tf("Changed outside BaseControl: the hardware now reports %s.", liveS.c_str());
+    text = Tf("Changed outside Control Center Advanced: the hardware now reports %s.", liveS.c_str());
     col = th.amber;
   } else if (changed && over) {
-    text = T("Above the OEM maximum. BaseControl asks you to confirm unless you agreed before.");
+    text = T("Above the OEM maximum. Control Center Advanced asks you to confirm unless you agreed before.");
     col = th.amber;
   } else if (app.RecentOk(cfg.key) < 3.0) {
     text = T("Applied and verified by reading the value back.");

@@ -5,15 +5,15 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thank you. Please skim [Capabilities and verification](https://github.com/MehmetNY/BaseControl-Advanced/blob/main/docs/CAPABILITIES.md) first: it lists what has never been run on real hardware and what is deliberately missing.
+        Thank you. Please skim [Capabilities and verification](https://github.com/MehmetNY/Control-Center-Advanced/blob/main/docs/CAPABILITIES.md) first: it lists what has never been run on real hardware and what is deliberately missing.
 
         If a setting applied something other than what you asked, or a protection did not trigger, that is a **safety bug** - please tick the box below.
   - type: input
     id: version
     attributes:
-      label: BaseControl version
-      description: "Device info > About, or run `BaseControl.exe --version`."
-      placeholder: "1.0.0"
+      label: Control Center Advanced version
+      description: "Device info > About, or run `ControlCenterAdvanced.exe --version`."
+      placeholder: "1.0.0-beta"
     validations:
       required: true
   - type: dropdown

@@ -1,5 +1,5 @@
 # Custom profiles: a slider only DRAFTS a value; nothing reaches the hardware until Confirm is pressed.
-# Run: BaseControl.exe --sim --script tests/ui/custom_flow.txt --size 1360x1100   (simulator, Wine or Windows)
+# Run: ControlCenterAdvanced.exe --sim --script tests/ui/custom_flow.txt --size 1360x1100   (simulator, Wine or Windows)
 say == 1. moving a slider changes nothing ==
 page custom
 expect ec.pl1 120

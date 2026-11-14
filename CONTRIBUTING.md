@@ -1,13 +1,13 @@
 # Contributing
 
-Thank you for looking at BaseControl Advanced. The project controls power limits, fans and firmware-adjacent settings of a real laptop, so a few rules matter more here than in an ordinary desktop app. They are short.
+Thank you for looking at Control Center Advanced. The project controls power limits, fans and firmware-adjacent settings of a real laptop, so a few rules matter more here than in an ordinary desktop app. They are short.
 
 ## The most useful thing you can do: run it and report
 
 Almost everything here has only been exercised against a simulator ([what has and has not been run](docs/CAPABILITIES.md#what-has-never-been-run)). A report from a real laptop is worth more than a patch.
 
-- **It worked / it did not work on my laptop:** open a [hardware report](https://github.com/MehmetNY/BaseControl-Advanced/issues/new?template=hardware_report.yml). Include the model, the BIOS and EC versions the *Device info* page shows, and the **Diagnostics** card from *Safety and service*.
-- **A bug:** open a [bug report](https://github.com/MehmetNY/BaseControl-Advanced/issues/new?template=bug_report.yml). Steps, what you expected, what happened, the Diagnostics card.
+- **It worked / it did not work on my laptop:** open a [hardware report](https://github.com/MehmetNY/Control-Center-Advanced/issues/new?template=hardware_report.yml). Include the model, the BIOS and EC versions the *Device info* page shows, and the **Diagnostics** card from *Safety and service*.
+- **A bug:** open a [bug report](https://github.com/MehmetNY/Control-Center-Advanced/issues/new?template=bug_report.yml). Steps, what you expected, what happened, the Diagnostics card.
 - **Something dangerous:** read [SECURITY](SECURITY.md) first.
 
 Other laptops of the same Tongfang/Uniwill family may work, but the program deliberately locks writes on anything it does not recognise. Please do not ask for that lock to be removed; send a hardware report instead, so the register map can be checked against your model.
@@ -21,7 +21,7 @@ Other laptops of the same Tongfang/Uniwill family may work, but the program deli
    ```sh
    make test -j8                    # i18n check + unit tests with ASan/UBSan
    make -f Makefile.win -j8         # the Windows build must stay warning-free
-   python3 -I tools/verify_pe.py build/win/BaseControl.min.exe --version 1.0.0
+   python3 -I tools/verify_pe.py build/win/ControlCenterAdvanced.min.exe --version 1.0.0-beta
    python3 -I tools/gen_docs.py --check
    ```
 

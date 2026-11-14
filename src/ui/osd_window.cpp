@@ -9,7 +9,7 @@
 namespace bc {
 namespace ui {
 namespace {
-constexpr wchar_t kOsdClass[] = L"BaseControlAdvancedOverlay";
+constexpr wchar_t kOsdClass[] = L"ControlCenterAdvancedOverlay";
 
 float SystemScale() {
   HDC dc = GetDC(nullptr);
@@ -48,7 +48,7 @@ bool OsdWindow::Create() {
   wc.hInstance = hi;
   wc.lpszClassName = kOsdClass;
   RegisterClassExW(&wc);   // fails harmlessly when it already exists
-  hwnd_ = CreateWindowExW(WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, kOsdClass, L"BaseControl overlay", WS_POPUP, 0, 0, 10, 10,
+  hwnd_ = CreateWindowExW(WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, kOsdClass, L"Control Center Advanced overlay", WS_POPUP, 0, 0, 10, 10,
                           nullptr, nullptr, hi, nullptr);
   return hwnd_ != nullptr;
 }

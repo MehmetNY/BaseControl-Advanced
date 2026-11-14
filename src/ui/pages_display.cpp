@@ -1,5 +1,5 @@
 // Display: a preview that shows the colours you are choosing before anything is sent, the image profiles, the fine colour controls (every
-// one with its own Confirm), refresh rate and panel brightness. The colours are BaseControl's own: a gamma ramp plus a colour effect.
+// one with its own Confirm), refresh rate and panel brightness. The colours are Control Center Advanced's own: a gamma ramp plus a colour effect.
 // The panel's factory calibration is a different thing and stays with Windows' colour management (the last card says so).
 #include <algorithm>
 #include <cmath>
@@ -373,7 +373,7 @@ float PageDisplay(App& a, const Rect& r) {
     for (const ColorPreset& p : presets) descH = std::max(descH, g.Wrapped(Rect(0, 0, descW, 3000), ProfileDesc(p.name), FontId::Small, 0, false));
     const float tileH = 34 + descH + 8 + 12 + 14;
     const float tilesH = static_cast<float>(rows) * tileH + static_cast<float>(rows - 1) * gap;
-    const std::string note = T("These are colour curves of BaseControl's own, applied to the display output. They do not touch the panel's factory calibration, and Standard puts everything back.");
+    const std::string note = T("These are colour curves of Control Center Advanced's own, applied to the display output. They do not touch the panel's factory calibration, and Standard puts everything back.");
     const float noteH = NoteHeight(c, m, note);
     Card k(c, m, T("Image profile"), T("A starting point for the colour controls"), IconId::Sliders, tilesH + 14 + 36 + 8 + noteH);
 
@@ -504,7 +504,7 @@ float PageDisplay(App& a, const Rect& r) {
 
   // =============================================================== calibration
   {
-    const std::string n1 = T("Some laptops ship with a factory colour profile measured for the panel. The original Control Center downloads it from the manufacturer's server, using the serial number stored in the BIOS. BaseControl does not contact that server and does not include such a profile.");
+    const std::string n1 = T("Some laptops ship with a factory colour profile measured for the panel. The original Control Center downloads it from the manufacturer's server, using the serial number stored in the BIOS. Control Center Advanced does not contact that server and does not include such a profile.");
     const std::string n2 = T("If you have the profile file (.icc or .icm), Windows applies it by itself: open colour management, choose the built-in display, add the profile and make it the default. It works together with the colours above.");
     const float h = NoteHeight(c, m, n1, true) + NoteHeight(c, m, n2, true) + kRowButtons;
     Card k(c, m, T("Colour calibration"), T("Factory profiles and the Windows colour tools"), IconId::Eye, h, true);

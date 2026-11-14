@@ -385,7 +385,7 @@ float PageLighting(App& a, const Rect& r) {
   // =============================================================== colour
   {
     const bool ignored = effect == lightfx::kCycle || effect == lightfx::kTemp;
-    const std::string note = T("BaseControl keeps your lighting and applies it again at start-up, after sleep and when the display wakes.");
+    const std::string note = T("Control Center Advanced keeps your lighting and applies it again at start-up, after sleep and when the display wakes.");
     const std::string ign = T("This effect chooses its own colours, so the colour below is not used.");
     float h = 122 + 12 + 18 + 16 + kRowSwatch + kRowButtons + 9 + kRowButtons + NoteHeight(c, m, note);
     if (ignored) h += NoteHeight(c, m, ign);
@@ -457,7 +457,7 @@ float PageLighting(App& a, const Rect& r) {
 
   // =============================================================== idle timeout
   {
-    const std::string note = T("Counted from your last key press or mouse move. BaseControl watches for it, so the tray icon or the window has to be running.");
+    const std::string note = T("Counted from your last key press or mouse move. Control Center Advanced watches for it, so the tray icon or the window has to be running.");
     const long long idle = a.I("light.idle", 0);
     const float h = 80 + NoteHeight(c, m, note) + kRowToggle + 9 + kRowCombo;
     Card k(c, m, T("Idle timeout"), "", IconId::Moon, h);

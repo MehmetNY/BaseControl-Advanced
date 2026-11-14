@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Checks a built BaseControl.exe before it is released.
+"""Checks a built ControlCenterAdvanced.exe before it is released.
 
-    python3 tools/verify_pe.py build/win/BaseControl.min.exe [--version 1.0.0] [--json]
+    python3 tools/verify_pe.py build/win/ControlCenterAdvanced.min.exe [--version 1.0.0] [--json]
 
 It cannot run the program (that needs Windows); it checks what the file itself says, and fails (exit status 1) when one of these is wrong:
 
@@ -130,7 +130,7 @@ def main():
                         for k, v in st.entries.items():
                             strings[k.decode()] = v.decode()
     report["version_info"] = strings
-    check(strings.get("ProductName") == "BaseControl Advanced", "ProductName is BaseControl Advanced")
+    check(strings.get("ProductName") == "Control Center Advanced", "ProductName is Control Center Advanced")
     check(strings.get("CompanyName") == "MehmetNY", "CompanyName is MehmetNY")
     check(strings.get("LegalCopyright") == "GPL-3.0-or-later", "LegalCopyright says GPL-3.0-or-later")
     if a.version:
@@ -138,7 +138,7 @@ def main():
               "file and product version are %s (found %s / %s)" % (a.version, strings.get("FileVersion"), strings.get("ProductVersion")))
         ffi = getattr(pe, "VS_FIXEDFILEINFO", [None])[0]
         if ffi is not None:
-            want = [int(x) for x in a.version.split(".")] + [0]
+            want = [int(x) for x in re.match(r"\d+\.\d+\.\d+", a.version).group(0).split(".")] + [0]
             got = [ffi.FileVersionMS >> 16, ffi.FileVersionMS & 0xFFFF, ffi.FileVersionLS >> 16, ffi.FileVersionLS & 0xFFFF]
             check(got == want, "fixed file version is %s" % ".".join(map(str, want)))
 

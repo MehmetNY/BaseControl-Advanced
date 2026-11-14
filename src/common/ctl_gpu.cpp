@@ -153,7 +153,7 @@ Result Controller::SetCtgp(int watts, const KV& args) {
     Result res;
     switch (c) {
       case mgp::TxnClass::NeedsApproval:
-        res = Fail("needs.approval", "the OEM profile file holds a value BaseControl did not write");
+        res = Fail("needs.approval", "the OEM profile file holds a value Control Center Advanced did not write");
         res.data.Set("sha", t.pre.sha);
         res.data.SetI("oem.target", t.pre.target);
         return res;

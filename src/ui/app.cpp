@@ -187,7 +187,7 @@ void App::Tick() {
     CloseHandle(d_->elevProc);
     d_->elevProc = nullptr;
     if (code == 0) ui_.Toast(d_->elevToast.empty() ? T("Done") : d_->elevToast, ToastKind::Ok);
-    else ui_.Toast(T("The administrator helper reported a problem"), ToastKind::Error, Tf("Exit code %d. See the service log under %%ProgramData%%\\BaseControl.", static_cast<int>(code)));
+    else ui_.Toast(T("The administrator helper reported a problem"), ToastKind::Error, Tf("Exit code %d. See the service log under %%ProgramData%%\\ControlCenterAdvanced.", static_cast<int>(code)));
     dirty_ = true;
   }
   AutoRefresh();
@@ -249,7 +249,7 @@ void App::Go(Page p) {
 // ------------------------------------------------------------------------------------------------ requests
 uint64_t App::Submit(const Request& r, const std::string& label, std::function<void(const Result&)> done, bool quiet) {
   if (!backend_ || !backend_->Connected()) {
-    if (!quiet) ui_.Toast(T("Not connected to the BaseControl service."), ToastKind::Warn, T("Open the Overview page for ways to connect."));
+    if (!quiet) ui_.Toast(T("Not connected to the Control Center Advanced service."), ToastKind::Warn, T("Open the Overview page for ways to connect."));
     Result nr;
     nr.code = "unsupported";
     nr.msg = "not connected";
@@ -360,7 +360,7 @@ std::string App::CodeText(const std::string& code) const {
   if (code == "partial") return T("Some of the settings were applied, others were not.");
   if (code == "unsupported") return T("Not available on this system.");
   if (code == "unknown") return T("Unknown setting or command.");
-  return T("Something went wrong inside BaseControl.");
+  return T("Something went wrong inside Control Center Advanced.");
 }
 
 void App::OnResult(const Op& op, const Result& r) {
@@ -407,32 +407,32 @@ ConsentInfo ConsentText(const std::string& name, const std::string& value) {
     c.title = T("Above the OEM maximum GPU power");
     c.body = Tf("You are about to set the GPU's dynamic power target (cTGP) to %s W, above the highest value the OEM Control Center ever applies (140 W).\n\n"
                 "The 230 W adapter and the cooling were sized for the OEM range. Long CPU + GPU loads at this level can overheat the laptop or push the adapter to its limit.\n\n"
-                "BaseControl writes the value, reads it back, and restores the previous one if the firmware does not keep it. It cannot protect the hardware from heat.",
+                "Control Center Advanced writes the value, reads it back, and restores the previous one if the firmware does not keep it. It cannot protect the hardware from heat.",
                 value.c_str());
   } else if (name == "ctgp_unverified") {
     c.title = T("This GPU power step was not verified");
     c.body = Tf("%s W is one of the cTGP steps that has not been verified on the reference laptop (125, 140, 145 and 150 W were measured).\n\n"
-                "BaseControl writes it, reads it back, and restores the previous value if the driver does not show it.",
+                "Control Center Advanced writes it, reads it back, and restores the previous value if the driver does not show it.",
                 value.c_str());
   } else if (name == "ctgp_model") {
     c.title = T("GPU power on a model that is not on the verified list");
     c.body = T("The GPU power engine was only verified on the Monster Tulpar T5 V21.7 (GM5TG7Y). On any other model the same embedded-controller registers are assumed to behave the same way, but that is not proven.\n\n"
-               "BaseControl reads every value back and restores the previous one if it does not stick.");
+               "Control Center Advanced reads every value back and restores the previous one if it does not stick.");
   } else if (name == "ec_pl_high") {
     c.title = T("Above the OEM maximum CPU power profile");
     c.body = Tf("The OEM maximum profile on this laptop is PL1 120 W / PL2 120 W / PL4 200 W. You are asking for %s W.\n\n"
                 "The embedded controller accepts it, but the cooling and the 230 W adapter were not designed for sustained operation above the OEM profile. Watch the temperatures.\n\n"
-                "BaseControl refuses to raise limits while the CPU is above 92 \xC2\xB0""C and restores the old values if the EC does not keep the new ones.",
+                "Control Center Advanced refuses to raise limits while the CPU is above 92 \xC2\xB0""C and restores the old values if the EC does not keep the new ones.",
                 value.c_str());
   } else if (name == "msr_write") {
     c.title = T("Direct CPU register writes");
     c.body = T("The advanced CPU panel writes Intel model-specific registers (power limits, time windows, voltage offsets, prefetchers) through a signed driver module.\n\n"
-               "A bad value can make Windows unstable until you reboot. Nothing is saved to the BIOS: a reboot restores the firmware defaults, and BaseControl only re-applies values you confirmed.\n\n"
+               "A bad value can make Windows unstable until you reboot. Nothing is saved to the BIOS: a reboot restores the firmware defaults, and Control Center Advanced only re-applies values you confirmed.\n\n"
                "Continue and allow register writes?");
   } else if (name == "fan_fixed") {
     c.title = T("Fixed fan speed bypasses the thermal control");
     c.body = T("With a fixed fan duty the embedded controller no longer ramps the fans by temperature. A low duty under heavy load can overheat the laptop.\n\n"
-               "BaseControl's watchdog forces the fans to maximum when the CPU reaches 97 \xC2\xB0""C or the GPU 92 \xC2\xB0""C, but it only works while BaseControl (or its service) is running.");
+               "Control Center Advanced's watchdog forces the fans to maximum when the CPU reaches 97 \xC2\xB0""C or the GPU 92 \xC2\xB0""C, but it only works while Control Center Advanced (or its service) is running.");
   } else {
     c.title = T("Confirmation required");
     c.body = T("This change needs your confirmation.");
@@ -492,7 +492,7 @@ void App::AskActivation(const Op& op) {
   ModalSpec m;
   m.title = T("The embedded controller's power loop is off");
   m.body = T("Power limits only take effect while the laptop's embedded controller runs its power-management loop. The OEM Control Center's service normally switches it on, and it is not running.\n\n"
-             "BaseControl can take over from the OEM service (it stops and disables GCUBridge and can restore it later from Safety & service) and switch the loop on itself.");
+             "Control Center Advanced can take over from the OEM service (it stops and disables GCUBridge and can restore it later from Safety & service) and switch the loop on itself.");
   m.icon = IconId::Bolt;
   m.buttons = {{T("Cancel"), Btn::Ghost, 0}, {T("Take over and apply"), Btn::Primary, 1}};
   const Op copy = op;
@@ -503,7 +503,7 @@ void App::AskActivation(const Op& op) {
       if (copy.done) copy.done(fail);
       return;
     }
-    Cmd("oem.takeover", KV(), T("OEM service stopped; BaseControl is in charge"), [this, copy, fail](const Result& cr) {
+    Cmd("oem.takeover", KV(), T("OEM service stopped; Control Center Advanced is in charge"), [this, copy, fail](const Result& cr) {
       if (cr.ok) Submit(copy.req, copy.label, copy.done);
       else if (copy.done) copy.done(fail);
     });
@@ -512,8 +512,8 @@ void App::AskActivation(const Op& op) {
 
 void App::AskApproval(const Op& op, const Result& r) {
   ModalSpec m;
-  m.title = T("The OEM profile file holds a value BaseControl did not write");
-  m.body = Tf("Something else changed the OEM profile file (it currently stores %d W). Applying your value replaces it; BaseControl keeps a backup of the original file next to it.\n\n"
+  m.title = T("The OEM profile file holds a value Control Center Advanced did not write");
+  m.body = Tf("Something else changed the OEM profile file (it currently stores %d W). Applying your value replaces it; Control Center Advanced keeps a backup of the original file next to it.\n\n"
               "Fingerprint of the file: %s",
               static_cast<int>(r.data.Int("oem.target")), r.data.Str("sha").substr(0, 16).c_str());
   m.icon = IconId::Warn;
@@ -616,7 +616,7 @@ bool App::Autostart() const {
   HKEY k = nullptr;
   bool on = false;
   if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0, KEY_READ, &k) == ERROR_SUCCESS) {
-    on = RegQueryValueExW(k, L"BaseControl", nullptr, nullptr, nullptr, nullptr) == ERROR_SUCCESS;
+    on = RegQueryValueExW(k, L"ControlCenterAdvanced", nullptr, nullptr, nullptr, nullptr) == ERROR_SUCCESS;
     RegCloseKey(k);
   }
   return on;
@@ -627,9 +627,9 @@ void App::SetAutostart(bool on) {
   if (RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0, nullptr, 0, KEY_SET_VALUE, nullptr, &k, nullptr) != ERROR_SUCCESS) return;
   if (on) {
     const std::wstring v = L"\"" + hw::SelfPath() + L"\" --tray";
-    RegSetValueExW(k, L"BaseControl", 0, REG_SZ, reinterpret_cast<const BYTE*>(v.c_str()), static_cast<DWORD>((v.size() + 1) * sizeof(wchar_t)));
+    RegSetValueExW(k, L"ControlCenterAdvanced", 0, REG_SZ, reinterpret_cast<const BYTE*>(v.c_str()), static_cast<DWORD>((v.size() + 1) * sizeof(wchar_t)));
   } else {
-    RegDeleteValueW(k, L"BaseControl");
+    RegDeleteValueW(k, L"ControlCenterAdvanced");
   }
   RegCloseKey(k);
 }
@@ -637,7 +637,7 @@ void App::SetAutostart(bool on) {
 std::string App::ProbeReport() const {
   // The same plain-text description the Device info page copies (model, firmware, processor, graphics, memory, drives: no serial numbers,
   // no computer or user name), then what the controller detected and what it logged.
-  std::string o = "BaseControl Advanced diagnostics\n\n";
+  std::string o = "Control Center Advanced diagnostics\n\n";
   o += DeviceSummary(snap_);
   o += Fmt("Window mode: %s | EC project: %s | elevated: %s\n", mode_.c_str(), S("dev.project").c_str(), S("host.elevated").c_str());
   o += "\nCapabilities:\n";

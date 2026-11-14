@@ -1,4 +1,4 @@
-// BaseControl Advanced - small file-system helpers that behave the same on Windows (UTF-8 path -> wide API, atomic
+// Control Center Advanced - small file-system helpers that behave the same on Windows (UTF-8 path -> wide API, atomic
 // replace) and on POSIX hosts (unit tests). Only whole-file operations: the app never streams big files.
 #pragma once
 #include <cstdint>

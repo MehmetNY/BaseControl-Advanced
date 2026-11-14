@@ -481,7 +481,7 @@ Result Controller::SetFanMode(int mode) {
       if (!cfg_.Bool("cfg.experimental", false))
         return Fail("gate.experimental", "fixed fan duty uses registers with a single source; enable Safety and service > Allow experimental writes");
       if (!cfg_.Bool("cfg.consent.fan_fixed", false)) {
-        Result r = Fail("gate.consent", "fixed fan duty bypasses the EC's thermal logic; the BaseControl watchdog is the only protection");
+        Result r = Fail("gate.consent", "fixed fan duty bypasses the EC's thermal logic; the Control Center Advanced watchdog is the only protection");
         r.data.Set("consent", "fan_fixed");
         return r;
       }

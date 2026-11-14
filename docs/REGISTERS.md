@@ -2,7 +2,7 @@
 
 # Embedded-controller registers
 
-The laptop's embedded controller (EC) is reached through the `ACPIDriver` device (`\\.\ACPIDriver`) that the OEM's Control Center package installs; BaseControl neither ships nor modifies that driver, so the EC features need it to be present (the Overview page shows whether the controller is reachable). Every address the program uses lives in `src/common/registers.h`; this page is generated from it. Names are the program's own and the notes say what is known about each register. **Nothing here is a vendor document**: the mappings come from the owner's measurements, the OEM Control Center's behaviour and independent open-source work on the same EC family (see [NOTICE](../NOTICE.txt)); the table does not say which source each single entry comes from.
+The laptop's embedded controller (EC) is reached through the `ACPIDriver` device (`\\.\ACPIDriver`) that the OEM's Control Center package installs; Control Center Advanced neither ships nor modifies that driver, so the EC features need it to be present (the Overview page shows whether the controller is reachable). Every address the program uses lives in `src/common/registers.h`; this page is generated from it. Names are the program's own and the notes say what is known about each register. **Nothing here is a vendor document**: the mappings come from the owner's measurements, the OEM Control Center's behaviour and independent open-source work on the same EC family (see [NOTICE](../NOTICE.txt)); the table does not say which source each single entry comes from.
 
 Writes never go straight to the EC: they pass the **write guard** (below), which refuses anything that is not on its allow-list.
 

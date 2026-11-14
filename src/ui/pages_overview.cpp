@@ -366,7 +366,7 @@ float PageOverview(App& a, const Rect& r) {
       rows.push_back({gThr ? th.amber : th.green, T("GPU"), gThr ? T("Limited by") + ": " + gwhy : T("Running free")});
       const bool guardOk = a.S("fan.guard", "ok") == "ok";
       rows.push_back({guardOk ? th.green : th.red, T("Fan watchdog"), guardOk ? T("Watching temperatures") : (a.S("fan.guard.why").empty() ? T("Forcing maximum fans") : a.S("fan.guard.why"))});
-      if (a.B("oem.running")) rows.push_back({th.blue, T("OEM Control Center service"), T("Running next to BaseControl")});
+      if (a.B("oem.running")) rows.push_back({th.blue, T("OEM Control Center service"), T("Running next to Control Center Advanced")});
       if (!a.S("last.error").empty()) rows.push_back({th.red, T("Last error"), a.S("last.error")});
       const float hh = 30.0f * static_cast<float>(rows.size());
       Card k(c, m, T("Health"), T("What is limiting the laptop right now"), IconId::Shield, hh);

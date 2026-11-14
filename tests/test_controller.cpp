@@ -410,7 +410,7 @@ TEST(ctl_ctgp_reapplied_after_display_cycle) {
   CHECK_NEAR(r.w.plat.CtgpW(), 140, 0.1);
   r.c.Notify("display_on");
   r.Run(6);
-  CHECK_NEAR(r.w.plat.CtgpW(), 150, 0.1);     // BaseControl put it back
+  CHECK_NEAR(r.w.plat.CtgpW(), 150, 0.1);     // Control Center Advanced put it back
   CHECK(r.w.log.Has("re-applying"));
 }
 

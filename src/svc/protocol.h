@@ -20,7 +20,7 @@ namespace bc {
 namespace proto {
 
 inline constexpr int kVersion = 1;
-inline constexpr char kPipeNameUtf8[] = "\\\\.\\pipe\\BaseControl.v1";
+inline constexpr char kPipeNameUtf8[] = "\\\\.\\pipe\\ControlCenterAdvanced.v1";
 inline constexpr size_t kMaxRequestBytes = 16 * 1024;
 inline constexpr size_t kMaxResponseBytes = 512 * 1024;
 

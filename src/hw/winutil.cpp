@@ -57,7 +57,7 @@ std::wstring SystemDirectory() {
 std::string ProgramDataDir() {
   std::wstring base = KnownFolder(CSIDL_COMMON_APPDATA);
   if (base.empty()) base = L"C:\\ProgramData";
-  const std::string d = U(base) + "\\BaseControl";
+  const std::string d = U(base) + "\\ControlCenterAdvanced";
   if (!fs::IsDir(d) && IsElevated()) {
     // the service reads its configuration from here: only SYSTEM and Administrators may write, everybody may read
     PSECURITY_DESCRIPTOR sd = nullptr;
@@ -74,7 +74,7 @@ std::string ProgramDataDir() {
 std::string LocalDataDir() {
   std::wstring base = KnownFolder(CSIDL_LOCAL_APPDATA);
   if (base.empty()) return ProgramDataDir();
-  const std::string d = U(base) + "\\BaseControl";
+  const std::string d = U(base) + "\\ControlCenterAdvanced";
   fs::MakeDirs(d);
   return d;
 }

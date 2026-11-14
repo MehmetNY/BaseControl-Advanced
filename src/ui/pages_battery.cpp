@@ -140,7 +140,7 @@ void DrawHistory(Ui& ui, const Rect& r, const std::vector<Sample>& h, int stepSe
   for (const Sample& s : h)
     if (s.pct >= 0) valid++;
   if (valid < 2) {
-    const std::string msg = !haveBattery ? T("No battery was found on this computer.") : T("Collecting data. The chart fills in as BaseControl keeps running: one point a minute.");
+    const std::string msg = !haveBattery ? T("No battery was found on this computer.") : T("Collecting data. The chart fills in as Control Center Advanced keeps running: one point a minute.");
     if (g.TextW(msg, FontId::Small) <= plot.w - 48) g.Text(Rect(plot.x, plot.cy() - 12, plot.w, 24), msg, FontId::Small, th.faint, Align::Center);
     else g.Wrapped(Rect(plot.x + 24, plot.cy() - 18, plot.w - 48, 60), msg, FontId::Small, th.faint, true);
     return;

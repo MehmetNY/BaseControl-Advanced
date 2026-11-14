@@ -1,4 +1,4 @@
-// Safety and service: the switches that decide what BaseControl may change, the OEM Control Center's service, BaseControl's own
+// Safety and service: the switches that decide what Control Center Advanced may change, the OEM Control Center's service, Control Center Advanced's own
 // background service, the confirmations the user has given, and diagnostics for a bug report.
 //
 // Nothing on this page touches the laptop directly. The write-protection switches and the confirmations are stored settings of the
@@ -18,7 +18,7 @@ std::string Dash() { return "\xE2\x80\x94"; }
 
 enum class Svc { Missing, Stopped, Starting, Running, Stopping, Unknown };
 
-// The state of the BaseControl Windows service. Asking Windows costs a system call, so the answer is reused for a moment. Offscreen
+// The state of the Control Center Advanced Windows service. Asking Windows costs a system call, so the answer is reused for a moment. Offscreen
 // renders and scripts never ask: they report what the script said (running by default).
 Svc ServiceState(App& a) {
   if (a.shotMode()) {
@@ -79,10 +79,10 @@ void CardProtection(Ctx& c, Masonry& m) {
   const bool onStart = a.B("cfg.applyOnStart", true);
   const std::string cls = a.S("dev.class");
 
-  Card k(c, m, T("Write protection"), T("What BaseControl is allowed to change"), IconId::Shield, 6 * kRowToggle);
+  Card k(c, m, T("Write protection"), T("What Control Center Advanced is allowed to change"), IconId::Shield, 6 * kRowToggle);
 
   if (k.Toggle("sp#readonly", T("Read-only mode"), T("Blocks every hardware write. Readings keep working."), readonly, true,
-               T("The kill switch. While it is on, BaseControl refuses every change to the embedded controller, the CPU registers and the graphics card."))) {
+               T("The kill switch. While it is on, Control Center Advanced refuses every change to the embedded controller, the CPU registers and the graphics card."))) {
     CfgToast(a, "cfg.readonly", readonly ? "0" : "1", readonly ? T("Writes are allowed again") : T("Read-only mode is on"));
   }
 
@@ -103,13 +103,13 @@ void CardProtection(Ctx& c, Masonry& m) {
   if (k.Toggle("sp#unknown", T("Allow writes on an unrecognised model"),
                unknownCls ? T("This laptop is not recognised: hardware writes are off until you allow them.") : T("Only needed when the laptop is not recognised."),
                unknownModelOn, unknownCls || unknownModelOn,
-               T("BaseControl only writes to hardware it has identified. On another model the same registers may mean something else."))) {
+               T("Control Center Advanced only writes to hardware it has identified. On another model the same registers may mean something else."))) {
     if (unknownModelOn) {
       CfgToast(a, "cfg.unknownModel", "0", T("Hardware writes are off for unrecognised models"));
     } else {
       App* ap = &a;
       Ask(a, T("Allow writes on an unrecognised model"),
-          T("BaseControl has not identified this laptop. The registers it writes were verified on one specific model; on another model they can have a different meaning.\n\n"
+          T("Control Center Advanced has not identified this laptop. The registers it writes were verified on one specific model; on another model they can have a different meaning.\n\n"
             "Only continue if you know this laptop shares the embedded controller of the supported one."),
           T("Allow"), Btn::Primary, [ap]() { CfgToast(*ap, "cfg.unknownModel", "1", T("Hardware writes are allowed on this model")); });
     }
@@ -123,13 +123,13 @@ void CardProtection(Ctx& c, Masonry& m) {
       App* ap = &a;
       Ask(a, T("Only administrators can change settings"),
           T("From now on the service accepts changes only from a window that runs as administrator. A normal window can still show the readings.\n\n"
-            "To change this switch again you have to start BaseControl with \"Run as administrator\"."),
+            "To change this switch again you have to start Control Center Advanced with \"Run as administrator\"."),
           T("Turn on"), Btn::Primary, [ap]() { CfgToast(*ap, "cfg.adminOnly", "1", T("Only administrators can change settings")); });
     }
   }
 
   if (k.Toggle("sp#keep", T("Keep my settings applied"), T("Applies them again after sleep, a charger change or display wake."), keep, true,
-               T("The firmware resets some values at those moments. BaseControl puts back the ones you set."))) {
+               T("The firmware resets some values at those moments. Control Center Advanced puts back the ones you set."))) {
     CfgToast(a, "cfg.keep", keep ? "0" : "1", "");
   }
 
@@ -152,7 +152,7 @@ void CardConsents(Ctx& c, Masonry& m) {
   int given = 0;
   for (auto& r : rows)
     if (a.B("cfg.consent." + r.first)) given++;
-  const std::string note = T("When you confirm a risky change, BaseControl remembers it so it does not ask again for the same kind of change. Reset to be asked again.");
+  const std::string note = T("When you confirm a risky change, Control Center Advanced remembers it so it does not ask again for the same kind of change. Reset to be asked again.");
   Card k(c, m, T("Confirmations"), given == 0 ? T("None given") : Tf("%d given", given), IconId::Check,
          static_cast<float>(rows.size()) * kRowInfo + 8 + NoteHeight(c, m, note) + kRowButtons);
   for (auto& r : rows) {
@@ -178,9 +178,9 @@ void CardOem(Ctx& c, Masonry& m) {
   std::string note;
   uint32_t noteCol = 0;
   if (!installed) {
-    note = T("The OEM Control Center is not installed on this computer, so nothing competes with BaseControl.");
+    note = T("The OEM Control Center is not installed on this computer, so nothing competes with Control Center Advanced.");
   } else if (takeover) {
-    note = T("BaseControl is in charge. The OEM service is stopped and disabled, so the OEM Control Center app does not work until you give the service back.");
+    note = T("Control Center Advanced is in charge. The OEM service is stopped and disabled, so the OEM Control Center app does not work until you give the service back.");
   } else if (running) {
     note = T("The OEM service is running. In the background it can change power and fan settings and undo yours. Take over to stop and disable it; you can give it back here at any time.");
   } else {
@@ -197,7 +197,7 @@ void CardOem(Ctx& c, Masonry& m) {
   k.Info(T("OEM Control Center"), installed ? T("Installed") : T("Not installed"));
   k.Info(T("OEM service"), !installed ? Dash() : running ? T("Running") : T("Stopped"), running ? th.amber : 0,
          T("The OEM Control Center's background service (GCUBridge). While it runs it may write to the embedded controller."));
-  k.Info(T("BaseControl in charge"), takeover ? T("Yes") : T("No"), takeover ? th.green : 0);
+  k.Info(T("Control Center Advanced in charge"), takeover ? T("Yes") : T("No"), takeover ? th.green : 0);
   k.Gap(8);
   k.Note(note, noteCol);
   const int hit = BtnFlow(k, btns);
@@ -205,16 +205,16 @@ void CardOem(Ctx& c, Masonry& m) {
     if (btns[static_cast<size_t>(hit)].id == "oem#takeover") {
       App* ap = &a;
       Ask(a, T("Take over from the OEM service"),
-          T("BaseControl will stop the OEM service (GCUBridge) and set it to Disabled so it does not start again with Windows. The OEM Control Center app stops working meanwhile.\n\n"
-            "You can give the service back here at any time, and removing BaseControl's service does it automatically."),
-          T("Take over"), Btn::Primary, [ap]() { ap->Cmd("oem.takeover", KV(), T("OEM service stopped; BaseControl is in charge")); });
+          T("Control Center Advanced will stop the OEM service (GCUBridge) and set it to Disabled so it does not start again with Windows. The OEM Control Center app stops working meanwhile.\n\n"
+            "You can give the service back here at any time, and removing Control Center Advanced's service does it automatically."),
+          T("Take over"), Btn::Primary, [ap]() { ap->Cmd("oem.takeover", KV(), T("OEM service stopped; Control Center Advanced is in charge")); });
     } else {
       a.Cmd("oem.restore", KV(), T("OEM service restored"));
     }
   }
 }
 
-// ---- BaseControl's service -----------------------------------------------------------------------------------------------------
+// ---- Control Center Advanced's service -----------------------------------------------------------------------------------------------------
 void CardService(Ctx& c, Masonry& m) {
   App& a = c.app;
   const Theme& th = c.ui.th;
@@ -245,12 +245,12 @@ void CardService(Ctx& c, Masonry& m) {
       btns.push_back({"sv#remove", T("Remove the service"), Btn::Danger, IconId::Trash, true,
                       T("Stops and removes the service and gives the OEM service back. Your saved profiles stay.")});
   }
-  const std::string note = T("Installing copies BaseControl into Program Files first, so the service never runs a file that a normal user could replace.");
+  const std::string note = T("Installing copies Control Center Advanced into Program Files first, so the service never runs a file that a normal user could replace.");
   const float contentH = 4 * kRowInfo + 8 + NoteHeight(c, m, note) + static_cast<float>(BtnRows(c, m.InnerW(), btns)) * kRowButtons;
   const std::string sub = mode == "service" ? T("This window talks to it") : mode == "sim" ? T("Not used in the simulation") : T("Not used by this window");
   Card k(c, m, T("Background service"), sub, IconId::Chip, contentH);
   k.Info(T("Running as"), mode == "service" ? T("Background service") : mode == "sim" ? T("Simulation") : T("This window, elevated"), mode == "sim" ? th.amber : 0,
-         T("The BaseControl service does the privileged work, so this window never needs administrator rights."));
+         T("The Control Center Advanced service does the privileged work, so this window never needs administrator rights."));
   k.Info(T("Windows service"), stText, stCol);
   const std::string link = a.S("ec.link");
   k.Info(T("Hardware link"), link == "connected" ? T("Connected") : link == "absent" ? T("Not found") : Dash(), link == "connected" ? th.green : (link == "absent" ? th.amber : 0),
@@ -268,7 +268,7 @@ void CardService(Ctx& c, Masonry& m) {
     a.RunElevated(L"--start-service", T("Service started"));
   } else if (id == "sv#stop") {
     Ask(a, T("Stop the service"),
-        T("While the service is stopped, BaseControl cannot change or watch anything. Values already in the laptop stay as they are, but the fan watchdog and \"Keep my settings applied\" do nothing until you start it again."),
+        T("While the service is stopped, Control Center Advanced cannot change or watch anything. Values already in the laptop stay as they are, but the fan watchdog and \"Keep my settings applied\" do nothing until you start it again."),
         T("Stop the service"), Btn::Primary, [ap]() { ap->RunElevated(L"--stop-service", T("Service stopped")); });
   } else if (id == "sv#remove") {
     Ask(a, T("Remove the service"),
@@ -292,7 +292,7 @@ void CardDiagnostics(Ctx& c, Masonry& m) {
   const float contentH = 4 * kRowInfo + 8 + kRowButtons + 30 + logH;
   Card k(c, m, T("Diagnostics"), T("For a bug report"), IconId::Log, contentH);
   k.Info(T("Writes to the hardware"), a.Has("ec.writes") ? Tf("%d", static_cast<int>(a.I("ec.writes"))) : Dash(), 0,
-         T("Embedded-controller registers BaseControl has written since it started."));
+         T("Embedded-controller registers Control Center Advanced has written since it started."));
   k.Info(T("Writes refused by the guard"), a.Has("ec.refused") ? Tf("%d", static_cast<int>(a.I("ec.refused"))) : Dash(), a.I("ec.refused") > 0 ? th.amber : 0,
          T("A write outside the allow-list or its value limits is refused before it reaches the hardware."));
   k.Info(T("Fan watchdog"), tripped ? T("Forced full speed") : T("Not triggered"), tripped ? th.red : 0,
@@ -351,7 +351,7 @@ void CardLimits(Ctx& c, Masonry& m) {
   Gfx& g = ui.gfx;
   const Theme& th = ui.th;
   const std::vector<std::string> items = {
-      T("BaseControl never writes to the BIOS, the flash chip or UEFI variables."),
+      T("Control Center Advanced never writes to the BIOS, the flash chip or UEFI variables."),
       T("Embedded-controller writes use an allow-list of registers with limits on each value. Anything else is refused, and registers that identify the charger or bypass the firmware's power limits are on a never-write list."),
       T("Every change is read back. When it did not stick, the previous value is put back."),
       T("While a custom or fixed fan setting is active, a watchdog forces full fan speed when the CPU reaches 97 \xC2\xB0""C or the graphics card 92 \xC2\xB0""C."),
@@ -360,7 +360,7 @@ void CardLimits(Ctx& c, Masonry& m) {
   const float textW = m.InnerW() - 28;
   float contentH = 0;
   for (const std::string& s : items) contentH += WrapH(c, textW, s) + 14;
-  Card k(c, m, T("What BaseControl never does"), T("Hard limits that no switch changes"), IconId::Lock, contentH);
+  Card k(c, m, T("What Control Center Advanced never does"), T("Hard limits that no switch changes"), IconId::Lock, contentH);
   for (const std::string& s : items) {
     const float h = WrapH(c, textW, s) + 14;
     const Rect r = k.Row(h);

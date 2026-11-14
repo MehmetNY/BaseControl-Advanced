@@ -33,7 +33,7 @@ bool Trusted(const std::wstring& dir) {
   if (GetEnvironmentVariableW(L"ProgramFiles", env, MAX_PATH) && starts(env)) return true;
   if (GetEnvironmentVariableW(L"ProgramFiles(x86)", env, MAX_PATH) && starts(env)) return true;
   if (GetEnvironmentVariableW(L"ProgramW6432", env, MAX_PATH) && starts(env)) return true;
-  if (GetEnvironmentVariableW(L"ProgramData", env, MAX_PATH) && starts(std::wstring(env) + L"\\BaseControl")) return true;
+  if (GetEnvironmentVariableW(L"ProgramData", env, MAX_PATH) && starts(std::wstring(env) + L"\\ControlCenterAdvanced")) return true;
   return false;
 }
 

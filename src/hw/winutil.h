@@ -24,8 +24,8 @@ std::string Win32Text(DWORD err);              // "Access is denied (5)" - short
 std::wstring KnownFolder(int csidl);           // CSIDL path or empty
 std::wstring ProgramFiles();
 std::wstring SystemDirectory();
-std::string ProgramDataDir();                  // UTF-8 "%ProgramData%\BaseControl" (created on demand)
-std::string LocalDataDir();                    // UTF-8 "%LOCALAPPDATA%\BaseControl" (created on demand)
+std::string ProgramDataDir();                  // UTF-8 "%ProgramData%\ControlCenterAdvanced" (created on demand)
+std::string LocalDataDir();                    // UTF-8 "%LOCALAPPDATA%\ControlCenterAdvanced" (created on demand)
 std::wstring SelfPath();
 std::wstring ExeDir();
 

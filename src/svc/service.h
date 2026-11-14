@@ -1,4 +1,4 @@
-// The BaseControl Windows service ("BaseControl", LocalSystem): hosts the Controller (all privileged hardware access)
+// The Control Center Advanced Windows service ("Control Center Advanced", LocalSystem): hosts the Controller (all privileged hardware access)
 // and the named-pipe server the UI talks to. Also: install / uninstall / start / stop helpers used by the installer
 // and by the UI's "set up the service" button (both run them elevated).
 #pragma once
@@ -16,7 +16,7 @@ int RunAsService();                 // SCM dispatcher; the return value is the p
 int RunInConsole();                 // same logic in the foreground (debugging); Ctrl+C stops it
 
 // All of these need an elevated process. They return false + a short English reason.
-// Install copies the running exe into %ProgramFiles%\BaseControl Advanced\ when it is not already inside a
+// Install copies the running exe into %ProgramFiles%\Control Center Advanced\ when it is not already inside a
 // protected folder (a SYSTEM service must never run a binary a normal user could replace).
 bool Install(std::string* why);
 bool Uninstall(std::string* why);

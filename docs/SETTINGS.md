@@ -2,7 +2,7 @@
 
 # Settings
 
-Everything BaseControl can change is declared once, in `src/common/settings_reg.cpp`: a type, a range, an evidence tier and the capability that must be present. The controller refuses everything that is not in the table - there are no raw addresses and no free-form writes. A request is checked in this order: read-only switch, evidence gate, model gate, range, capability, consent, write, read-back (with rollback when the value did not stick).
+Everything Control Center Advanced can change is declared once, in `src/common/settings_reg.cpp`: a type, a range, an evidence tier and the capability that must be present. The controller refuses everything that is not in the table - there are no raw addresses and no free-form writes. A request is checked in this order: read-only switch, evidence gate, model gate, range, capability, consent, write, read-back (with rollback when the value did not stick).
 
 **Evidence tiers**
 

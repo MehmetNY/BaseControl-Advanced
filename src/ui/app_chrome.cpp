@@ -21,7 +21,7 @@ struct Meta {
 
 const Meta kMeta[] = {
     {Page::Overview, N_("Device"), N_("Overview"), N_("Live status of your laptop at a glance.")},
-    {Page::Prefs, N_("General settings"), N_("Preferences"), N_("How BaseControl starts and looks, plus keyboard and power-on options.")},
+    {Page::Prefs, N_("General settings"), N_("Preferences"), N_("How Control Center Advanced starts and looks, plus keyboard and power-on options.")},
     {Page::Devices, N_("General settings"), N_("Device manager"), N_("Switch the built-in radios and devices on or off.")},
     {Page::GpuInfo, N_("General settings"), N_("GPU settings"), N_("GPU power target, clock offsets and the graphics mode.")},
     {Page::Osd, N_("General settings"), N_("In-game OSD"), N_("Choose what is shown on top of your games.")},
@@ -35,7 +35,7 @@ const Meta kMeta[] = {
     {Page::Display, N_("Display"), N_("Display settings"), N_("Brightness, refresh rate, colour and colour modes.")},
     {Page::DeviceInfo, N_("Device info"), N_("Components and status"), N_("Hardware components with live readings.")},
     {Page::About, N_("Device info"), N_("About"), N_("Version, licences and credits.")},
-    {Page::Safety, N_("System"), N_("Safety and service"), N_("Safety switches, the OEM service and the BaseControl service.")},
+    {Page::Safety, N_("System"), N_("Safety and service"), N_("Safety switches, the OEM service and the Control Center Advanced service.")},
 };
 
 const Meta& MetaOf(Page p) {
@@ -95,7 +95,7 @@ void App::DrawRail(const Rect& r) {
   g.StrokeRound(mark, 11, WithAlpha(th.accent, 90), 1);
   g.Icon(IconId::Bolt, mark.Inset(8), th.accent, 1.9f);
   if (!narrow) {
-    g.Text(Rect(mark.r() + 12, mark.y - 2, r.w - 80, 22), "BaseControl", FontId::H3, th.text);
+    g.Text(Rect(mark.r() + 12, mark.y - 2, r.w - 80, 22), "Control Center", FontId::H3, th.text);
     g.Text(Rect(mark.r() + 12, mark.y + 19, r.w - 80, 18), "ADVANCED", FontId::Label, th.faint);
   }
 
@@ -157,7 +157,7 @@ void App::DrawTopBar(const Rect& r) {
   g.Fill(r, th.base);
   g.Line({r.x, r.b() - 0.5f}, {r.r(), r.b() - 0.5f}, th.line, 1);
   const Meta& m = MetaOf(page_);
-  const std::string crumb = "BaseControl";
+  const std::string crumb = "Control Center Advanced";
   const float cw = g.TextW(crumb, FontId::Body);
   g.Text(Rect(r.x + kPadX, r.y, cw + 4, r.h), crumb, FontId::Body, th.muted);
   g.Text(Rect(r.x + kPadX + cw + 10, r.y, 14, r.h), "/", FontId::Body, th.faint);
@@ -211,7 +211,7 @@ void App::DrawTopBar(const Rect& r) {
   } else {
     modeText = T("Service");
     modeCol = th.green;
-    modeTip = T("Connected to the BaseControl service.");
+    modeTip = T("Connected to the Control Center Advanced service.");
   }
   chip(modeText, modeCol, true, modeTip);
   if (connected()) {
@@ -353,25 +353,25 @@ void App::DrawOffline(const Rect& view) {
   std::string primaryDone;
   switch (state) {
     case svc::State::NotInstalled:
-      head = T("The BaseControl service is not installed");
-      body = T("BaseControl talks to the laptop's embedded controller, the CPU registers and the GPU through a small Windows service, so this window never needs administrator rights. Install it once and it starts with Windows.");
+      head = T("The Control Center Advanced service is not installed");
+      body = T("Control Center Advanced talks to the laptop's embedded controller, the CPU registers and the GPU through a small Windows service, so this window never needs administrator rights. Install it once and it starts with Windows.");
       primaryLabel = T("Install and start the service");
       primaryArgs = L"--install-service";
       primaryDone = T("Service installed and started");
       break;
     case svc::State::Stopped:
-      head = T("The BaseControl service is stopped");
+      head = T("The Control Center Advanced service is stopped");
       body = T("The service is installed but not running. Start it to control power, fans, GPU and lighting.");
       primaryLabel = T("Start the service");
       primaryArgs = L"--start-service";
       primaryDone = T("Service started");
       break;
     case svc::State::Starting:
-      head = T("The BaseControl service is starting");
+      head = T("The Control Center Advanced service is starting");
       body = T("Waiting for the service to finish its hardware probe...");
       break;
     default:
-      head = T("Connecting to the BaseControl service...");
+      head = T("Connecting to the Control Center Advanced service...");
       body = status.empty() ? T("Waiting for the service pipe.") : status;
       break;
   }

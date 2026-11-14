@@ -60,7 +60,7 @@ uint64_t PipeBackend::Submit(const Request& r) {
   if (!connected_.load()) {
     Result res;
     res.code = "internal";
-    res.msg = "the BaseControl service is not connected";
+    res.msg = "the Control Center Advanced service is not connected";
     done_[id] = res;
     return id;
   }
@@ -94,13 +94,13 @@ bool PipeBackend::Connect() {
       WaitNamedPipeW(name.c_str(), 1500);
       continue;
     }
-    if (e == ERROR_FILE_NOT_FOUND) SetStatus("The BaseControl service is not running.");
-    else if (e == ERROR_ACCESS_DENIED) SetStatus("Access to the BaseControl service was denied.");
-    else SetStatus("Cannot reach the BaseControl service: " + hw::Win32Text(e));
+    if (e == ERROR_FILE_NOT_FOUND) SetStatus("The Control Center Advanced service is not running.");
+    else if (e == ERROR_ACCESS_DENIED) SetStatus("Access to the Control Center Advanced service was denied.");
+    else SetStatus("Cannot reach the Control Center Advanced service: " + hw::Win32Text(e));
     return false;
   }
   if (h == INVALID_HANDLE_VALUE) {
-    SetStatus("The BaseControl service is busy.");
+    SetStatus("The Control Center Advanced service is busy.");
     return false;
   }
   DWORD mode = PIPE_READMODE_MESSAGE;
@@ -120,7 +120,7 @@ bool PipeBackend::Connect() {
   if (!reply.Bool("_ok", false)) {
     const std::string why = reply.Str("_msg", "handshake refused");
     Disconnect(why);
-    SetStatus(reply.Str("_code") == "proto" ? "The service speaks a different protocol version - please update BaseControl." : why);
+    SetStatus(reply.Str("_code") == "proto" ? "The service speaks a different protocol version - please update Control Center Advanced." : why);
     return false;
   }
   {
@@ -141,7 +141,7 @@ void PipeBackend::Disconnect(const std::string& why) {
   }
   const bool was = connected_.exchange(false);
   std::lock_guard<std::mutex> g(mu_);
-  if (was) status_ = "Connection to the BaseControl service lost (" + why + ").";
+  if (was) status_ = "Connection to the Control Center Advanced service lost (" + why + ").";
   // fail whatever was waiting
   for (Job& j : jobs_) {
     Result r;

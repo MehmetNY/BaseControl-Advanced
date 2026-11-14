@@ -1,6 +1,6 @@
 # Display: the preview and the colour controls. Nothing reaches the panel before Confirm; an image profile is a draft until Confirm; touching a
 # slider after a tile (or a tile after a slider) lets the last touch win; saturation is unavailable without the Windows colour-effect API.
-# Run: BaseControl.exe --sim --script tests/ui/display_flow.txt --size 1360x1800
+# Run: ControlCenterAdvanced.exe --sim --script tests/ui/display_flow.txt --size 1360x1800
 say == 1. the live colours are standard, nothing is chosen ==
 page display
 expect disp.mode standard

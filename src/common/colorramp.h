@@ -46,7 +46,7 @@ class PreviewMap {
   float undoSat_ = 1.0f;   // 100 / the live saturation; 1 = nothing to undo
 };
 
-// The image profiles on offer. They are colour curves of BaseControl's own (a gamma ramp plus a saturation matrix); the panel's factory
+// The image profiles on offer. They are colour curves of Control Center Advanced's own (a gamma ramp plus a saturation matrix); the panel's factory
 // calibration is never touched. The first entry, "standard", is neutral. Names match the values of the registry enum "disp.mode".
 struct ColorPreset {
   const char* name;

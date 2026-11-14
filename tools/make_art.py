@@ -71,7 +71,7 @@ def welcome():
     img.alpha_composite(bolt, ((w - 110) // 2, 52))
     d = ImageDraw.Draw(img)
     d.rounded_rectangle((18, 196, w - 18, 199), radius=1, fill=(0xE2, 0xA3, 0x87, 150))
-    d.text((18, 216), "BaseControl", font=font("Inter-SemiBold", 21), fill=TEXT)
+    d.text((18, 216), "Control Center", font=font("Inter-SemiBold", 18), fill=TEXT)
     d.text((18, 244), "ADVANCED", font=font("Inter-Medium", 11), fill=BOLT_B)
     d.text((18, 284), "GM5TG7 control centre", font=font("Inter-Regular", 10), fill=MUTED)
     img.convert("RGB").save(os.path.join(OUT, "welcome.bmp"))

@@ -1,6 +1,6 @@
 # Capabilities and verification
 
-This page answers two questions as honestly as the author can: *what can BaseControl Advanced do compared with the OEM Control Center*, and *how much of it has actually been checked*.
+This page answers two questions as honestly as the author can: *what can Control Center Advanced do compared with the OEM Control Center*, and *how much of it has actually been checked*.
 
 ## How to read the status
 
@@ -10,7 +10,7 @@ This page answers two questions as honestly as the author can: *what can BaseCon
 | **Simulated** | The logic is covered by unit tests and scripted UI runs against the simulator. The code that talks to the real hardware or to Windows is written from documentation and compiles, but has not been run on a laptop. |
 | **Not available** | Not implemented, or deliberately disabled. The reason is given. |
 
-Nothing in this project has been through a signed build, a store review or a test lab. The release is an **unsigned pre-release**; Windows SmartScreen will warn about it.
+Nothing in this project has been through a signed build, a store review or a test lab. The release is an **unsigned beta**; Windows SmartScreen will warn about it.
 
 ## The original program's screens
 
@@ -33,12 +33,12 @@ The OEM Control Center (4.9.47.11) has 19 screens. Each one has a counterpart he
 | Şarj Profili (Charge profile) | **Battery → Charge profile** | Full capacity, balanced, eco. | Simulated (*Family* tier); the levels are decided by the firmware |
 | Pil Durumu (Battery status) | **Battery → Battery, Battery health, Charge history** | Charge level and state, time left, voltage, charging or discharge power, temperature, health (cycles, design and full-charge capacity), the charge history of the last 8 hours. | Simulated; health comes from the EC |
 | Renkler (Colours) | **Display → Image profile, Colour balance, Tone** | Colour presets, saturation, colour temperature, gain per channel, brightness, contrast, gamma. | Simulated; the Windows colour-ramp calls are untested |
-| Renk Kalibrasyonu (Colour calibration) | **Display → Colour calibration** | Explains factory colour profiles and opens Windows colour management, display settings and night light. **BaseControl does not download the factory profile**: the original fetches it from the manufacturer's server using the serial number stored in the BIOS, which this program never sends anywhere. If you have the `.icc`/`.icm` file, add it in Windows colour management and it works together with the colours above. | By design, no download |
+| Renk Kalibrasyonu (Colour calibration) | **Display → Colour calibration** | Explains factory colour profiles and opens Windows colour management, display settings and night light. **Control Center Advanced does not download the factory profile**: the original fetches it from the manufacturer's server using the serial number stored in the BIOS, which this program never sends anywhere. If you have the `.icc`/`.icm` file, add it in Windows colour management and it works together with the colours above. | By design, no download |
 | Bileşenler (Components) | **Device info → Components and status** | Processor, graphics, memory modules, storage drives with health. | Simulated; the SMBIOS and drive reads are untested on a laptop |
 | Durum (Status) | **Device info → Components and status** | Live usage and temperatures. Merged with the screen above, as both show hardware with live readings. | Simulated |
 | Hakkında (About) | **Device info → About** | Version, licences, credits, language. | Simulated |
 
-Two screens exist only here: **Safety and service** (write protection, confirmations, the OEM service, BaseControl's own service, diagnostics) and the **Advanced CPU** panel of *Custom profiles*.
+Two screens exist only here: **Safety and service** (write protection, confirmations, the OEM service, Control Center Advanced's own service, diagnostics) and the **Advanced CPU** panel of *Custom profiles*.
 
 ## Beyond the original
 
@@ -54,7 +54,7 @@ These are not in the OEM program's screens as far as the supplied screenshots an
 | **Fan watchdog** | Safety and service | Forces fan boost at 97 °C (CPU) / 92 °C (GPU) while a fixed or custom fan setting is active. See [SAFETY](SAFETY.md). |
 | **Evidence tiers** | Everywhere | Each setting is labelled *Verified*, *Family*, *Experimental* or *Os*; risky ones are locked until you allow them. |
 | **Drive health** | Device info → Storage | Temperature, power-on hours, wear and written data for NVMe drives. Read-only; serial numbers are never read. |
-| **An offline simulator** | `BaseControl.exe --sim` | The whole interface on a pretend laptop, labelled SIMULATION. |
+| **An offline simulator** | `ControlCenterAdvanced.exe --sim` | The whole interface on a pretend laptop, labelled SIMULATION. |
 | **Turkish and English interface** | Preferences / top bar | 1,180 interface strings, checked by `tools/check_i18n.py` on every test run. |
 
 ## Not available, and why
@@ -65,13 +65,13 @@ These are not in the OEM program's screens as far as the supplied screenshots an
 | **Factory colour profile download** | Not implemented on purpose: it would send the BIOS serial number to the manufacturer's server. The Display page explains how to add a profile file in Windows. |
 | **Graphics mode switch (MUX / Optimus)** | No verified switch was found for this model. The GPU page shows the mode Windows reports and says so. |
 | **Dynamic Boost** | The register meaning is not verified on this model. The control stays disabled. |
-| **Lifting the shared CPU + GPU power budget** | A combined budget is enforced somewhere in the firmware (the owner measured one). BaseControl has not found how to change it and does not claim to. The GPU page's *Limited by* line says what the hardware reports. |
+| **Lifting the shared CPU + GPU power budget** | A combined budget is enforced somewhere in the firmware (the owner measured one). Control Center Advanced has not found how to change it and does not claim to. The GPU page's *Limited by* line says what the hardware reports. |
 | **Per-zone keyboard colours** | One light zone only; no per-zone protocol has been verified. |
 | **Light bar, logo light** | This model has neither. The controls exist for models that do and appear only when the probe finds them. |
 | **Custom charge thresholds** | The firmware decides the levels behind its three profiles. |
 | **SATA SMART attributes** | Only NVMe health pages are read. Other drives get their inventory and temperature only. |
 | **Flashing or editing the BIOS / EC firmware** | Never. See [SAFETY](SAFETY.md). |
-| **Updating itself** | There is no updater and no network access. New versions are on the [releases page](https://github.com/MehmetNY/BaseControl-Advanced/releases). |
+| **Updating itself** | There is no updater and no network access. New versions are on the [releases page](https://github.com/MehmetNY/Control-Center-Advanced/releases). |
 
 ## What was checked
 
@@ -98,4 +98,4 @@ Everything below was written from documentation and reference projects, cross-co
 - SMBIOS memory modules, CPU topology and drive health reads;
 - the installer and uninstaller.
 
-If you run it, you are the first. Please [open an issue](https://github.com/MehmetNY/BaseControl-Advanced/issues/new/choose) with the *Diagnostics* card from the Safety page and say what worked.
+If you run it, you are the first. Please [open an issue](https://github.com/MehmetNY/Control-Center-Advanced/issues/new/choose) with the *Diagnostics* card from the Safety page and say what worked.

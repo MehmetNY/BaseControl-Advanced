@@ -13,7 +13,7 @@
 namespace bc {
 namespace ui {
 namespace {
-constexpr wchar_t kClass[] = L"BaseControlAdvancedMain";
+constexpr wchar_t kClass[] = L"ControlCenterAdvancedMain";
 constexpr int kBaseW = 1360, kBaseH = 860, kMinW = 980, kMinH = 660;
 
 template <class Fn>
@@ -79,7 +79,7 @@ bool App::Impl::CreateMainWindow(int show) {
   RECT rc = {0, 0, static_cast<LONG>(cw * sysDpi), static_cast<LONG>(ch * sysDpi)};
   const DWORD style = WS_OVERLAPPEDWINDOW;
   AdjustWindowRect(&rc, style, FALSE);
-  const std::wstring title = L"BaseControl Advanced";
+  const std::wstring title = L"Control Center Advanced";
   hwnd = CreateWindowExW(0, kClass, title.c_str(), style, CW_USEDEFAULT, CW_USEDEFAULT, rc.right - rc.left, rc.bottom - rc.top, nullptr, nullptr, hinst, this);
   if (!hwnd) return false;
   dpi = DpiOf(hwnd);
@@ -189,7 +189,7 @@ void App::Impl::AddTray() {
   nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
   nid.uCallbackMessage = kMsgTray;
   nid.hIcon = static_cast<HICON>(LoadImageW(hinst, MAKEINTRESOURCEW(1), IMAGE_ICON, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_SHARED));
-  wcsncpy(nid.szTip, L"BaseControl Advanced", ARRAYSIZE(nid.szTip) - 1);
+  wcsncpy(nid.szTip, L"Control Center Advanced", ARRAYSIZE(nid.szTip) - 1);
   trayAdded = Shell_NotifyIconW(NIM_ADD, &nid) != FALSE;
 }
 
@@ -202,7 +202,7 @@ void App::Impl::RemoveTray() {
 
 void App::Impl::UpdateTray() {
   if (!trayAdded) return;
-  std::string tip = "BaseControl";
+  std::string tip = "Control Center Advanced";
   const std::string prof = app->S("profile.active");
   if (!prof.empty()) tip += " - " + prof;
   if (app->Has("cpu.temp")) tip += "\nCPU " + Num(app->N("cpu.temp")) + " \xC2\xB0""C  " + Num(app->N("cpu.pkg.w")) + " W";
@@ -228,7 +228,7 @@ void App::Impl::SetVisible(bool v) {
 
 void App::Impl::TrayMenu() {
   HMENU m = CreatePopupMenu();
-  AppendMenuW(m, MF_STRING, 1, Wide(T("Open BaseControl")).c_str());
+  AppendMenuW(m, MF_STRING, 1, Wide(T("Open Control Center Advanced")).c_str());
   const std::string list = app->S("profile.list");
   std::vector<std::string> names;
   if (!list.empty()) names = Split(list, ',');

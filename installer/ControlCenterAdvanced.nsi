@@ -1,14 +1,14 @@
-﻿; BaseControl Advanced installer (NSIS 3, Unicode).
+﻿; Control Center Advanced installer (NSIS 3, Unicode).
 ;
-;   makensis -DVERSION=1.0.0 -DSTAGE=<dir with BaseControl.exe, LICENSE.txt, NOTICE.txt, README.txt> -DOUTFILE=<setup.exe> installer/BaseControl.nsi
+;   makensis -DVERSION=1.0.0-beta -DNUMVER=1.0.0 -DSTAGE=<dir with ControlCenterAdvanced.exe, LICENSE.txt, NOTICE.txt, README.txt> -DOUTFILE=<setup.exe> installer/ControlCenterAdvanced.nsi
 ;
 ; tools/make_release.sh builds everything. What the installer does, and nothing else:
-;   - copies BaseControl.exe, the licence and the notices to C:\Program Files\BaseControl Advanced (a folder only administrators can write to:
+;   - copies ControlCenterAdvanced.exe, the licence and the notices to C:\Program Files\Control Center Advanced (a folder only administrators can write to:
 ;     the service runs as SYSTEM, so the file it runs must not be replaceable by a normal user)
-;   - installs and starts the BaseControl service (optional, recommended) with "BaseControl.exe --install-service"
+;   - installs and starts the Control Center Advanced service (optional, recommended) with "ControlCenterAdvanced.exe --install-service"
 ;   - creates a Start Menu shortcut (and a Desktop shortcut if asked)
 ; It does not install a driver, does not touch the OEM Control Center and does not change any firmware setting. The uninstaller gives the OEM
-; services back (BaseControl.exe --uninstall-service), removes the service and the files, and asks before it deletes your settings.
+; services back (ControlCenterAdvanced.exe --uninstall-service), removes the service and the files, and asks before it deletes your settings.
 ;
 ; Silent install: Setup.exe /S   (add /NOSERVICE to skip the service, /D=C:\path as the last argument for another folder - the service
 ; installer refuses an unprotected folder and copies the program below Program Files itself).
@@ -19,21 +19,24 @@ SetCompressor /SOLID lzma
 RequestExecutionLevel admin
 
 !ifndef VERSION
-  !define VERSION "1.0.0"
+  !define VERSION "1.0.0-beta"
+!endif
+!ifndef NUMVER
+  !define NUMVER "1.0.0"      ; the numeric part of VERSION (the version resource wants a.b.c.d)
 !endif
 !ifndef STAGE
   !define STAGE "..\build\stage"
 !endif
 !ifndef OUTFILE
-  !define OUTFILE "..\dist\BaseControl-Advanced-${VERSION}-Setup.exe"
+  !define OUTFILE "..\dist\Control-Center-Advanced-${VERSION}-Setup.exe"
 !endif
 
-!define APP        "BaseControl Advanced"
-!define APPKEY     "BaseControlAdvanced"
+!define APP        "Control Center Advanced"
+!define APPKEY     "ControlCenterAdvanced"
 !define PUBLISHER  "MehmetNY"
-!define EXE        "BaseControl.exe"
-!define HOMEPAGE   "https://github.com/MehmetNY/BaseControl-Advanced"
-!define SETUPDOC   "https://github.com/MehmetNY/BaseControl-Advanced/blob/main/docs/SETUP.md"
+!define EXE        "ControlCenterAdvanced.exe"
+!define HOMEPAGE   "https://github.com/MehmetNY/Control-Center-Advanced"
+!define SETUPDOC   "https://github.com/MehmetNY/Control-Center-Advanced/blob/main/docs/SETUP.md"
 !define UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPKEY}"
 
 Name "${APP}"
@@ -41,7 +44,7 @@ OutFile "${OUTFILE}"
 InstallDir "$PROGRAMFILES64\${APP}"
 BrandingText "${APP} ${VERSION}"
 
-VIProductVersion "${VERSION}.0"
+VIProductVersion "${NUMVER}.0"
 VIAddVersionKey "ProductName" "${APP}"
 VIAddVersionKey "CompanyName" "${PUBLISHER}"
 VIAddVersionKey "FileDescription" "${APP} setup"
@@ -122,14 +125,14 @@ LangString NeedX64 ${LANG_ENGLISH} "${APP} needs 64-bit Windows 10 or 11."
 LangString NeedX64 ${LANG_TURKISH} "${APP} için 64 bit Windows 10 veya 11 gerekir."
 LangString Stopping ${LANG_ENGLISH} "Stopping the running service and program..."
 LangString Stopping ${LANG_TURKISH} "Çalışan hizmet ve program durduruluyor..."
-LangString InstallingService ${LANG_ENGLISH} "Installing and starting the BaseControl service..."
-LangString InstallingService ${LANG_TURKISH} "BaseControl hizmeti kuruluyor ve başlatılıyor..."
+LangString InstallingService ${LANG_ENGLISH} "Installing and starting the Control Center Advanced service..."
+LangString InstallingService ${LANG_TURKISH} "Control Center Advanced hizmeti kuruluyor ve başlatılıyor..."
 LangString ServiceFailed ${LANG_ENGLISH} "The service could not be installed or started (exit code $0).$\r$\n$\r$\nThe program still works: run it as administrator, or install the service later from the Safety and service page."
 LangString ServiceFailed ${LANG_TURKISH} "Hizmet kurulamadı veya başlatılamadı (çıkış kodu $0).$\r$\n$\r$\nProgram yine de çalışır: yönetici olarak çalıştırın ya da hizmeti sonra Güvenlik ve hizmet sayfasından kurun."
-LangString GivingBack ${LANG_ENGLISH} "Giving the OEM services back and removing the BaseControl service..."
-LangString GivingBack ${LANG_TURKISH} "OEM hizmetleri geri veriliyor ve BaseControl hizmeti kaldırılıyor..."
-LangString AskData ${LANG_ENGLISH} "Also delete your BaseControl settings, profiles and log files?$\r$\n$\r$\nChoose No to keep them for a later installation."
-LangString AskData ${LANG_TURKISH} "BaseControl ayarlarınız, profilleriniz ve günlük dosyaları da silinsin mi?$\r$\n$\r$\nSonraki bir kurulum için saklamak istiyorsanız Hayır'ı seçin."
+LangString GivingBack ${LANG_ENGLISH} "Giving the OEM services back and removing the Control Center Advanced service..."
+LangString GivingBack ${LANG_TURKISH} "OEM hizmetleri geri veriliyor ve Control Center Advanced hizmeti kaldırılıyor..."
+LangString AskData ${LANG_ENGLISH} "Also delete your Control Center Advanced settings, profiles and log files?$\r$\n$\r$\nChoose No to keep them for a later installation."
+LangString AskData ${LANG_TURKISH} "Control Center Advanced ayarlarınız, profilleriniz ve günlük dosyaları da silinsin mi?$\r$\n$\r$\nSonraki bir kurulum için saklamak istiyorsanız Hayır'ı seçin."
 
 ; ---- install ---------------------------------------------------------------------------------------------------------------------------------
 Var NoService
@@ -146,7 +149,7 @@ Function StopRunning
     Pop $0
   ${EndIf}
   ; a window or tray icon of this installation holds the file open
-  nsExec::Exec `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-Process -Name BaseControl -ErrorAction SilentlyContinue | Where-Object { $$_.Path -like '$INSTDIR\*' } | Stop-Process -Force"`
+  nsExec::Exec `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-Process -Name ControlCenterAdvanced -ErrorAction SilentlyContinue | Where-Object { $$_.Path -like '$INSTDIR\*' } | Stop-Process -Force"`
   Pop $0
   Sleep 400
 FunctionEnd
@@ -235,13 +238,13 @@ Section "Uninstall"
   SetShellVarContext all
   SetRegView 64
   DetailPrint "$(Stopping)"
-  ; --uninstall-service stops the service, hands the OEM services back if BaseControl had taken them over, and removes the service
+  ; --uninstall-service stops the service, hands the OEM services back if Control Center Advanced had taken them over, and removes the service
   DetailPrint "$(GivingBack)"
   ${If} ${FileExists} "$INSTDIR\${EXE}"
     nsExec::ExecToLog '"$INSTDIR\${EXE}" --uninstall-service'
     Pop $0
   ${EndIf}
-  nsExec::Exec `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-Process -Name BaseControl -ErrorAction SilentlyContinue | Where-Object { $$_.Path -like '$INSTDIR\*' } | Stop-Process -Force"`
+  nsExec::Exec `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-Process -Name ControlCenterAdvanced -ErrorAction SilentlyContinue | Where-Object { $$_.Path -like '$INSTDIR\*' } | Stop-Process -Force"`
   Pop $0
   Sleep 400
 
@@ -255,15 +258,15 @@ Section "Uninstall"
   RMDir "$INSTDIR"
 
   ; "start with Windows" of the person who runs the uninstaller (the program's own switch writes it)
-  DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "BaseControl"
+  DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "ControlCenterAdvanced"
   DeleteRegKey HKLM "${UNINST_KEY}"
   DeleteRegKey HKLM "Software\${APPKEY}"
 
   ; settings and logs are kept unless asked: a later installation picks them up again
   ${IfNot} ${Silent}
     MessageBox MB_YESNO|MB_ICONQUESTION|MB_DEFBUTTON2 "$(AskData)" IDNO keep
-    RMDir /r "$APPDATA\BaseControl"          ; %ProgramData%\BaseControl (all-users context)
-    RMDir /r "$LOCALAPPDATA\BaseControl"
+    RMDir /r "$APPDATA\ControlCenterAdvanced"          ; %ProgramData%\ControlCenterAdvanced (all-users context)
+    RMDir /r "$LOCALAPPDATA\ControlCenterAdvanced"
     keep:
   ${EndIf}
 SectionEnd

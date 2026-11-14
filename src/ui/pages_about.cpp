@@ -1,4 +1,4 @@
-// About: which version this is and what it was compared against, the language, the projects BaseControl learned from (each tile opens
+// About: which version this is and what it was compared against, the language, the projects Control Center Advanced learned from (each tile opens
 // the project's page), and the plain statements about warranty and independence.
 // Nothing here touches the hardware; the language is the same preference the General settings page and the top bar change.
 #include <algorithm>
@@ -18,12 +18,12 @@ struct Credit {
   int kind = 0;   // 0 = free licence (green), 1 = no licence stated (amber), 2 = not included (grey)
 };
 
-// Everything BaseControl learned from. Licences were read from the projects' own files.
+// Everything Control Center Advanced learned from. Licences were read from the projects' own files.
 std::vector<Credit> Credits() {
   const std::string readOnly = T("Read as a reference only.");
   return {
       {"OEM Control Center " + std::string(kOemReference), T("Not included"), "",
-       T("The feature list BaseControl is compared against. No OEM code, driver or file is included or copied."), 2},
+       T("The feature list Control Center Advanced is compared against. No OEM code, driver or file is included or copied."), 2},
       {"MONSTER GPU POWER", "GPL-3.0", "https://github.com/MehmetNY/Monster-XMG-Gpu-Power-Control",
        T("The author's own GPU power project. Its engine drives the GPU power (cTGP) control and the OEM profile sync."), 0},
       {"RevoHelper", "MIT", "https://github.com/AstralMemory/RevoHelper",
@@ -70,7 +70,7 @@ void CardApp(Ctx& c, Masonry& m) {
   k.Info(mismatch ? T("Window version") : T("Version"), winVer);
   if (mismatch) k.Info(T("Service version"), svcVer, th.amber);
   k.Info(T("Compared against"), "OEM Control Center " + std::string(kOemReference), 0,
-         T("The OEM release whose feature list BaseControl was compared against."));
+         T("The OEM release whose feature list Control Center Advanced was compared against."));
   k.Info(T("Reference laptop"), "Tulpar T5 V21.7 (GM5TG7Y)", 0,
          T("The laptop everything was verified on. Other models with the same embedded controller are supported at the Family level."));
   k.Info(T("Licence"), "GNU GPL v3", 0, T("Free software: you may use, study, change and share it under the terms of the GNU General Public License, version 3."));
@@ -85,7 +85,7 @@ void CardApp(Ctx& c, Masonry& m) {
   } else if (hit == 1) {
     a.OpenUrl(std::string(BC_REPO_URL) + "/issues/new");
   } else if (hit == 2) {
-    std::string t = Fmt("BaseControl Advanced %s\n", winVer.c_str());
+    std::string t = Fmt("Control Center Advanced %s\n", winVer.c_str());
     if (!svcVer.empty()) t += Fmt("Service: %s (%s)\n", svcVer.c_str(), a.mode().c_str());
     t += Fmt("Compared against: OEM Control Center %s\n", kOemReference);
     t += "Licence: GNU GPL v3\n";
@@ -112,9 +112,9 @@ void CardLanguage(Ctx& c, Masonry& m) {
 void CardGoodToKnow(Ctx& c, Masonry& m) {
   const Theme& th = c.ui.th;
   const std::vector<std::string> notes = {
-      T("BaseControl Advanced is an independent project. It is not made, approved or supported by Monster Notebook, XMG, Tongfang, Uniwill, Intel or NVIDIA; their names only say which hardware it works with."),
+      T("Control Center Advanced is an independent project. It is not made, approved or supported by Monster Notebook, XMG, Tongfang, Uniwill, Intel or NVIDIA; their names only say which hardware it works with."),
       T("It comes with no warranty. Changing power, fan and firmware-related settings can make a laptop unstable and, in the worst case, damage it. The safety switches and the list of hard limits are on the Safety and service page."),
-      T("Settings of the service and its log are kept in %ProgramData%\\BaseControl. This window's own preferences are in %LocalAppData%\\BaseControl."),
+      T("Settings of the service and its log are kept in %ProgramData%\\ControlCenterAdvanced. This window's own preferences are in %LocalAppData%\\ControlCenterAdvanced."),
   };
   float h = 0;
   for (const std::string& s : notes) h += NoteHeight(c, m, s) + 6;
@@ -132,7 +132,7 @@ void CardCredits(Ctx& c, Masonry& m) {
   const Theme& th = ui.th;
   const std::vector<Credit> cr = Credits();
   const std::string intro =
-      T("BaseControl Advanced is free software under the GNU GPL v3. Apart from the GPU power engine, which is the author's own MONSTER GPU POWER project, it was written from scratch. "
+      T("Control Center Advanced is free software under the GNU GPL v3. Apart from the GPU power engine, which is the author's own MONSTER GPU POWER project, it was written from scratch. "
         "These projects were studied for how the hardware behaves and how a control center can be organised. Thank you to everyone who published them. Click one to open its page.");
   const float innerW = m.InnerW(true);
   const int cols = innerW >= 760 ? 2 : 1;
@@ -143,7 +143,7 @@ void CardCredits(Ctx& c, Masonry& m) {
   for (int i = 0; i < n; i++) rowH[static_cast<size_t>(i / cols)] = std::max(rowH[static_cast<size_t>(i / cols)], TileHeight(c, tw, cr[static_cast<size_t>(i)]));
   float tilesH = 0;
   for (float h : rowH) tilesH += h + kTileGap;
-  Card k(c, m, T("Credits and licences"), T("Projects BaseControl learned from"), IconId::Profiles, NoteHeight(c, m, intro, true) + 8 + tilesH - kTileGap, true);
+  Card k(c, m, T("Credits and licences"), T("Projects Control Center Advanced learned from"), IconId::Profiles, NoteHeight(c, m, intro, true) + 8 + tilesH - kTileGap, true);
   k.Note(intro);
   k.Gap(8);
   float y = k.y;

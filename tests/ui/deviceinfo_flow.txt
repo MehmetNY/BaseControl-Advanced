@@ -1,6 +1,6 @@
 # Device info: the components with live gauges, the drive tiles, drive warnings, missing health rights, and the support summary.
-# The page is read-only: nothing on it is a setting, so there is no Confirm here. Drive values change behind BaseControl's back (external).
-# Run: BaseControl.exe --sim --script tests/ui/deviceinfo_flow.txt --size 1360x1700
+# The page is read-only: nothing on it is a setting, so there is no Confirm here. Drive values change behind Control Center Advanced's back (external).
+# Run: ControlCenterAdvanced.exe --sim --script tests/ui/deviceinfo_flow.txt --size 1360x1700
 say == 1. the facts come from the machine: cores, base clock, memory modules, drives ==
 page deviceinfo
 expect host.cores 8

@@ -98,7 +98,9 @@ def banner(lang):
     img.alpha_composite(badge, (96, 74))
 
     d = ImageDraw.Draw(img)
-    d.text((92, 222), "BaseControl", font=font("Inter-Bold", 98), fill=TEXT)
+    # "Control Center" is the big line and "ADVANCED" the spaced label under it, as in the sidebar of the program; 80 px keeps the
+    # name clear of the first screenshot, which starts at x = 700
+    d.text((92, 236), "Control Center", font=font("Inter-Bold", 80), fill=TEXT)
     spaced(d, (98, 340), "ADVANCED", font("Inter-SemiBold", 30), BOLT_B, 11)
     y = 404
     for line in t["tag"]:

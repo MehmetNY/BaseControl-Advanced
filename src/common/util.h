@@ -1,4 +1,4 @@
-// BaseControl Advanced - small portable helpers (no windows.h; unit-testable on any host).
+// Control Center Advanced - small portable helpers (no windows.h; unit-testable on any host).
 #pragma once
 #include <cstdarg>
 #include <cstdint>

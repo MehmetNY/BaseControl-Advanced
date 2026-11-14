@@ -136,7 +136,7 @@ float PageKeys(App& a, const Rect& r) {
 
   // =============================================================== key function
   {
-    const std::string note = T("Fn combinations that the firmware handles itself (brightness, radios ...) never reach Windows and cannot be remapped. Mappings work while BaseControl is running.");
+    const std::string note = T("Fn combinations that the firmware handles itself (brightness, radios ...) never reach Windows and cannot be remapped. Mappings work while Control Center Advanced is running.");
     const float h = kRowToggleLean + 9 + 40 + kRowButtons + 56 + NoteHeight(c, m, note);
     Card k(c, m, T("Key function"), "", IconId::Key, h);
     if (k.PrefRow("keys.remap", T("Key mapping enabled"), "", false, a.SessionLive(), a.SessionLive() ? "" : T("Needs the keyboard hook, which only runs in the real app."))) a.ApplySession();

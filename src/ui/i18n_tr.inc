@@ -35,8 +35,8 @@
 {"unknown", "bilinmiyor"},
 {"Done", "Tamamlandı"},
 {"The administrator helper reported a problem", "Yönetici yardımcısı bir sorun bildirdi"},
-{"Exit code %d. See the service log under %%ProgramData%%\\BaseControl.", "Çıkış kodu %d. %%ProgramData%%\\BaseControl altındaki hizmet günlüğüne bakın."},
-{"Not connected to the BaseControl service.", "BaseControl hizmetine bağlı değil."},
+{"Exit code %d. See the service log under %%ProgramData%%\\ControlCenterAdvanced.", "Çıkış kodu %d. %%ProgramData%%\\ControlCenterAdvanced altındaki hizmet günlüğüne bakın."},
+{"Not connected to the Control Center Advanced service.", "Control Center Advanced hizmetine bağlı değil."},
 {"Open the Overview page for ways to connect.", "Bağlanma yolları için Genel Bakış sayfasını açın."},
 {"The request was rejected.", "İstek reddedildi."},
 {"The value is outside the allowed range.", "Değer izin verilen aralığın dışında."},
@@ -52,7 +52,7 @@
 {"Some of the settings were applied, others were not.", "Ayarların bir kısmı uygulandı, bir kısmı uygulanamadı."},
 {"Not available on this system.", "Bu sistemde kullanılamıyor."},
 {"Unknown setting or command.", "Bilinmeyen ayar veya komut."},
-{"Something went wrong inside BaseControl.", "BaseControl içinde bir şeyler ters gitti."},
+{"Something went wrong inside Control Center Advanced.", "Control Center Advanced içinde bir şeyler ters gitti."},
 {"Applied and verified.", "Uygulandı ve doğrulandı."},
 {"Could not apply: %s", "Uygulanamadı: %s"},
 {"Above the OEM maximum GPU power", "OEM'in izin verdiği en yüksek GPU gücünün üzerinde"},
@@ -60,55 +60,55 @@
     "\n"
     "The 230 W adapter and the cooling were sized for the OEM range. Long CPU + GPU loads at this level can overheat the laptop or push the adapter to its limit.\n"
     "\n"
-    "BaseControl writes the value, reads it back, and restores the previous one if the firmware does not keep it. It cannot protect the hardware from heat.",
+    "Control Center Advanced writes the value, reads it back, and restores the previous one if the firmware does not keep it. It cannot protect the hardware from heat.",
     "GPU'nun dinamik güç hedefini (cTGP) %s W olarak ayarlamak üzeresiniz. Bu, OEM Control Center'ın uyguladığı en yüksek değerin (140 W) üzerinde.\n"
     "\n"
     "230 W adaptör ve soğutma OEM aralığına göre boyutlandırıldı. Bu seviyede uzun süren CPU + GPU yükleri dizüstünü aşırı ısıtabilir veya adaptörü sınırına getirebilir.\n"
     "\n"
-    "BaseControl değeri yazar, geri okur ve donanım yazılımı kalıcı yapmazsa öncekini geri yükler. Donanımı ısıdan koruyamaz."},
+    "Control Center Advanced değeri yazar, geri okur ve donanım yazılımı kalıcı yapmazsa öncekini geri yükler. Donanımı ısıdan koruyamaz."},
 {"This GPU power step was not verified", "Bu GPU güç adımı doğrulanmadı"},
 {"%s W is one of the cTGP steps that has not been verified on the reference laptop (125, 140, 145 and 150 W were measured).\n"
     "\n"
-    "BaseControl writes it, reads it back, and restores the previous value if the driver does not show it.",
+    "Control Center Advanced writes it, reads it back, and restores the previous value if the driver does not show it.",
     "%s W, referans dizüstüde doğrulanmamış cTGP adımlarından biri (125, 140, 145 ve 150 W ölçüldü).\n"
     "\n"
-    "BaseControl değeri yazar, geri okur ve sürücü göstermezse önceki değeri geri yükler."},
+    "Control Center Advanced değeri yazar, geri okur ve sürücü göstermezse önceki değeri geri yükler."},
 {"GPU power on a model that is not on the verified list", "Doğrulanmış listede olmayan bir modelde GPU gücü"},
 {"The GPU power engine was only verified on the Monster Tulpar T5 V21.7 (GM5TG7Y). On any other model the same embedded-controller registers are assumed to behave the same way, but that is not proven.\n"
     "\n"
-    "BaseControl reads every value back and restores the previous one if it does not stick.",
+    "Control Center Advanced reads every value back and restores the previous one if it does not stick.",
     "GPU güç motoru yalnızca Monster Tulpar T5 V21.7'de (GM5TG7Y) doğrulandı. Diğer tüm modellerde aynı gömülü denetleyici yazmaçlarının aynı şekilde davrandığı varsayılır, ancak bu kanıtlanmış değildir.\n"
     "\n"
-    "BaseControl her değeri geri okur ve kalıcı olmazsa öncekini geri yükler."},
+    "Control Center Advanced her değeri geri okur ve kalıcı olmazsa öncekini geri yükler."},
 {"Above the OEM maximum CPU power profile", "OEM'in izin verdiği en yüksek CPU güç profilinin üzerinde"},
 {"The OEM maximum profile on this laptop is PL1 120 W / PL2 120 W / PL4 200 W. You are asking for %s W.\n"
     "\n"
     "The embedded controller accepts it, but the cooling and the 230 W adapter were not designed for sustained operation above the OEM profile. Watch the temperatures.\n"
     "\n"
-    "BaseControl refuses to raise limits while the CPU is above 92 °C and restores the old values if the EC does not keep the new ones.",
+    "Control Center Advanced refuses to raise limits while the CPU is above 92 °C and restores the old values if the EC does not keep the new ones.",
     "Bu dizüstündeki OEM en yüksek profili PL1 120 W / PL2 120 W / PL4 200 W olarak tanımlı. Siz %s W istiyorsunuz.\n"
     "\n"
     "Gömülü denetleyici bunu kabul eder, ancak soğutma ve 230 W adaptör OEM profilinin üzerinde sürekli çalışma için tasarlanmadı. Sıcaklıkları izleyin.\n"
     "\n"
-    "BaseControl, CPU 92 °C'nin üzerindeyken sınırları yükseltmeyi reddeder ve EC yeni değerleri kalıcı yapmazsa eski değerleri geri yükler."},
+    "Control Center Advanced, CPU 92 °C'nin üzerindeyken sınırları yükseltmeyi reddeder ve EC yeni değerleri kalıcı yapmazsa eski değerleri geri yükler."},
 {"Direct CPU register writes", "Doğrudan CPU yazmaç yazmaları"},
 {"The advanced CPU panel writes Intel model-specific registers (power limits, time windows, voltage offsets, prefetchers) through a signed driver module.\n"
     "\n"
-    "A bad value can make Windows unstable until you reboot. Nothing is saved to the BIOS: a reboot restores the firmware defaults, and BaseControl only re-applies values you confirmed.\n"
+    "A bad value can make Windows unstable until you reboot. Nothing is saved to the BIOS: a reboot restores the firmware defaults, and Control Center Advanced only re-applies values you confirmed.\n"
     "\n"
     "Continue and allow register writes?",
     "Gelişmiş CPU paneli, imzalı bir sürücü modülü üzerinden Intel'e özgü yazmaçlara (güç sınırları, zaman pencereleri, voltaj ofsetleri, donanım ön getiricileri) yazar.\n"
     "\n"
-    "Kötü bir değer, yeniden başlatana kadar Windows'u kararsız yapabilir. BIOS'a hiçbir şey kaydedilmez: yeniden başlatma donanım yazılımı varsayılanlarını geri getirir ve BaseControl yalnızca onayladığınız değerleri yeniden uygular.\n"
+    "Kötü bir değer, yeniden başlatana kadar Windows'u kararsız yapabilir. BIOS'a hiçbir şey kaydedilmez: yeniden başlatma donanım yazılımı varsayılanlarını geri getirir ve Control Center Advanced yalnızca onayladığınız değerleri yeniden uygular.\n"
     "\n"
     "Devam edip yazmaç yazmalarına izin verilsin mi?"},
 {"Fixed fan speed bypasses the thermal control", "Sabit fan hızı ısı denetimini atlar"},
 {"With a fixed fan duty the embedded controller no longer ramps the fans by temperature. A low duty under heavy load can overheat the laptop.\n"
     "\n"
-    "BaseControl's watchdog forces the fans to maximum when the CPU reaches 97 °C or the GPU 92 °C, but it only works while BaseControl (or its service) is running.",
+    "Control Center Advanced's watchdog forces the fans to maximum when the CPU reaches 97 °C or the GPU 92 °C, but it only works while Control Center Advanced (or its service) is running.",
     "Sabit fan hızında gömülü denetleyici fanları artık sıcaklığa göre hızlandırmaz. Ağır yük altında düşük bir hız dizüstünü aşırı ısıtabilir.\n"
     "\n"
-    "BaseControl'ün koruması, CPU 97 °C'ye veya GPU 92 °C'ye ulaştığında fanları maksimuma zorlar, ancak yalnızca BaseControl (veya hizmeti) çalışırken işe yarar."},
+    "Control Center Advanced uygulamasının koruması, CPU 97 °C'ye veya GPU 92 °C'ye ulaştığında fanları maksimuma zorlar, ancak yalnızca Control Center Advanced (veya hizmeti) çalışırken işe yarar."},
 {"Confirmation required", "Onay gerekli"},
 {"This change needs your confirmation.", "Bu değişiklik onayınızı gerektiriyor."},
 {"Cancel", "İptal"},
@@ -124,17 +124,17 @@
 {"The embedded controller's power loop is off", "Gömülü denetleyicinin güç döngüsü kapalı"},
 {"Power limits only take effect while the laptop's embedded controller runs its power-management loop. The OEM Control Center's service normally switches it on, and it is not running.\n"
     "\n"
-    "BaseControl can take over from the OEM service (it stops and disables GCUBridge and can restore it later from Safety & service) and switch the loop on itself.",
+    "Control Center Advanced can take over from the OEM service (it stops and disables GCUBridge and can restore it later from Safety & service) and switch the loop on itself.",
     "Güç sınırları yalnızca dizüstünün gömülü denetleyicisi güç yönetimi döngüsünü çalıştırırken etkili olur. OEM Control Center'ın hizmeti bunu normalde açar ve şu an çalışmıyor.\n"
     "\n"
-    "BaseControl OEM hizmetinden devralabilir (GCUBridge'i durdurur ve devre dışı bırakır, daha sonra Güvenlik ve hizmet'ten geri yüklenebilir) ve döngüyü kendisi açabilir."},
+    "Control Center Advanced OEM hizmetinden devralabilir (GCUBridge'i durdurur ve devre dışı bırakır, daha sonra Güvenlik ve hizmet'ten geri yüklenebilir) ve döngüyü kendisi açabilir."},
 {"Take over and apply", "Devral ve uygula"},
-{"OEM service stopped; BaseControl is in charge", "OEM hizmeti durduruldu, denetim BaseControl'de"},
-{"The OEM profile file holds a value BaseControl did not write", "OEM profil dosyasında BaseControl'ün yazmadığı bir değer var"},
-{"Something else changed the OEM profile file (it currently stores %d W). Applying your value replaces it; BaseControl keeps a backup of the original file next to it.\n"
+{"OEM service stopped; Control Center Advanced is in charge", "OEM hizmeti durduruldu, denetim Control Center Advanced uygulamasında"},
+{"The OEM profile file holds a value Control Center Advanced did not write", "OEM profil dosyasında Control Center Advanced uygulamasının yazmadığı bir değer var"},
+{"Something else changed the OEM profile file (it currently stores %d W). Applying your value replaces it; Control Center Advanced keeps a backup of the original file next to it.\n"
     "\n"
     "Fingerprint of the file: %s",
-    "OEM profil dosyasını başka bir şey değiştirmiş (şu an %d W saklıyor). Değerinizi uygulamak onu değiştirir. BaseControl, özgün dosyanın yedeğini yanında tutar.\n"
+    "OEM profil dosyasını başka bir şey değiştirmiş (şu an %d W saklıyor). Değerinizi uygulamak onu değiştirir. Control Center Advanced, özgün dosyanın yedeğini yanında tutar.\n"
     "\n"
     "Dosyanın parmak izi: %s"},
 {"Replace and apply", "Değiştir ve uygula"},
@@ -148,7 +148,7 @@
 {"Live status of your laptop at a glance.", "Dizüstünüzün anlık durumu tek bakışta."},
 {"General settings", "Genel ayarlar"},
 {"Preferences", "Tercihler"},
-{"How BaseControl starts and looks, plus keyboard and power-on options.", "BaseControl'ün nasıl başladığı ve göründüğü, ayrıca klavye ve güç açma seçenekleri."},
+{"How Control Center Advanced starts and looks, plus keyboard and power-on options.", "Control Center Advanced uygulamasının nasıl başladığı ve göründüğü, ayrıca klavye ve güç açma seçenekleri."},
 {"Device manager", "Aygıt yöneticisi"},
 {"Switch the built-in radios and devices on or off.", "Yerleşik kablosuz bağlantıları ve aygıtları açın veya kapatın."},
 {"GPU settings", "GPU ayarları"},
@@ -180,7 +180,7 @@
 {"Version, licences and credits.", "Sürüm, lisanslar ve katkıda bulunanlar."},
 {"System", "Sistem"},
 {"Safety and service", "Güvenlik ve hizmet"},
-{"Safety switches, the OEM service and the BaseControl service.", "Güvenlik anahtarları, OEM hizmeti ve BaseControl hizmeti."},
+{"Safety switches, the OEM service and the Control Center Advanced service.", "Güvenlik anahtarları, OEM hizmeti ve Control Center Advanced hizmeti."},
 {"Interface language", "Arayüz dili"},
 {"Offline", "Çevrimdışı"},
 {"SIMULATION", "SİMÜLASYON"},
@@ -188,7 +188,7 @@
 {"Local (admin)", "Yerel (yönetici)"},
 {"Running elevated without the service. Closing the window stops hardware control.", "Hizmet olmadan yönetici olarak çalışıyor. Pencereyi kapatmak donanım denetimini durdurur."},
 {"Service", "Hizmet"},
-{"Connected to the BaseControl service.", "BaseControl hizmetine bağlı."},
+{"Connected to the Control Center Advanced service.", "Control Center Advanced hizmetine bağlı."},
 {"Active profile", "Etkin profil"},
 {"AC power", "AC güç"},
 {"Running on the adapter", "Adaptörle çalışıyor"},
@@ -196,17 +196,17 @@
 {"Advanced CPU", "Gelişmiş CPU"},
 {"ThrottleStop-style registers", "ThrottleStop tarzı yazmaçlar"},
 {"Close the advanced panel", "Gelişmiş paneli kapat"},
-{"The BaseControl service is not installed", "BaseControl hizmeti kurulu değil"},
-{"BaseControl talks to the laptop's embedded controller, the CPU registers and the GPU through a small Windows service, so this window never needs administrator rights. Install it once and it starts with Windows.", "BaseControl, dizüstünün gömülü denetleyicisi, CPU yazmaçları ve GPU ile küçük bir Windows hizmeti üzerinden konuşur; böylece bu pencerenin yönetici haklarına ihtiyacı olmaz. Bir kez kurun, Windows ile birlikte başlar."},
+{"The Control Center Advanced service is not installed", "Control Center Advanced hizmeti kurulu değil"},
+{"Control Center Advanced talks to the laptop's embedded controller, the CPU registers and the GPU through a small Windows service, so this window never needs administrator rights. Install it once and it starts with Windows.", "Control Center Advanced, dizüstünün gömülü denetleyicisi, CPU yazmaçları ve GPU ile küçük bir Windows hizmeti üzerinden konuşur; böylece bu pencerenin yönetici haklarına ihtiyacı olmaz. Bir kez kurun, Windows ile birlikte başlar."},
 {"Install and start the service", "Hizmeti kur ve başlat"},
 {"Service installed and started", "Hizmet kuruldu ve başlatıldı"},
-{"The BaseControl service is stopped", "BaseControl hizmeti durdurulmuş"},
+{"The Control Center Advanced service is stopped", "Control Center Advanced hizmeti durdurulmuş"},
 {"The service is installed but not running. Start it to control power, fans, GPU and lighting.", "Hizmet kurulu ama çalışmıyor. Güç, fanlar, GPU ve aydınlatmayı denetlemek için başlatın."},
 {"Start the service", "Hizmeti başlat"},
 {"Service started", "Hizmet başlatıldı"},
-{"The BaseControl service is starting", "BaseControl hizmeti başlıyor"},
+{"The Control Center Advanced service is starting", "Control Center Advanced hizmeti başlıyor"},
 {"Waiting for the service to finish its hardware probe...", "Hizmetin donanım taramasını bitirmesi bekleniyor..."},
-{"Connecting to the BaseControl service...", "BaseControl hizmetine bağlanılıyor..."},
+{"Connecting to the Control Center Advanced service...", "Control Center Advanced hizmetine bağlanılıyor..."},
 {"Waiting for the service pipe.", "Hizmet kanalı bekleniyor."},
 {"Not connected", "Bağlı değil"},
 {"Other ways to run", "Çalıştırmanın diğer yolları"},
@@ -234,7 +234,7 @@
 {"Refresh rate set to %d Hz", "Yenileme hızı %d Hz olarak ayarlandı"},
 
 // ---- src/ui/app_window.cpp
-{"Open BaseControl", "BaseControl'ü aç"},
+{"Open Control Center Advanced", "Control Center Advanced uygulamasını aç"},
 {"Exit", "Çıkış"},
 
 // ---- src/ui/page.cpp
@@ -252,7 +252,7 @@
 {"Turn on", "Aç"},
 {"Unavailable", "Kullanılamıyor"},
 {"LIVE", "CANLI"},
-{"The value BaseControl has stored. The hardware does not use it until the matching mode is switched on.", "BaseControl'ün sakladığı değer. İlgili mod açılana kadar donanım bunu kullanmaz."},
+{"The value Control Center Advanced has stored. The hardware does not use it until the matching mode is switched on.", "Control Center Advanced uygulamasının sakladığı değer. İlgili mod açılana kadar donanım bunu kullanmaz."},
 {"The value the hardware reports right now. It follows changes made by other programs.", "Donanımın şu an bildirdiği değer. Başka programların yaptığı değişiklikleri izler."},
 {"Range %s to %s, step %d. Setting key: %s", "Aralık: %s – %s, adım: %d. Ayar anahtarı: %s"},
 {"Discard the draft", "Taslağı at"},
@@ -260,8 +260,8 @@
 {"Confirm", "Onayla"},
 {"Send %s to the hardware now. Nothing is sent until you press this.", "%s değerini şimdi donanıma gönder. Buna basana kadar hiçbir şey gönderilmez."},
 {"Move the slider, then press Confirm. Nothing is sent to the hardware until then.", "Kaydırıcıyı oynatın, sonra Onayla'ya basın. O zamana kadar donanıma hiçbir şey gönderilmez."},
-{"Changed outside BaseControl: the hardware now reports %s.", "BaseControl dışında değiştirildi: donanım şu an %s bildiriyor."},
-{"Above the OEM maximum. BaseControl asks you to confirm unless you agreed before.", "OEM üst sınırının üzerinde. Daha önce kabul etmediyseniz BaseControl onay ister."},
+{"Changed outside Control Center Advanced: the hardware now reports %s.", "Control Center Advanced dışında değiştirildi: donanım şu an %s bildiriyor."},
+{"Above the OEM maximum. Control Center Advanced asks you to confirm unless you agreed before.", "OEM üst sınırının üzerinde. Daha önce kabul etmediyseniz Control Center Advanced onay ister."},
 {"Applied and verified by reading the value back.", "Uygulandı ve değer geri okunarak doğrulandı."},
 {"Send the chosen value to the hardware now. Nothing is sent until you press this.", "Seçilen değeri şimdi donanıma gönder. Buna basana kadar hiçbir şey gönderilmez."},
 {"Pick a value, then press Confirm. Nothing is sent until then.", "Bir değer seçin, sonra Onayla'ya basın. O zamana kadar hiçbir şey gönderilmez."},
@@ -271,7 +271,7 @@
 // ---- src/ui/pages_about.cpp
 {"Read as a reference only.", "Yalnızca başvuru olarak okundu."},
 {"Not included", "Dahil değil"},
-{"The feature list BaseControl is compared against. No OEM code, driver or file is included or copied.", "BaseControl'ün karşılaştırıldığı özellik listesi. Hiçbir OEM kodu, sürücüsü veya dosyası dahil edilmez ya da kopyalanmaz."},
+{"The feature list Control Center Advanced is compared against. No OEM code, driver or file is included or copied.", "Control Center Advanced uygulamasının karşılaştırıldığı özellik listesi. Hiçbir OEM kodu, sürücüsü veya dosyası dahil edilmez ya da kopyalanmaz."},
 {"The author's own GPU power project. Its engine drives the GPU power (cTGP) control and the OEM profile sync.", "Yazarın kendi GPU güç projesi. Motoru, GPU güç (cTGP) denetimini ve OEM profil eşitlemesini yürütür."},
 {"A light, free control app for a sibling laptop brand: a model for a smaller and faster alternative to an OEM control center.", "Kardeş bir dizüstü markası için hafif, ücretsiz bir denetim uygulaması: OEM denetim merkezine daha küçük ve hızlı bir alternatifin örneği."},
 {"No licence stated", "Lisans belirtilmemiş"},
@@ -294,7 +294,7 @@
 {"Version", "Sürüm"},
 {"Service version", "Hizmet sürümü"},
 {"Compared against", "Karşılaştırılan"},
-{"The OEM release whose feature list BaseControl was compared against.", "BaseControl'ün özellik listesinin karşılaştırıldığı OEM sürümü."},
+{"The OEM release whose feature list Control Center Advanced was compared against.", "Control Center Advanced uygulamasının özellik listesinin karşılaştırıldığı OEM sürümü."},
 {"Reference laptop", "Referans dizüstü"},
 {"The laptop everything was verified on. Other models with the same embedded controller are supported at the Family level.", "Her şeyin doğrulandığı dizüstü. Aynı gömülü denetleyiciye sahip diğer modeller Aile düzeyinde desteklenir."},
 {"Licence", "Lisans"},
@@ -303,13 +303,13 @@
 {"Language", "Dil"},
 {"Applies at once.", "Hemen uygulanır."},
 {"Automatic", "Otomatik"},
-{"BaseControl Advanced is an independent project. It is not made, approved or supported by Monster Notebook, XMG, Tongfang, Uniwill, Intel or NVIDIA; their names only say which hardware it works with.", "BaseControl Advanced bağımsız bir projedir. Monster Notebook, XMG, Tongfang, Uniwill, Intel veya NVIDIA tarafından yapılmamış, onaylanmamış ya da desteklenmemiştir; adları yalnızca hangi donanımla çalıştığını belirtir."},
+{"Control Center Advanced is an independent project. It is not made, approved or supported by Monster Notebook, XMG, Tongfang, Uniwill, Intel or NVIDIA; their names only say which hardware it works with.", "Control Center Advanced bağımsız bir projedir. Monster Notebook, XMG, Tongfang, Uniwill, Intel veya NVIDIA tarafından yapılmamış, onaylanmamış ya da desteklenmemiştir; adları yalnızca hangi donanımla çalıştığını belirtir."},
 {"It comes with no warranty. Changing power, fan and firmware-related settings can make a laptop unstable and, in the worst case, damage it. The safety switches and the list of hard limits are on the Safety and service page.", "Hiçbir garanti vermez. Güç, fan ve donanım yazılımıyla ilgili ayarları değiştirmek dizüstünü kararsız yapabilir ve en kötü durumda zarar verebilir. Güvenlik anahtarları ve katı sınırlar listesi Güvenlik ve hizmet sayfasındadır."},
-{"Settings of the service and its log are kept in %ProgramData%\\BaseControl. This window's own preferences are in %LocalAppData%\\BaseControl.", "Hizmetin ayarları ve günlüğü %ProgramData%\\BaseControl içinde tutulur. Bu pencerenin kendi tercihleri %LocalAppData%\\BaseControl içindedir."},
+{"Settings of the service and its log are kept in %ProgramData%\\ControlCenterAdvanced. This window's own preferences are in %LocalAppData%\\ControlCenterAdvanced.", "Hizmetin ayarları ve günlüğü %ProgramData%\\ControlCenterAdvanced içinde tutulur. Bu pencerenin kendi tercihleri %LocalAppData%\\ControlCenterAdvanced içindedir."},
 {"Good to know", "Bilmekte fayda var"},
-{"BaseControl Advanced is free software under the GNU GPL v3. Apart from the GPU power engine, which is the author's own MONSTER GPU POWER project, it was written from scratch. These projects were studied for how the hardware behaves and how a control center can be organised. Thank you to everyone who published them. Click one to open its page.", "BaseControl Advanced, GNU GPL v3 altında özgür yazılımdır. Yazarın kendi MONSTER GPU POWER projesi olan GPU güç motoru dışında sıfırdan yazılmıştır. Bu projeler, donanımın nasıl davrandığını ve bir denetim merkezinin nasıl düzenlenebileceğini anlamak için incelendi. Yayımlayan herkese teşekkürler. Sayfasını açmak için birine tıklayın."},
+{"Control Center Advanced is free software under the GNU GPL v3. Apart from the GPU power engine, which is the author's own MONSTER GPU POWER project, it was written from scratch. These projects were studied for how the hardware behaves and how a control center can be organised. Thank you to everyone who published them. Click one to open its page.", "Control Center Advanced, GNU GPL v3 altında özgür yazılımdır. Yazarın kendi MONSTER GPU POWER projesi olan GPU güç motoru dışında sıfırdan yazılmıştır. Bu projeler, donanımın nasıl davrandığını ve bir denetim merkezinin nasıl düzenlenebileceğini anlamak için incelendi. Yayımlayan herkese teşekkürler. Sayfasını açmak için birine tıklayın."},
 {"Credits and licences", "Katkılar ve lisanslar"},
-{"Projects BaseControl learned from", "BaseControl'ün öğrendiği projeler"},
+{"Projects Control Center Advanced learned from", "Control Center Advanced uygulamasının öğrendiği projeler"},
 
 // ---- src/ui/pages_apps.cpp
 {"missing", "eksik"},
@@ -346,7 +346,7 @@
 {"%s added to the list", "%s listeye eklendi"},
 {"%s saved", "%s kaydedildi"},
 {"If several listed programs run at once, the one higher in the list decides.", "Listedeki birden çok program aynı anda çalışırsa listede üstte olan belirler."},
-{"No background service is installed, so switching only works while BaseControl is running. Safety and service can install it.", "Arka plan hizmeti kurulu değil, bu yüzden geçiş yalnızca BaseControl çalışırken işler. Güvenlik ve hizmet sayfası onu kurabilir."},
+{"No background service is installed, so switching only works while Control Center Advanced is running. Safety and service can install it.", "Arka plan hizmeti kurulu değil, bu yüzden geçiş yalnızca Control Center Advanced çalışırken işler. Güvenlik ve hizmet sayfası onu kurabilir."},
 {"Automatic matching", "Otomatik eşleştirme"},
 {"Switch profile per application", "Uygulamaya göre profil değiştir"},
 {"When the program closes, the previous profile comes back.", "Program kapanınca önceki profil geri gelir."},
@@ -357,7 +357,7 @@
 {"Program", "Program"},
 {"Profile", "Profil"},
 {"No programs yet", "Henüz program yok"},
-{"Add a game or a tool and choose the profile it should run with. BaseControl switches to it while the program runs and back when it closes.", "Bir oyun veya araç ekleyin ve hangi profille çalışacağını seçin. BaseControl program çalışırken o profile geçer, kapanınca geri döner."},
+{"Add a game or a tool and choose the profile it should run with. Control Center Advanced switches to it while the program runs and back when it closes.", "Bir oyun veya araç ekleyin ve hangi profille çalışacağını seçin. Control Center Advanced program çalışırken o profile geçer, kapanınca geri döner."},
 
 // ---- src/ui/pages_battery.cpp
 {"Full capacity", "Tam kapasite"},
@@ -371,7 +371,7 @@
 {"Now", "Şimdi"},
 {"−%d h", "−%d sa"},
 {"No battery was found on this computer.", "Bu bilgisayarda pil bulunamadı."},
-{"Collecting data. The chart fills in as BaseControl keeps running: one point a minute.", "Veri toplanıyor. BaseControl çalıştıkça grafik dolar: dakikada bir nokta."},
+{"Collecting data. The chart fills in as Control Center Advanced keeps running: one point a minute.", "Veri toplanıyor. Control Center Advanced çalıştıkça grafik dolar: dakikada bir nokta."},
 {"%d %%", "%%%d"},
 {"Plugged in", "Adaptör takılı"},
 {"On battery", "Pilde"},
@@ -450,7 +450,7 @@
 {"1 change applied", "1 değişiklik uygulandı"},
 {"%d changes applied", "%d değişiklik uygulandı"},
 {"The register driver is not available.", "Yazmaç sürücüsü kullanılamıyor."},
-{"The advanced panel writes CPU registers through the PawnIO driver with its IntelMSR module. BaseControl does not ship them. Follow docs/SETUP.md to install both once, then restart the service.", "Gelişmiş panel, CPU yazmaçlarına PawnIO sürücüsü ve IntelMSR modülü üzerinden yazar. BaseControl bunları paketlemez. İkisini bir kez kurmak için docs/SETUP.md dosyasını izleyin, sonra hizmeti yeniden başlatın."},
+{"The advanced panel writes CPU registers through the PawnIO driver with its IntelMSR module. Control Center Advanced does not ship them. Follow docs/SETUP.md to install both once, then restart the service.", "Gelişmiş panel, CPU yazmaçlarına PawnIO sürücüsü ve IntelMSR modülü üzerinden yazar. Control Center Advanced bunları paketlemez. İkisini bir kez kurmak için docs/SETUP.md dosyasını izleyin, sonra hizmeti yeniden başlatın."},
 {"Advanced CPU registers unavailable", "Gelişmiş CPU yazmaçları kullanılamıyor"},
 {"Direct register access is switched off", "Doğrudan yazmaç erişimi kapalı"},
 {"Open the setup guide", "Kurulum kılavuzunu aç"},
@@ -561,7 +561,7 @@
 {"differs from EC", "EC'den farklı"},
 {"What the NVIDIA driver reports as the board power limit.", "NVIDIA sürücüsünün kart güç sınırı olarak bildirdiği değer."},
 {"Keep my settings after sleep and display wake", "Uykudan ve ekran uyanışından sonra ayarlarımı koru"},
-{"The firmware drops cTGP after a display off/on. BaseControl re-applies it.", "Ekran kapanıp açılınca cTGP düşer. BaseControl yeniden uygular."},
+{"The firmware drops cTGP after a display off/on. Control Center Advanced re-applies it.", "Ekran kapanıp açılınca cTGP düşer. Control Center Advanced yeniden uygular."},
 {"Also write the OEM profile file", "OEM profil dosyasına da yaz"},
 {"Makes the value survive when the OEM Control Center service restarts.", "OEM Control Center hizmeti yeniden başlasa da değerin korunmasını sağlar."},
 {"OEM Control Center profile files were not found.", "OEM Control Center profil dosyaları bulunamadı."},
@@ -707,7 +707,7 @@
 {"Panel brightness", "Panel parlaklığı"},
 {"The backlight of the built-in screen, the same control as the Windows brightness slider.", "Yerleşik ekranın arka ışığı; Windows parlaklık kaydırıcısıyla aynı denetim."},
 {"Higher is smoother, lower saves battery.", "Yüksek olan daha akıcıdır, düşük olan pil tasarrufu sağlar."},
-{"These are colour curves of BaseControl's own, applied to the display output. They do not touch the panel's factory calibration, and Standard puts everything back.", "Bunlar BaseControl'ün kendi renk eğrileridir ve ekran çıkışına uygulanır. Panelin fabrika kalibrasyonuna dokunmazlar ve Standart her şeyi geri getirir."},
+{"These are colour curves of Control Center Advanced's own, applied to the display output. They do not touch the panel's factory calibration, and Standard puts everything back.", "Bunlar Control Center Advanced uygulamasının kendi renk eğrileridir ve ekran çıkışına uygulanır. Panelin fabrika kalibrasyonuna dokunmazlar ve Standart her şeyi geri getirir."},
 {"Image profile", "Görüntü profili"},
 {"A starting point for the colour controls", "Renk denetimleri için bir başlangıç noktası"},
 {"Press Confirm to switch to %s.", "%s profiline geçmek için Onayla'ya basın."},
@@ -738,7 +738,7 @@
 {"Spreads the dark and light tones apart. 50 is neutral.", "Koyu ve açık tonları birbirinden ayırır. 50 nötrdür."},
 {"Reset colours to standard", "Renkleri standarda sıfırla"},
 {"Colours reset to standard", "Renkler standarda sıfırlandı"},
-{"Some laptops ship with a factory colour profile measured for the panel. The original Control Center downloads it from the manufacturer's server, using the serial number stored in the BIOS. BaseControl does not contact that server and does not include such a profile.", "Bazı dizüstüler, panel için ölçülmüş bir fabrika renk profiliyle gelir. Orijinal Control Center bunu, BIOS'ta saklanan seri numarasını kullanarak üreticinin sunucusundan indirir. BaseControl o sunucuyla iletişim kurmaz ve böyle bir profil içermez."},
+{"Some laptops ship with a factory colour profile measured for the panel. The original Control Center downloads it from the manufacturer's server, using the serial number stored in the BIOS. Control Center Advanced does not contact that server and does not include such a profile.", "Bazı dizüstüler, panel için ölçülmüş bir fabrika renk profiliyle gelir. Orijinal Control Center bunu, BIOS'ta saklanan seri numarasını kullanarak üreticinin sunucusundan indirir. Control Center Advanced o sunucuyla iletişim kurmaz ve böyle bir profil içermez."},
 {"If you have the profile file (.icc or .icm), Windows applies it by itself: open colour management, choose the built-in display, add the profile and make it the default. It works together with the colours above.", "Profil dosyanız (.icc veya .icm) varsa Windows onu kendisi uygular: renk yönetimini açın, yerleşik ekranı seçin, profili ekleyip varsayılan yapın. Yukarıdaki renklerle birlikte çalışır."},
 {"Colour calibration", "Renk kalibrasyonu"},
 {"Factory profiles and the Windows colour tools", "Fabrika profilleri ve Windows renk araçları"},
@@ -785,7 +785,7 @@
 {"Quiet", "Sessiz"},
 {"Fans stay low longer. Temperatures rise further before they ramp up.", "Fanlar daha uzun süre düşük kalır. Hızlanmadan önce sıcaklıklar daha fazla yükselir."},
 {"Default", "Varsayılan"},
-{"BaseControl's balanced starting curve.", "BaseControl'ün dengeli başlangıç eğrisi."},
+{"Control Center Advanced's balanced starting curve.", "Control Center Advanced uygulamasının dengeli başlangıç eğrisi."},
 {"Turbo", "Turbo"},
 {"Fans ramp up early for the lowest temperatures.", "En düşük sıcaklıklar için fanlar erkenden hızlanır."},
 {"You have changes that are not applied yet.", "Henüz uygulanmamış değişiklikleriniz var."},
@@ -811,7 +811,7 @@
 {"Fixed GPU fan speed", "Sabit GPU fan hızı"},
 {"The fan duty held right now.", "Şu an tutulan fan görev oranı."},
 {"Used when the mode is Fixed speed. Stored until then.", "Mod Sabit hız olduğunda kullanılır. O zamana kadar saklanır."},
-{"Fixed speed holds one duty and bypasses the laptop's thermal control. While BaseControl (or its service) runs, a watchdog forces full speed at %d °C CPU or %d °C GPU. Without it nothing protects the laptop.", "Sabit hız tek bir görev oranını tutar ve dizüstünün ısı denetimini atlar. BaseControl (veya hizmeti) çalışırken, CPU %d °C'ye veya GPU %d °C'ye ulaşınca koruma fanları tam hıza geçirir. Bu olmadan dizüstünü hiçbir şey korumaz."},
+{"Fixed speed holds one duty and bypasses the laptop's thermal control. While Control Center Advanced (or its service) runs, a watchdog forces full speed at %d °C CPU or %d °C GPU. Without it nothing protects the laptop.", "Sabit hız tek bir görev oranını tutar ve dizüstünün ısı denetimini atlar. Control Center Advanced (veya hizmeti) çalışırken, CPU %d °C'ye veya GPU %d °C'ye ulaşınca koruma fanları tam hıza geçirir. Bu olmadan dizüstünü hiçbir şey korumaz."},
 {"Advanced fan control", "Gelişmiş fan denetimi"},
 {"Experimental. Needs Safety and service > Allow experimental writes.", "Deneysel. Güvenlik ve hizmet > Deneysel yazmalara izin ver gerektirir."},
 {"Fan switching speed", "Fan geçiş hızı"},
@@ -822,7 +822,7 @@
 {"hardware slowdown", "donanım yavaşlatması"},
 {"idle", "boşta"},
 {"None", "Yok"},
-{"Windows key lock, Num Lock lock and the touchpad corner work while BaseControl is running; the tray is enough.", "Windows tuşu kilidi, Num Lock kilidi ve dokunmatik yüzey köşesi BaseControl çalışırken işler; tepside çalışması yeterlidir."},
+{"Windows key lock, Num Lock lock and the touchpad corner work while Control Center Advanced is running; the tray is enough.", "Windows tuşu kilidi, Num Lock kilidi ve dokunmatik yüzey köşesi Control Center Advanced çalışırken işler; tepside çalışması yeterlidir."},
 {"Keyboard and input", "Klavye ve giriş"},
 {"Windows key lock", "Windows tuşu kilidi"},
 {"Stop the Start menu from opening by accident.", "Başlat menüsünün yanlışlıkla açılmasını önleyin."},
@@ -847,9 +847,9 @@
 {"Start with Windows", "Windows ile başlat"},
 {"Starts hidden in the tray when you sign in, and re-applies your settings.", "Oturum açınca tepside gizli başlar ve ayarlarınızı yeniden uygular."},
 {"Tray icon", "Tepsi simgesi"},
-{"Show BaseControl in the notification area.", "BaseControl'ü bildirim alanında göster."},
+{"Show Control Center Advanced in the notification area.", "Control Center Advanced uygulamasını bildirim alanında göster."},
 {"Close to the tray", "Tepsiye kapat"},
-{"The close button hides the window; BaseControl keeps running.", "Kapat düğmesi pencereyi gizler, BaseControl çalışmaya devam eder."},
+{"The close button hides the window; Control Center Advanced keeps running.", "Kapat düğmesi pencereyi gizler, Control Center Advanced çalışmaya devam eder."},
 {"Minimise to the tray", "Tepsiye küçült"},
 {"The minimise button hides the window instead of using the taskbar.", "Küçült düğmesi, görev çubuğu yerine pencereyi gizler."},
 {"Shortcut notifications", "Kısayol bildirimleri"},
@@ -869,7 +869,7 @@
 {"Discrete GPU", "Ayrık GPU"},
 {"The built-in screen is driven straight by the NVIDIA GPU.", "Yerleşik ekran doğrudan NVIDIA GPU tarafından sürülür."},
 {"Not available", "Mevcut değil"},
-{"BaseControl found no verified graphics-mode (MUX) switch for this model, so it only shows the mode Windows reports. Nothing here can change what drives the screen.", "BaseControl bu model için doğrulanmış bir grafik modu (MUX) anahtarı bulamadı; bu yüzden yalnızca Windows'un bildirdiği modu gösterir. Buradaki hiçbir şey ekranı neyin sürdüğünü değiştiremez."},
+{"Control Center Advanced found no verified graphics-mode (MUX) switch for this model, so it only shows the mode Windows reports. Nothing here can change what drives the screen.", "Control Center Advanced bu model için doğrulanmış bir grafik modu (MUX) anahtarı bulamadı; bu yüzden yalnızca Windows'un bildirdiği modu gösterir. Buradaki hiçbir şey ekranı neyin sürdüğünü değiştiremez."},
 {"Display path", "Görüntü yolu"},
 {"Hybrid", "Hibrit"},
 {"Discrete", "Ayrık"},
@@ -897,12 +897,12 @@
 {"Clock offsets and power budget", "Saat ofsetleri ve güç bütçesi"},
 {"Performance • Custom profiles", "Performans • Özel profiller"},
 {"Open custom profiles", "Özel profilleri aç"},
-{"A graphics-mode change would need a restart on real hardware. BaseControl does not offer one for this model because the firmware control is not verified; it never touches how the screen is wired.", "Gerçek donanımda grafik modu değişikliği yeniden başlatma gerektirir. Donanım yazılımı denetimi doğrulanmadığı için BaseControl bu model için bunu sunmaz; ekranın nasıl bağlandığına asla dokunmaz."},
+{"A graphics-mode change would need a restart on real hardware. Control Center Advanced does not offer one for this model because the firmware control is not verified; it never touches how the screen is wired.", "Gerçek donanımda grafik modu değişikliği yeniden başlatma gerektirir. Donanım yazılımı denetimi doğrulanmadığı için Control Center Advanced bu model için bunu sunmaz; ekranın nasıl bağlandığına asla dokunmaz."},
 
 // ---- src/ui/pages_keys.cpp
 {"Keyboard", "Klavye"},
 {"The Fn key is handled by the firmware. Windows never sees it, so it cannot be remapped.", "Fn tuşunu donanım yazılımı yönetir. Windows onu hiç görmez, bu yüzden yeniden eşlenemez."},
-{"Fn combinations that the firmware handles itself (brightness, radios ...) never reach Windows and cannot be remapped. Mappings work while BaseControl is running.", "Donanım yazılımının kendisinin işlediği Fn kombinasyonları (parlaklık, kablosuz bağlantılar ...) Windows'a hiç ulaşmaz ve yeniden eşlenemez. Eşlemeler BaseControl çalışırken işler."},
+{"Fn combinations that the firmware handles itself (brightness, radios ...) never reach Windows and cannot be remapped. Mappings work while Control Center Advanced is running.", "Donanım yazılımının kendisinin işlediği Fn kombinasyonları (parlaklık, kablosuz bağlantılar ...) Windows'a hiç ulaşmaz ve yeniden eşlenemez. Eşlemeler Control Center Advanced çalışırken işler."},
 {"Key function", "Tuş işlevi"},
 {"Key mapping enabled", "Tuş eşleme etkin"},
 {"Selected key", "Seçili tuş"},
@@ -947,7 +947,7 @@
 {"The keyboard light has four steps.", "Klavye ışığının dört kademesi var."},
 {"Effect speed", "Efekt hızı"},
 {"1 is slow, 10 is fast.", "1 yavaş, 10 hızlıdır."},
-{"BaseControl keeps your lighting and applies it again at start-up, after sleep and when the display wakes.", "BaseControl aydınlatma ayarınızı saklar ve açılışta, uykudan sonra ve ekran uyandığında yeniden uygular."},
+{"Control Center Advanced keeps your lighting and applies it again at start-up, after sleep and when the display wakes.", "Control Center Advanced aydınlatma ayarınızı saklar ve açılışta, uykudan sonra ve ekran uyandığında yeniden uygular."},
 {"This effect chooses its own colours, so the colour below is not used.", "Bu efekt kendi renklerini seçer, bu yüzden aşağıdaki renk kullanılmaz."},
 {"Colour", "Renk"},
 {"Keyboard colour: %s", "Klavye rengi: %s"},
@@ -955,7 +955,7 @@
 {"Use a colour like #ff8800.", "#ff8800 gibi bir renk girin."},
 {"Restore defaults", "Varsayılanları geri yükle"},
 {"Lighting restored to white, static, full brightness.", "Aydınlatma beyaz, sabit, tam parlaklığa geri yüklendi."},
-{"Counted from your last key press or mouse move. BaseControl watches for it, so the tray icon or the window has to be running.", "Son tuş basışınızdan veya fare hareketinizden itibaren sayılır. BaseControl bunu izler, bu yüzden tepsi simgesinin ya da pencerenin çalışıyor olması gerekir."},
+{"Counted from your last key press or mouse move. Control Center Advanced watches for it, so the tray icon or the window has to be running.", "Son tuş basışınızdan veya fare hareketinizden itibaren sayılır. Control Center Advanced bunu izler, bu yüzden tepsi simgesinin ya da pencerenin çalışıyor olması gerekir."},
 {"Idle timeout", "Boşta kalma süresi"},
 {"Light turns off after", "Işık şu süre sonra kapanır"},
 {"Not used", "Kullanılmıyor"},
@@ -978,7 +978,7 @@
 {"Overlay enabled", "Gösterge etkin"},
 {"Show / hide shortcut", "Göster / gizle kısayolu"},
 {"Frames per second of the game in front.", "Öndeki oyunun saniyedeki kare sayısı."},
-{"Not available in this version: BaseControl cannot count frames yet.", "Bu sürümde yok: BaseControl henüz kare sayamıyor."},
+{"Not available in this version: Control Center Advanced cannot count frames yet.", "Bu sürümde yok: Control Center Advanced henüz kare sayamıyor."},
 {"Visible data", "Görünen veriler"},
 {"FPS counter", "FPS sayacı"},
 {"CPU temperature and load", "CPU sıcaklığı ve yükü"},
@@ -1045,7 +1045,7 @@
 {"Watching temperatures", "Sıcaklıklar izleniyor"},
 {"Forcing maximum fans", "Fanlar maksimuma zorlanıyor"},
 {"OEM Control Center service", "OEM Control Center hizmeti"},
-{"Running next to BaseControl", "BaseControl ile birlikte çalışıyor"},
+{"Running next to Control Center Advanced", "Control Center Advanced ile birlikte çalışıyor"},
 {"Last error", "Son hata"},
 {"Health", "Sağlık"},
 {"What is limiting the laptop right now", "Şu an dizüstünü sınırlayan şey"},
@@ -1087,10 +1087,10 @@
 
 // ---- src/ui/pages_safety.cpp
 {"Write protection", "Yazma koruması"},
-{"What BaseControl is allowed to change", "BaseControl'ün neleri değiştirmesine izin verildiği"},
+{"What Control Center Advanced is allowed to change", "Control Center Advanced uygulamasının neleri değiştirmesine izin verildiği"},
 {"Read-only mode", "Salt okunur mod"},
 {"Blocks every hardware write. Readings keep working.", "Tüm donanım yazmalarını engeller. Okumalar çalışmaya devam eder."},
-{"The kill switch. While it is on, BaseControl refuses every change to the embedded controller, the CPU registers and the graphics card.", "Acil durdurma anahtarı. Açıkken BaseControl, gömülü denetleyiciye, CPU yazmaçlarına ve ekran kartına yapılan her değişikliği reddeder."},
+{"The kill switch. While it is on, Control Center Advanced refuses every change to the embedded controller, the CPU registers and the graphics card.", "Acil durdurma anahtarı. Açıkken Control Center Advanced, gömülü denetleyiciye, CPU yazmaçlarına ve ekran kartına yapılan her değişikliği reddeder."},
 {"Writes are allowed again", "Yazmalara yeniden izin verildi"},
 {"Read-only mode is on", "Salt okunur mod açık"},
 {"Allow experimental writes", "Deneysel yazmalara izin ver"},
@@ -1108,12 +1108,12 @@
 {"Allow writes on an unrecognised model", "Tanınmayan bir modelde yazmalara izin ver"},
 {"This laptop is not recognised: hardware writes are off until you allow them.", "Bu dizüstü tanınmıyor: siz izin verene kadar donanım yazmaları kapalı."},
 {"Only needed when the laptop is not recognised.", "Yalnızca dizüstü tanınmadığında gerekir."},
-{"BaseControl only writes to hardware it has identified. On another model the same registers may mean something else.", "BaseControl yalnızca tanımladığı donanıma yazar. Başka bir modelde aynı yazmaçlar başka bir anlama gelebilir."},
+{"Control Center Advanced only writes to hardware it has identified. On another model the same registers may mean something else.", "Control Center Advanced yalnızca tanımladığı donanıma yazar. Başka bir modelde aynı yazmaçlar başka bir anlama gelebilir."},
 {"Hardware writes are off for unrecognised models", "Tanınmayan modellerde donanım yazmaları kapalı"},
-{"BaseControl has not identified this laptop. The registers it writes were verified on one specific model; on another model they can have a different meaning.\n"
+{"Control Center Advanced has not identified this laptop. The registers it writes were verified on one specific model; on another model they can have a different meaning.\n"
     "\n"
     "Only continue if you know this laptop shares the embedded controller of the supported one.",
-    "BaseControl bu dizüstünü tanımlamadı. Yazdığı yazmaçlar belirli bir modelde doğrulandı; başka bir modelde farklı bir anlama gelebilirler.\n"
+    "Control Center Advanced bu dizüstünü tanımlamadı. Yazdığı yazmaçlar belirli bir modelde doğrulandı; başka bir modelde farklı bir anlama gelebilirler.\n"
     "\n"
     "Yalnızca bu dizüstünün, desteklenen modelle aynı gömülü denetleyiciyi paylaştığını biliyorsanız devam edin."},
 {"Hardware writes are allowed on this model", "Bu modelde donanım yazmalarına izin verildi"},
@@ -1123,13 +1123,13 @@
 {"Everyone who can open the window can change settings again", "Pencereyi açabilen herkes ayarları yeniden değiştirebilir"},
 {"From now on the service accepts changes only from a window that runs as administrator. A normal window can still show the readings.\n"
     "\n"
-    "To change this switch again you have to start BaseControl with \"Run as administrator\".",
+    "To change this switch again you have to start Control Center Advanced with \"Run as administrator\".",
     "Bundan sonra hizmet, yalnızca yönetici olarak çalışan bir pencereden gelen değişiklikleri kabul eder. Normal bir pencere ölçümleri yine gösterebilir.\n"
     "\n"
-    "Bu anahtarı yeniden değiştirmek için BaseControl'ü \"Yönetici olarak çalıştır\" ile başlatmanız gerekir."},
+    "Bu anahtarı yeniden değiştirmek için Control Center Advanced uygulamasını \"Yönetici olarak çalıştır\" ile başlatmanız gerekir."},
 {"Keep my settings applied", "Ayarlarımı uygulanmış tut"},
 {"Applies them again after sleep, a charger change or display wake.", "Uyku, şarj cihazı değişimi ve ekran uyanışından sonra tekrar uygular."},
-{"The firmware resets some values at those moments. BaseControl puts back the ones you set.", "Donanım yazılımı bu anlarda bazı değerleri sıfırlar. BaseControl sizin ayarladıklarınızı geri koyar."},
+{"The firmware resets some values at those moments. Control Center Advanced puts back the ones you set.", "Donanım yazılımı bu anlarda bazı değerleri sıfırlar. Control Center Advanced sizin ayarladıklarınızı geri koyar."},
 {"Apply my settings when the service starts", "Hizmet başlayınca ayarlarımı uygula"},
 {"After a restart of Windows or of the service.", "Windows'un veya hizmetin yeniden başlamasından sonra."},
 {"Needs \"Keep my settings applied\".", "\"Ayarlarımı uygulanmış tut\" gerektirir."},
@@ -1138,7 +1138,7 @@
 {"GPU power above the OEM maximum", "OEM üst sınırının üzerinde GPU gücü"},
 {"Unverified GPU power steps", "Doğrulanmamış GPU güç adımları"},
 {"GPU power on an unlisted model", "Listede olmayan bir modelde GPU gücü"},
-{"When you confirm a risky change, BaseControl remembers it so it does not ask again for the same kind of change. Reset to be asked again.", "Riskli bir değişikliği onayladığınızda BaseControl bunu hatırlar ve aynı türden değişiklik için yeniden sormaz. Yeniden sorulmasını istiyorsanız sıfırlayın."},
+{"When you confirm a risky change, Control Center Advanced remembers it so it does not ask again for the same kind of change. Reset to be asked again.", "Riskli bir değişikliği onayladığınızda Control Center Advanced bunu hatırlar ve aynı türden değişiklik için yeniden sormaz. Yeniden sorulmasını istiyorsanız sıfırlayın."},
 {"Confirmations", "Onaylar"},
 {"None given", "Hiç verilmedi"},
 {"%d given", "%d verildi"},
@@ -1146,8 +1146,8 @@
 {"Asked each time", "Her seferinde sorulur"},
 {"Reset confirmations", "Onayları sıfırla"},
 {"Confirmations reset", "Onaylar sıfırlandı"},
-{"The OEM Control Center is not installed on this computer, so nothing competes with BaseControl.", "OEM Control Center bu bilgisayarda kurulu değil, bu yüzden BaseControl ile yarışan bir şey yok."},
-{"BaseControl is in charge. The OEM service is stopped and disabled, so the OEM Control Center app does not work until you give the service back.", "Denetim BaseControl'de. OEM hizmeti durduruldu ve devre dışı bırakıldı, bu yüzden hizmeti geri verene kadar OEM Control Center uygulaması çalışmaz."},
+{"The OEM Control Center is not installed on this computer, so nothing competes with Control Center Advanced.", "OEM Control Center bu bilgisayarda kurulu değil, bu yüzden Control Center Advanced ile yarışan bir şey yok."},
+{"Control Center Advanced is in charge. The OEM service is stopped and disabled, so the OEM Control Center app does not work until you give the service back.", "Denetim Control Center Advanced uygulamasında. OEM hizmeti durduruldu ve devre dışı bırakıldı, bu yüzden hizmeti geri verene kadar OEM Control Center uygulaması çalışmaz."},
 {"The OEM service is running. In the background it can change power and fan settings and undo yours. Take over to stop and disable it; you can give it back here at any time.", "OEM hizmeti çalışıyor. Arka planda güç ve fan ayarlarını değiştirebilir, sizinkileri geri alabilir. Durdurup devre dışı bırakmak için devralın; istediğiniz zaman buradan geri verebilirsiniz."},
 {"The OEM service is not running right now, so it is not in the way. Take over keeps it from starting again with Windows.", "OEM hizmeti şu an çalışmıyor, bu yüzden engel olmuyor. Devralmak, onun Windows ile yeniden başlamasını önler."},
 {"Take over from the OEM service", "OEM hizmetinden devral"},
@@ -1160,13 +1160,13 @@
 {"OEM service", "OEM hizmeti"},
 {"Stopped", "Durduruldu"},
 {"The OEM Control Center's background service (GCUBridge). While it runs it may write to the embedded controller.", "OEM Control Center'ın arka plan hizmeti (GCUBridge). Çalışırken gömülü denetleyiciye yazabilir."},
-{"BaseControl in charge", "Denetim BaseControl'de"},
-{"BaseControl will stop the OEM service (GCUBridge) and set it to Disabled so it does not start again with Windows. The OEM Control Center app stops working meanwhile.\n"
+{"Control Center Advanced in charge", "Denetim Control Center Advanced uygulamasında"},
+{"Control Center Advanced will stop the OEM service (GCUBridge) and set it to Disabled so it does not start again with Windows. The OEM Control Center app stops working meanwhile.\n"
     "\n"
-    "You can give the service back here at any time, and removing BaseControl's service does it automatically.",
-    "BaseControl, OEM hizmetini (GCUBridge) durduracak ve Windows ile yeniden başlamaması için Devre dışı olarak ayarlayacak. OEM Control Center uygulaması bu sürede çalışmaz.\n"
+    "You can give the service back here at any time, and removing Control Center Advanced's service does it automatically.",
+    "Control Center Advanced, OEM hizmetini (GCUBridge) durduracak ve Windows ile yeniden başlamaması için Devre dışı olarak ayarlayacak. OEM Control Center uygulaması bu sürede çalışmaz.\n"
     "\n"
-    "Hizmeti istediğiniz zaman buradan geri verebilirsiniz; BaseControl hizmetini kaldırmak bunu otomatik yapar."},
+    "Hizmeti istediğiniz zaman buradan geri verebilirsiniz; Control Center Advanced hizmetini kaldırmak bunu otomatik yapar."},
 {"Take over", "Devral"},
 {"OEM service restored", "OEM hizmeti geri verildi"},
 {"Starting", "Başlıyor"},
@@ -1176,16 +1176,16 @@
 {"Stop the service", "Hizmeti durdur"},
 {"Remove the service", "Hizmeti kaldır"},
 {"Stops and removes the service and gives the OEM service back. Your saved profiles stay.", "Hizmeti durdurur ve kaldırır, OEM hizmetini geri verir. Kayıtlı profilleriniz kalır."},
-{"Installing copies BaseControl into Program Files first, so the service never runs a file that a normal user could replace.", "Kurulum önce BaseControl'ü Program Files içine kopyalar; böylece hizmet, normal bir kullanıcının değiştirebileceği bir dosyayı hiçbir zaman çalıştırmaz."},
+{"Installing copies Control Center Advanced into Program Files first, so the service never runs a file that a normal user could replace.", "Kurulum önce Control Center Advanced uygulamasını Program Files içine kopyalar; böylece hizmet, normal bir kullanıcının değiştirebileceği bir dosyayı hiçbir zaman çalıştırmaz."},
 {"This window talks to it", "Bu pencere onunla konuşuyor"},
 {"Not used in the simulation", "Simülasyonda kullanılmaz"},
 {"Not used by this window", "Bu pencere tarafından kullanılmıyor"},
-{"The BaseControl service does the privileged work, so this window never needs administrator rights.", "Ayrıcalıklı işleri BaseControl hizmeti yapar, bu yüzden bu pencerenin hiçbir zaman yönetici haklarına ihtiyacı olmaz."},
+{"The Control Center Advanced service does the privileged work, so this window never needs administrator rights.", "Ayrıcalıklı işleri Control Center Advanced hizmeti yapar, bu yüzden bu pencerenin hiçbir zaman yönetici haklarına ihtiyacı olmaz."},
 {"Windows service", "Windows hizmeti"},
 {"Hardware link", "Donanım bağlantısı"},
 {"Not found", "Bulunamadı"},
 {"Whether the laptop's embedded controller answers.", "Dizüstünün gömülü denetleyicisinin yanıt verip vermediği."},
-{"While the service is stopped, BaseControl cannot change or watch anything. Values already in the laptop stay as they are, but the fan watchdog and \"Keep my settings applied\" do nothing until you start it again.", "Hizmet durdurulmuşken BaseControl hiçbir şeyi değiştiremez veya izleyemez. Dizüstündeki mevcut değerler olduğu gibi kalır ancak fan koruması ve \"Ayarlarımı uygulanmış tut\", hizmeti yeniden başlatana kadar bir şey yapmaz."},
+{"While the service is stopped, Control Center Advanced cannot change or watch anything. Values already in the laptop stay as they are, but the fan watchdog and \"Keep my settings applied\" do nothing until you start it again.", "Hizmet durdurulmuşken Control Center Advanced hiçbir şeyi değiştiremez veya izleyemez. Dizüstündeki mevcut değerler olduğu gibi kalır ancak fan koruması ve \"Ayarlarımı uygulanmış tut\", hizmeti yeniden başlatana kadar bir şey yapmaz."},
 {"Service stopped", "Hizmet durduruldu"},
 {"The service is stopped and removed from Windows, and the OEM service is given back. Your profiles and settings are kept; installing the service again brings everything back.", "Hizmet durduruldu ve Windows'tan kaldırıldı, OEM hizmeti geri verildi. Profilleriniz ve ayarlarınız saklanır; hizmeti yeniden kurmak her şeyi geri getirir."},
 {"Service removed", "Hizmet kaldırıldı"},
@@ -1193,7 +1193,7 @@
 {"For a bug report", "Hata bildirimi için"},
 {"Writes to the hardware", "Donanıma yazmalar"},
 {"%d", "%d"},
-{"Embedded-controller registers BaseControl has written since it started.", "BaseControl'ün başladığından beri yazdığı gömülü denetleyici yazmaçları."},
+{"Embedded-controller registers Control Center Advanced has written since it started.", "Control Center Advanced uygulamasının başladığından beri yazdığı gömülü denetleyici yazmaçları."},
 {"Writes refused by the guard", "Koruma tarafından reddedilen yazmalar"},
 {"A write outside the allow-list or its value limits is refused before it reaches the hardware.", "İzin listesinin veya değer sınırlarının dışındaki bir yazma, donanıma ulaşmadan reddedilir."},
 {"Forced full speed", "Tam hıza zorlama"},
@@ -1207,12 +1207,12 @@
 {"Hardware detected again", "Donanım yeniden algılandı"},
 {"Evidence labels", "Kanıt etiketleri"},
 {"What the badges next to settings mean", "Ayarların yanındaki rozetlerin anlamı"},
-{"BaseControl never writes to the BIOS, the flash chip or UEFI variables.", "BaseControl BIOS'a, flash yongasına veya UEFI değişkenlerine asla yazmaz."},
+{"Control Center Advanced never writes to the BIOS, the flash chip or UEFI variables.", "Control Center Advanced BIOS'a, flash yongasına veya UEFI değişkenlerine asla yazmaz."},
 {"Embedded-controller writes use an allow-list of registers with limits on each value. Anything else is refused, and registers that identify the charger or bypass the firmware's power limits are on a never-write list.", "Gömülü denetleyici yazmaları, her değeri ayrı ayrı sınırlayan bir yazmaç izin listesi kullanır. Diğer her şey reddedilir; şarj cihazını tanımlayan veya donanım yazılımının güç sınırlarını aşan yazmaçlar asla yazılmayacaklar listesindedir."},
 {"Every change is read back. When it did not stick, the previous value is put back.", "Her değişiklik geri okunur. Kalıcı olmadıysa önceki değer geri konur."},
 {"While a custom or fixed fan setting is active, a watchdog forces full fan speed when the CPU reaches 97 °C or the graphics card 92 °C.", "Özel veya sabit bir fan ayarı etkinken CPU 97 °C'ye ya da ekran kartı 92 °C'ye ulaşırsa koruma fanları tam hıza zorlar."},
 {"The OEM profile file is backed up before it is changed, and the OEM service can be handed back at any time.", "OEM profil dosyası değiştirilmeden önce yedeklenir ve OEM hizmeti istenildiği zaman geri verilebilir."},
-{"What BaseControl never does", "BaseControl'ün asla yapmadıkları"},
+{"What Control Center Advanced never does", "Control Center Advanced uygulamasının asla yapmadıkları"},
 {"Hard limits that no switch changes", "Hiçbir anahtarın değiştiremediği katı sınırlar"},
 // ---- src/common/controller.cpp, ctl_cpu.cpp, ctl_ec.cpp, ctl_gpu.cpp, ctl_misc.cpp  (why a setting is unavailable or refused)
 {"0x0463 unreadable", "0x0463 okunamıyor"},

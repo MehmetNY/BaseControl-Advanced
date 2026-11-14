@@ -1,5 +1,5 @@
-// BaseControl Advanced - one executable, several roles:
-//   (no arguments)          the window; talks to the BaseControl service (or offers to set it up)
+// Control Center Advanced - one executable, several roles:
+//   (no arguments)          the window; talks to the Control Center Advanced service (or offers to set it up)
 //   --local                 the window with an in-process controller (needs administrator rights)
 //   --sim                   the window on a simulated laptop (no hardware is touched)
 //   --tray                  start hidden in the notification area
@@ -47,7 +47,7 @@ std::vector<std::string> Args() {
 }
 
 // A GUI-subsystem program has no console of its own. Reach for the parent's console only for the output that is not already going
-// somewhere: `BaseControl.exe --probe > probe.txt` and `| more` keep working, a plain run from a prompt prints to the prompt.
+// somewhere: `ControlCenterAdvanced.exe --probe > probe.txt` and `| more` keep working, a plain run from a prompt prints to the prompt.
 void AttachParentConsole() {
   auto usable = [](DWORD which) {
     HANDLE h = GetStdHandle(which);
@@ -70,8 +70,8 @@ void Log(const std::string& line) {
 int Help() {
   AttachParentConsole();
   std::printf(
-      "BaseControl Advanced %s\n\n"
-      "  BaseControl.exe                 open the window (service mode)\n"
+      "Control Center Advanced %s\n\n"
+      "  ControlCenterAdvanced.exe                 open the window (service mode)\n"
       "  --local                         window + in-process controller (administrator)\n"
       "  --sim [--sim-model exact|family|unknown] [--sim-version X.Y.Z]   window on a simulated laptop\n"
       "  --tray                          start hidden in the tray\n"
@@ -98,7 +98,7 @@ int Probe() {
   ctl.Start();
   Sleep(2500);
   const bc::KV s = ctl.Snapshot();
-  std::printf("BaseControl %s probe (elevated: %s)\n", BC_VERSION, bc::hw::IsElevated() ? "yes" : "no");
+  std::printf("Control Center Advanced %s probe (elevated: %s)\n", BC_VERSION, bc::hw::IsElevated() ? "yes" : "no");
   for (const auto& p : s.All()) std::printf("%s=%s\n", p.first.c_str(), p.second.c_str());
   ctl.Stop();
   return 0;
@@ -192,9 +192,9 @@ int WINAPI WinMain(HINSTANCE hi, HINSTANCE, LPSTR, int show) {
     return app.RunShot();
   }
   // one window per user session
-  HANDLE mutex = CreateMutexW(nullptr, TRUE, L"Local\\BaseControlAdvancedUI");
+  HANDLE mutex = CreateMutexW(nullptr, TRUE, L"Local\\ControlCenterAdvancedUI");
   if (mutex && GetLastError() == ERROR_ALREADY_EXISTS) {
-    HWND w = FindWindowW(L"BaseControlAdvancedMain", nullptr);
+    HWND w = FindWindowW(L"ControlCenterAdvancedMain", nullptr);
     if (w) {
       ShowWindow(w, IsIconic(w) ? SW_RESTORE : SW_SHOW);
       SetForegroundWindow(w);

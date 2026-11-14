@@ -18,12 +18,12 @@ BEGIN
     BLOCK "040904b0"
     BEGIN
       VALUE "CompanyName", "MehmetNY"
-      VALUE "FileDescription", "BaseControl Advanced"
+      VALUE "FileDescription", "Control Center Advanced"
       VALUE "FileVersion", BC_VER_STR
-      VALUE "InternalName", "BaseControl"
+      VALUE "InternalName", "ControlCenterAdvanced"
       VALUE "LegalCopyright", "GPL-3.0-or-later"
-      VALUE "OriginalFilename", "BaseControl.exe"
-      VALUE "ProductName", "BaseControl Advanced"
+      VALUE "OriginalFilename", "ControlCenterAdvanced.exe"
+      VALUE "ProductName", "Control Center Advanced"
       VALUE "ProductVersion", BC_VER_STR
     END
   END

@@ -142,7 +142,7 @@ def settings_md():
     if missing or unused:
         sys.exit("gen_docs.py: describe these settings in DESCRIPTIONS: %s; remove the unused entries: %s" % (missing, unused))
     o = [HEADER % "src/common/settings_reg.cpp", "# Settings\n\n",
-         "Everything BaseControl can change is declared once, in `src/common/settings_reg.cpp`: a type, a range, an evidence tier and the "
+         "Everything Control Center Advanced can change is declared once, in `src/common/settings_reg.cpp`: a type, a range, an evidence tier and the "
          "capability that must be present. The controller refuses everything that is not in the table - there are no raw addresses and no "
          "free-form writes. A request is checked in this order: read-only switch, evidence gate, model gate, range, capability, consent, "
          "write, read-back (with rollback when the value did not stick).\n\n",
@@ -197,7 +197,7 @@ def registers_md():
     sections, never = parse_registers()
     o = [HEADER % "src/common/registers.h", "# Embedded-controller registers\n\n",
          "The laptop's embedded controller (EC) is reached through the `ACPIDriver` device (`\\\\.\\ACPIDriver`) that the OEM's Control Center package installs; "
-         "BaseControl neither ships nor modifies that driver, so the EC features need it to be present (the Overview page shows whether the controller is reachable). "
+         "Control Center Advanced neither ships nor modifies that driver, so the EC features need it to be present (the Overview page shows whether the controller is reachable). "
          "Every address the program uses lives in `src/common/registers.h`; this page is generated from it. Names are the program's own and the notes say what is known about each register. "
          "**Nothing here is a vendor document**: the mappings come from the owner's measurements, the OEM "
          "Control Center's behaviour and independent open-source work on the same EC family (see [NOTICE](../NOTICE.txt)); "

@@ -1,6 +1,6 @@
 // Coexistence with the OEM Control Center. Evidence (device inventory): the Windows service "GCUBridge" (Auto start,
 // C:\Program Files\OEM\Control Center\UniwillService\GCUBridge.exe) is the OEM front; its worker process is
-// MyControlCenter\GCUService.exe, which owns the EC/profile files while it runs. BaseControl never edits those files:
+// MyControlCenter\GCUService.exe, which owns the EC/profile files while it runs. Control Center Advanced never edits those files:
 // instead the user can "take over", which stops + disables the OEM services (and only services whose binary lives in
 // %ProgramFiles%\OEM\Control Center\) and can be reverted at any time. The original start types are remembered.
 #pragma once

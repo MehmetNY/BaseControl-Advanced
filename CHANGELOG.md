@@ -2,9 +2,11 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project uses [semantic versioning](https://semver.org/).
 
-## [1.0.0] - 2026-11-14 - first public pre-release
+## [1.0.0-beta] - 2026-11-14 - first public beta
 
-**Not tested on real hardware.** Everything was checked with a cross-compiler, the Wine compatibility layer, the built-in simulator and unit tests. The code that talks to the laptop and to Windows (EC access, service, keyboard hook, display and radio switches, installer) has never been run on Windows by the author. See [Capabilities and verification](docs/CAPABILITIES.md) before you run it. The binaries are unsigned; Windows SmartScreen will warn.
+The project was developed under the working name *BaseControl Advanced* and renamed **Control Center Advanced** before this first release (program, installer, documentation and pictures).
+
+**Known problems, reported after a first trial on the target laptop:** the keyboard backlight does not work properly (only the leftmost part of the keyboard reacted: the lighting protocol of this build was written without the real device and is wrong for it) and the interface colours are too pale. Nothing else has been reported from real hardware. Everything was otherwise checked with a cross-compiler, the Wine compatibility layer, the built-in simulator and unit tests; the code that talks to the laptop and to Windows (EC access, service, keyboard hook, display and radio switches, installer) has not been verified on Windows. See [Capabilities and verification](docs/CAPABILITIES.md) before you run it. The binaries are unsigned; Windows SmartScreen will warn.
 
 ### Added
 
@@ -33,4 +35,4 @@ FPS counter, graphics-mode (MUX/Optimus) switch, Dynamic Boost, per-zone keyboar
 - A message about the overlay's FPS line promised something this version does not have; it now says plainly that the FPS counter is not available.
 - Launching from a command prompt with output redirected (`> file`) lost the output.
 
-[1.0.0]: https://github.com/MehmetNY/BaseControl-Advanced/releases/tag/v1.0.0
+[1.0.0-beta]: https://github.com/MehmetNY/Control-Center-Advanced/releases/tag/v1.0.0-beta

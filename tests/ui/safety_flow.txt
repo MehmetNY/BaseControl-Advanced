@@ -1,7 +1,7 @@
 # Safety and service: the write-protection switches (risky ones ask first), the kill switch really blocks writes, confirmations given
 # elsewhere show up and can be reset, the OEM service is taken over and given back, the service buttons start the elevated helper
 # (recorded by the script, never run) and the diagnostics text can be copied.
-# Run: BaseControl.exe --sim --script tests/ui/safety_flow.txt --size 1360x1500
+# Run: ControlCenterAdvanced.exe --sim --script tests/ui/safety_flow.txt --size 1360x1500
 say == 1. defaults: writes allowed, nothing unlocked, settings kept ==
 page safety
 expect cfg.readonly 0
@@ -194,7 +194,7 @@ external svc.state running
 page safety
 clickid dg#copy
 wait 300
-expectui clip.last ~BaseControl Advanced
+expectui clip.last ~Control Center Advanced
 expectui clip.last ~Capabilities
 say   (the report carries the device summary: model, support level, memory and drives, but no serial numbers)
 expectui clip.last ~Support level: verified

@@ -345,7 +345,7 @@ void MatchingCard(Ctx& c, Masonry& m) {
   const Theme& th = ui.th;
   const std::string active = a.S("app.active");
   const std::string note = T("If several listed programs run at once, the one higher in the list decides.");
-  const std::string svcNote = (a.mode() == "local") ? T("No background service is installed, so switching only works while BaseControl is running. Safety and service can install it.") : std::string();
+  const std::string svcNote = (a.mode() == "local") ? T("No background service is installed, so switching only works while Control Center Advanced is running. Safety and service can install it.") : std::string();
   float h = kRowToggle + (active.empty() ? 0.0f : kRowInfo) + NoteHeight(c, m, note, true) + (svcNote.empty() ? 0.0f : NoteHeight(c, m, svcNote, true));
   Card k(c, m, T("Automatic matching"), "", IconId::Apps, h, true);
   const bool on = a.B("cfg.app.auto", true);
@@ -407,7 +407,7 @@ void ListCard(Ctx& c, Masonry& m) {
     g.FillRound(Rect(r.cx() - 28, r.y + 14, 56, 56), 16, WithAlpha(th.accent, 24));
     g.Icon(IconId::Gamepad, Rect(r.cx() - 14, r.y + 28, 28, 28), th.accent, 1.8f);
     g.Text(Rect(r.x, r.y + 78, r.w, 24), T("No programs yet"), FontId::Value, th.text, Align::Center);
-    g.WrappedClamped(Rect(r.x + r.w * 0.1f, r.y + 104, r.w * 0.8f, 44), T("Add a game or a tool and choose the profile it should run with. BaseControl switches to it while the program runs and back when it closes."),
+    g.WrappedClamped(Rect(r.x + r.w * 0.1f, r.y + 104, r.w * 0.8f, 44), T("Add a game or a tool and choose the profile it should run with. Control Center Advanced switches to it while the program runs and back when it closes."),
                      FontId::Small, th.muted, 2, 3.0f, nullptr);
   }
   for (size_t i = 0; i < entries.size(); i++) {

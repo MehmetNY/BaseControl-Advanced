@@ -6,7 +6,7 @@
 
 - [ ] `make test -j8`
 - [ ] `make -f Makefile.win -j8` (no warnings)
-- [ ] `python3 -I tools/verify_pe.py build/win/BaseControl.min.exe --version 1.0.0`
+- [ ] `python3 -I tools/verify_pe.py build/win/ControlCenterAdvanced.min.exe --version 1.0.0-beta`
 - [ ] `python3 -I tools/gen_docs.py --check`
 - [ ] Interface change: `tools/run_ui_flows.sh`, and I looked at the page with `--shot` in English **and** Turkish
 

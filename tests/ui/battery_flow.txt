@@ -1,5 +1,5 @@
 # Battery: charge profile tiles (a choice waits for Confirm), live follow of a change made elsewhere, the live readings and the history chart.
-# Run: BaseControl.exe --sim --script tests/ui/battery_flow.txt --size 1360x1300
+# Run: ControlCenterAdvanced.exe --sim --script tests/ui/battery_flow.txt --size 1360x1300
 say == 1. the live profile is shown, nothing is chosen ==
 page battery
 expect batt.mode balanced

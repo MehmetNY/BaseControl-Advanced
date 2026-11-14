@@ -67,7 +67,7 @@ float PageOsd(App& a, const Rect& r) {
   // ---- visible data
   {
     // frame counting needs an event-tracing session; this version has none (hw_.fps is only provided by the simulator)
-    const std::string fpsDesc = a.CapOk("fps") ? T("Frames per second of the game in front.") : T("Not available in this version: BaseControl cannot count frames yet.");
+    const std::string fpsDesc = a.CapOk("fps") ? T("Frames per second of the game in front.") : T("Not available in this version: Control Center Advanced cannot count frames yet.");
     const float h = kRowToggle + 5 * kRowToggleLean + 5 * 9;
     Card k(c, m, T("Visible data"), "", IconId::Sliders, h);
     bool ch = false;

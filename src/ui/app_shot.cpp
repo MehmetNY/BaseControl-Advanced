@@ -321,7 +321,7 @@ int App::RunShot() {
         ss >> c >> g;
         setLoad(c, g);
       } else if (cmd == "external") {
-        // Another program changes a value behind BaseControl's back (simulator only): the LIVE readings must follow.
+        // Another program changes a value behind Control Center Advanced's back (simulator only): the LIVE readings must follow.
         std::string key;
         double val = 0;
         ss >> key;

@@ -1,5 +1,5 @@
 // Simulated machine: a small physical model (power, temperatures, fans, battery) plus an EC memory image and a MSR file,
-// exposed through the same interfaces the real Windows backends implement. Used by the unit tests, by `BaseControl.exe --sim`
+// exposed through the same interfaces the real Windows backends implement. Used by the unit tests, by `ControlCenterAdvanced.exe --sim`
 // and for the README screenshots (which are always labelled SIMULATION).
 //
 // This is NOT evidence about real hardware: every behaviour here is an assumption written down so the controller logic can be

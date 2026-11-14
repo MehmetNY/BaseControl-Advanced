@@ -81,7 +81,7 @@ float PagePrefs(App& a, const Rect& r) {
 
   // ---- keyboard and input
   {
-    const std::string note = T("Windows key lock, Num Lock lock and the touchpad corner work while BaseControl is running; the tray is enough.");
+    const std::string note = T("Windows key lock, Num Lock lock and the touchpad corner work while Control Center Advanced is running; the tray is enough.");
     const float h = 4 * kRowToggle + 3 * 9 + NoteHeight(c, m, note);
     Card k(c, m, T("Keyboard and input"), "", IconId::Keyboard, h);
     if (k.PrefRow("keys.winlock", T("Windows key lock"), T("Stop the Start menu from opening by accident."), false, a.SessionLive(),
@@ -161,9 +161,9 @@ float PagePrefs(App& a, const Rect& r) {
       cached = a.Autostart() ? 1 : 0;
     }
     k.Divider();
-    if (k.PrefRow("tray.icon", T("Tray icon"), T("Show BaseControl in the notification area."), true)) a.ApplySession();
+    if (k.PrefRow("tray.icon", T("Tray icon"), T("Show Control Center Advanced in the notification area."), true)) a.ApplySession();
     k.Divider();
-    k.PrefRow("tray", T("Close to the tray"), T("The close button hides the window; BaseControl keeps running."), true);
+    k.PrefRow("tray", T("Close to the tray"), T("The close button hides the window; Control Center Advanced keeps running."), true);
     k.Divider();
     k.PrefRow("tray.min", T("Minimise to the tray"), T("The minimise button hides the window instead of using the taskbar."), false);
     k.Divider();
@@ -259,7 +259,7 @@ float PageGpuInfo(App& a, const Rect& r) {
           const float cw = ui.ChipW(chip);
           ui.Chip(Rect(b.r() - kPad - 36 - cw, k.y + 9, cw, 20), chip, th.amber);
         }
-        ui.Tip(hit, T("BaseControl found no verified graphics-mode (MUX) switch for this model, so it only shows the mode Windows reports. Nothing here can change what drives the screen."));
+        ui.Tip(hit, T("Control Center Advanced found no verified graphics-mode (MUX) switch for this model, so it only shows the mode Windows reports. Nothing here can change what drives the screen."));
       }
     }
     y += mm.Bottom() + kGap;
@@ -344,7 +344,7 @@ float PageGpuInfo(App& a, const Rect& r) {
   // ---- honest note
   {
     Section sec(ui, y);
-    const std::string note = T("A graphics-mode change would need a restart on real hardware. BaseControl does not offer one for this model because the firmware control is not verified; it never touches how the screen is wired.");
+    const std::string note = T("A graphics-mode change would need a restart on real hardware. Control Center Advanced does not offer one for this model because the firmware control is not verified; it never touches how the screen is wired.");
     const float h = g.Wrapped(Rect(0, 0, r.w - 56, 3000), note, FontId::Small, 0, false) + 20;
     const Rect nb(0, 0, r.w, h);
     g.FillRound(nb, 12, WithAlpha(th.amber, 22));

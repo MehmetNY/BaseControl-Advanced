@@ -5,7 +5,7 @@
 //   Verified     - observed on the owner's Tulpar T5 (canary reads matched, owner-observed writes)
 //   Family       - documented for the same Uniwill EC family by independent sources
 //                  (MechControl-RE IDY_7Y, tuxedo/uniwill Linux driver, HydroControl, OEM Control Center strings);
-//                  BaseControl plausibility-probes these at start-up and disables the feature if the probe fails
+//                  Control Center Advanced plausibility-probes these at start-up and disables the feature if the probe fails
 //   Experimental - single source or inferred; hidden behind "Experimental controls" and never auto-applied
 #pragma once
 #include <cstdint>

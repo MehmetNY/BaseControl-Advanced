@@ -8,15 +8,15 @@
 # Every picture shows SIMULATION in its top bar: nothing here was taken from a real laptop.
 #
 #   tools/render_screenshots.sh                                  # under Wine (needs a display, e.g. Xvfb on :99)
-#   EXE=build/win/BaseControl.exe WINE= tools/render_screenshots.sh    # natively on Windows (Git Bash / MSYS)
+#   EXE=build/win/ControlCenterAdvanced.exe WINE= tools/render_screenshots.sh    # natively on Windows (Git Bash / MSYS)
 #
 # Needs Pillow and the Inter font (the same as tools/make_art.py). One run takes a few minutes.
 set -u
 cd "$(dirname "$0")/.."
-EXE=${EXE:-build/win/BaseControl.exe}
+EXE=${EXE:-build/win/ControlCenterAdvanced.exe}
 WINE=${WINE-/usr/lib/wine/wine64}
 FONT=${FONT:-Inter}
-export WINEPREFIX=${WINEPREFIX:-$HOME/.wine-basecontrol} WINEDEBUG=-all DISPLAY=${DISPLAY:-:99}
+export WINEPREFIX=${WINEPREFIX:-$HOME/.wine-cca} WINEDEBUG=-all DISPLAY=${DISPLAY:-:99}
 
 # name:page:size[:extra,extra]   (--drafts gives a page a lived-in state, --advanced opens the Advanced CPU panel)
 SHOTS=(

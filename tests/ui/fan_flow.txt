@@ -1,5 +1,5 @@
 # Fan settings: dragging a curve point only makes a draft; the hardware changes on Apply / Save only; boost and the mode follow the same rules.
-# Run: BaseControl.exe --sim --script tests/ui/fan_flow.txt --size 1360x1500
+# Run: ControlCenterAdvanced.exe --sim --script tests/ui/fan_flow.txt --size 1360x1500
 say == 1. the page starts in Auto with nothing drafted ==
 page fan
 expect fan.mode auto

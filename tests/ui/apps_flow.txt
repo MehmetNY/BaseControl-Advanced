@@ -1,5 +1,5 @@
 # Application profiles: add a program with the editor, edit it, pick one that is open, reorder, remove, master switch, matching.
-# Run: BaseControl.exe --sim --script tests/ui/apps_flow.txt --size 1360x1100
+# Run: ControlCenterAdvanced.exe --sim --script tests/ui/apps_flow.txt --size 1360x1100
 say == 1. add a program ==
 page apps
 expect cfg.app.0.exe

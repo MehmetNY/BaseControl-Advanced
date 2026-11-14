@@ -37,7 +37,7 @@ std::string ModeName(const std::string& m) {
   return m;
 }
 
-// What the hardware uses now: the table the EC holds in Custom mode, otherwise the curve BaseControl will write when Custom is
+// What the hardware uses now: the table the EC holds in Custom mode, otherwise the curve Control Center Advanced will write when Custom is
 // switched on (or the built-in default before anything was stored).
 fan::Curve AppliedCurve(App& a, bool cpu) {
   fan::Curve c;
@@ -538,7 +538,7 @@ void ChartCard(Ctx& c, Masonry& m) {
     float x = row.x + 70;
     struct P { const char* id; std::string label; fan::Curve cpu, gpu; std::string tip; };
     const P presets[] = {{"fan.pq", T("Quiet"), fan::QuietCpu(), fan::QuietGpu(), T("Fans stay low longer. Temperatures rise further before they ramp up.")},
-                         {"fan.pd", T("Default"), fan::DefaultCpu(), fan::DefaultGpu(), T("BaseControl's balanced starting curve.")},
+                         {"fan.pd", T("Default"), fan::DefaultCpu(), fan::DefaultGpu(), T("Control Center Advanced's balanced starting curve.")},
                          {"fan.pt", T("Turbo"), fan::TurboCpu(), fan::TurboGpu(), T("Fans ramp up early for the lowest temperatures.")}};
     for (const P& p : presets) {
       const Rect b(x, row.y + 4, 88, 30);
@@ -652,7 +652,7 @@ void AdvancedCard(Ctx& c, Masonry& m) {
   Ui& ui = c.ui;
   const bool two = m.InnerW(true) >= 760;
   const float colGap = 30;
-  const std::string note = Tf("Fixed speed holds one duty and bypasses the laptop's thermal control. While BaseControl (or its service) runs, a watchdog forces full speed at %d \xC2\xB0""C CPU or %d \xC2\xB0""C GPU. Without it nothing protects the laptop.", 97, 92);
+  const std::string note = Tf("Fixed speed holds one duty and bypasses the laptop's thermal control. While Control Center Advanced (or its service) runs, a watchdog forces full speed at %d \xC2\xB0""C CPU or %d \xC2\xB0""C GPU. Without it nothing protects the laptop.", 97, 92);
   const float innerW = m.InnerW(true);
   const float colW = two ? (innerW - colGap) / 2 : innerW;
   const float noteH = ui.gfx.Wrapped(Rect(0, 0, colW, 3000), note, FontId::Small, 0, false) + 10;

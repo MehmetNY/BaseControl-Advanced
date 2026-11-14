@@ -13,6 +13,7 @@
 #include <memory>
 #include <string>
 
+#include "../hw/power_guids.h"
 #include "../hw/win_world.h"
 #include "../hw/winutil.h"
 #include "../sim/sim.h"
@@ -48,6 +49,7 @@ struct App::Impl {
   UINT taskbarCreated = 0;
   NOTIFYICONDATAW nid{};
   bool trayAdded = false;
+  HPOWERNOTIFY powerNotify[2] = {nullptr, nullptr};
   double t0 = 0;
 
   // ---- session layer (app_session.cpp)
@@ -59,6 +61,8 @@ struct App::Impl {
   bool osdVisible = true;         // runtime show/hide of the overlay (the hotkey); "enabled" is the stored preference
   bool overlayWanted = false;     // the overlay is on screen: keep the data fresh even with the window hidden
   double lastOverlayT = 0;
+  bool lightIdleSent = false;     // the controller was told the user is idle (and has not been told otherwise since)
+  double lightIdleBeat = 0, lightIdleT = 0;
   void Balloon(const std::string& title, const std::string& text);
 
   // ---- elevated helper process (service install, ...)

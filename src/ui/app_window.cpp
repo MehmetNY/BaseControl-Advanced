@@ -87,6 +87,9 @@ bool App::Impl::CreateMainWindow(int show) {
   hideOnClose = app->PrefB("tray", true);
   if (app->PrefB("tray.icon", true) || app->opt_.tray) AddTray();
   app->ApplySession();   // keyboard hook, shortcuts and overlay as the preferences ask
+  // display on/off and charger changes reach the in-process controller (local mode); the service gets its own from Windows
+  powerNotify[0] = RegisterPowerSettingNotification(hwnd, &hw::kGuidConsoleDisplayState, DEVICE_NOTIFY_WINDOW_HANDLE);
+  powerNotify[1] = RegisterPowerSettingNotification(hwnd, &hw::kGuidAcDcPowerSource, DEVICE_NOTIFY_WINDOW_HANDLE);
   SetTimer(hwnd, kTimerTick, 100, nullptr);
   if (app->opt_.tray && trayAdded) {
     windowVisible = false;
@@ -399,6 +402,25 @@ LRESULT App::Impl::Handle(HWND h, UINT m, WPARAM w, LPARAM l) {
       if (m == WM_SYSKEYDOWN && w != VK_F4 && w != VK_MENU) return 0;
       break;
     }
+    case WM_POWERBROADCAST:
+      if (ctl && app->mode_ == "local") {   // the service does this itself; the in-process controller of the elevated mode needs it here
+        if (w == PBT_APMSUSPEND) {
+          ctl->Notify("suspend");
+        } else if (w == PBT_APMRESUMEAUTOMATIC || w == PBT_APMRESUMESUSPEND) {
+          ctl->Notify("resume");
+        } else if (w == PBT_POWERSETTINGCHANGE && l) {
+          const POWERBROADCAST_SETTING* p = reinterpret_cast<const POWERBROADCAST_SETTING*>(l);
+          DWORD v = 0;
+          if (p->DataLength >= 4) std::memcpy(&v, p->Data, 4);
+          if (IsEqualGUID(p->PowerSetting, hw::kGuidConsoleDisplayState)) {
+            if (v == 1) ctl->Notify("display_on");
+            else if (v == 0) ctl->Notify("display_off");
+          } else if (IsEqualGUID(p->PowerSetting, hw::kGuidAcDcPowerSource)) {
+            ctl->Notify("ac_change");
+          }
+        }
+      }
+      return TRUE;
     case WM_SETCURSOR:
       if (LOWORD(l) == HTCLIENT) {
         SetCursor(LoadCursorW(nullptr, ui.WantIBeam() ? kIBeam : (ui.WantHand() ? kHand : kArrow)));
@@ -459,6 +481,11 @@ LRESULT App::Impl::Handle(HWND h, UINT m, WPARAM w, LPARAM l) {
       }
       break;
     case WM_DESTROY:
+      for (HPOWERNOTIFY& pn : powerNotify)
+        if (pn) {
+          UnregisterPowerSettingNotification(pn);
+          pn = nullptr;
+        }
       KillTimer(h, kTimerTick);
       KillTimer(h, kTimerAnim);
       app->FlushPrefs();

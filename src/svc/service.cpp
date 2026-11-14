@@ -10,6 +10,7 @@
 #include "../common/fsutil.h"
 #include "../common/util.h"
 #include "../common/version.h"
+#include "../hw/power_guids.h"
 #include "../hw/win_world.h"
 #include "../hw/winutil.h"
 #include "pipe_server.h"
@@ -23,9 +24,8 @@ const wchar_t kDisplay[] = L"BaseControl Advanced";
 const wchar_t kDescription[] =
     L"Hardware access for BaseControl Advanced (embedded controller, power limits, fans, GPU, lighting). The user interface talks to it over a local named pipe.";
 
-// ---- power notifications (GUIDs written out so no header variant matters)
-const GUID kConsoleDisplayState = {0x6fe69556, 0x704a, 0x47a0, {0x8f, 0x24, 0xc2, 0x8d, 0x93, 0x6f, 0xda, 0x47}};
-const GUID kAcDcPowerSource = {0x5d3e9a59, 0xe9d5, 0x4b00, {0xa6, 0xbd, 0xff, 0x34, 0xff, 0x51, 0x65, 0x48}};
+const GUID& kConsoleDisplayState = hw::kGuidConsoleDisplayState;
+const GUID& kAcDcPowerSource = hw::kGuidAcDcPowerSource;
 
 SERVICE_STATUS_HANDLE g_ss = nullptr;
 SERVICE_STATUS g_status = {};
@@ -61,6 +61,8 @@ DWORD WINAPI Handler(DWORD ctl, DWORD type, LPVOID data, LPVOID) {
     case SERVICE_CONTROL_POWEREVENT:
       if (type == PBT_APMRESUMEAUTOMATIC || type == PBT_APMRESUMESUSPEND) {
         Notify("resume");
+      } else if (type == PBT_APMSUSPEND) {
+        Notify("suspend");
       } else if (type == PBT_POWERSETTINGCHANGE && data) {
         const POWERBROADCAST_SETTING* p = static_cast<const POWERBROADCAST_SETTING*>(data);
         if (p->DataLength >= 4) {
@@ -68,6 +70,7 @@ DWORD WINAPI Handler(DWORD ctl, DWORD type, LPVOID data, LPVOID) {
           std::memcpy(&v, p->Data, 4);
           if (IsEqualGUID(p->PowerSetting, kConsoleDisplayState)) {
             if (v == 1) Notify("display_on");     // 0 = off, 1 = on, 2 = dimmed
+            else if (v == 0) Notify("display_off");
           } else if (IsEqualGUID(p->PowerSetting, kAcDcPowerSource)) {
             Notify("ac_change");
           }

@@ -256,14 +256,14 @@ int Ui::Combo(const std::string& id, const Rect& r, const std::vector<std::strin
   return result;
 }
 
-bool Ui::TextInput(const std::string& id, const Rect& r, std::string* text, const std::string& hint, size_t maxLen) {
+bool Ui::TextInput(const std::string& id, const Rect& r, std::string* text, const std::string& hint, size_t maxLen, bool selectOnClick) {
   const uint32_t h = Hash(id);
   bool hov = false;
   Click(id, r, true, &hov);
   if (hov && in.pressed) {
     textFocus_ = h;
     caretT0_ = now;
-    selAll_ = false;
+    selAll_ = selectOnClick && !text->empty();   // a short value the user will most likely replace: typing overwrites it
   }
   if (hov) wantHand_ = false, ibeam_ = true;
   if (hov && in.pressed) textClaimed_ = true;

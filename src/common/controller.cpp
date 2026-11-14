@@ -244,6 +244,10 @@ void Controller::SyncSnapshot() {
   auto tail = ring_->Tail(30);
   st.Set("log.tail", Join(tail, "\n"));
   st.Set("last.error", lastError_);
+  if (light_[0].present || light_[2].present || light_[3].present) {
+    st.Set("light.off.why", LightSuppressed());             // "" while the lights show the user's setting
+    st.SetI("light.bright.eff", LightEffectiveBright(0));   // what the keyboard really gets (battery limit applied)
+  }
   st.Set("fan.guard", fanGuard_.empty() ? "ok" : "tripped");
   st.Set("fan.guard.why", fanGuard_);
   std::lock_guard<std::mutex> g(snapMu_);
@@ -519,6 +523,7 @@ Result Controller::DoCmd(const std::string& name, const KV& args) {
   if (name == "profile.apply") return ApplyProfile(args.Str("name"), args);
   if (name == "profile.save") return SaveProfile(args.Str("name"));
   if (name == "profile.delete") return DeleteProfile(args.Str("name"));
+  if (name == "light.idle.state") return LightIdleState(args);
   if (name == "app.set") return AppSet(args);
   if (name == "app.delete") return AppDelete(args);
   if (name == "app.move") return AppMove(args);
@@ -549,6 +554,7 @@ void Controller::Housekeeping() {
   FanWatchdog();
   AppProfileTick();
   PowerSourceTick();
+  LightPolicyTick();
   // events -> delayed re-apply (firmware resets values after resume / AC change / display wake)
   std::vector<std::string> ev;
   {
@@ -558,6 +564,8 @@ void Controller::Housekeeping() {
   const uint64_t now = hw_.clock ? hw_.clock->NowMs() : 0;
   for (auto& e : ev) {
     L(mgp::LogLevel::Info, "event: " + e);
+    LightEvent(e);
+    if (e == "suspend" || e == "display_off") continue;   // nothing to re-apply while the machine is going quiet
     if (cfg_.Bool("cfg.keep", true)) {
       reapplyAt_ = now + 3000;
       reapplyWhy_ = e;

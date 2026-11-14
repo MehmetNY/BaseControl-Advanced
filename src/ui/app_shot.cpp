@@ -299,8 +299,27 @@ int App::RunShot() {
           else if (key == "gpu.ctgp") { pl.ec[reg::kGpuCtgpOffset] = static_cast<uint8_t>(std::max(0.0, val - 125.0)); done = true; }
           else if (key == "os.max") { d_->simWorld->power.policy.maxPct = static_cast<int>(val); done = true; }
           else if (key == "os.min") { d_->simWorld->power.policy.minPct = static_cast<int>(val); done = true; }
+          else if (key == "power.ac") { pl.ac = val != 0; done = true; }
         }
         if (!done) { std::printf("FAIL line %d: cannot change %s from outside\n", lineNo, key.c_str()); failures++; }
+        step(4, 30);
+      } else if (cmd == "cmd") {
+        // a controller command as a background watcher would send it: cmd light.idle.state on=1
+        std::string name, kv;
+        ss >> name;
+        KV args;
+        while (ss >> kv) {
+          const size_t eq = kv.find('=');
+          if (eq != std::string::npos) args.Set(kv.substr(0, eq), kv.substr(eq + 1));
+        }
+        CmdQuiet(name, args);
+        step(8, 30);
+      } else if (cmd == "notify") {
+        // a power event from Windows (simulator only): resume, suspend, display_on, display_off, ac_change
+        std::string ev;
+        ss >> ev;
+        if (d_->ctl) d_->ctl->Notify(ev);
+        else { std::printf("FAIL line %d: notify needs the in-process controller\n", lineNo); failures++; }
         step(4, 30);
       } else if (cmd == "running") {
         // the programs the simulated computer is running (names separated by spaces; none = nothing besides the shell)

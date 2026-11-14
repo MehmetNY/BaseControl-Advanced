@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "controller.h"
+#include "lightfx.h"
 #include "profile_text.h"
 #include "registers.h"
 #include "util.h"
@@ -11,38 +12,9 @@
 namespace bc {
 
 namespace {
-struct Rgb { uint8_t r, g, b; };
-
-bool ParseColor(const std::string& s, Rgb* out) {
-  if (s.size() != 7 || s[0] != '#') return false;
-  unsigned v = 0;
-  for (size_t i = 1; i < 7; i++) {
-    char c = s[i];
-    int d = (c >= '0' && c <= '9') ? c - '0' : (c >= 'a' && c <= 'f') ? c - 'a' + 10 : (c >= 'A' && c <= 'F') ? c - 'A' + 10 : -1;
-    if (d < 0) return false;
-    v = v * 16 + static_cast<unsigned>(d);
-  }
-  out->r = static_cast<uint8_t>(v >> 16);
-  out->g = static_cast<uint8_t>(v >> 8);
-  out->b = static_cast<uint8_t>(v);
-  return true;
-}
-
-std::string ColorStr(const Rgb& c) { return Fmt("#%02x%02x%02x", c.r, c.g, c.b); }
-
-Rgb Hsv(double h, double s, double v) {
-  h = std::fmod(h, 360.0);
-  if (h < 0) h += 360.0;
-  double c = v * s, x = c * (1 - std::fabs(std::fmod(h / 60.0, 2.0) - 1)), m = v - c, r = 0, g = 0, b = 0;
-  if (h < 60) { r = c; g = x; }
-  else if (h < 120) { r = x; g = c; }
-  else if (h < 180) { g = c; b = x; }
-  else if (h < 240) { g = x; b = c; }
-  else if (h < 300) { r = x; b = c; }
-  else { r = c; b = x; }
-  auto q = [&](double f) { return static_cast<uint8_t>(Clamp(static_cast<int>(std::lround((f + m) * 255.0)), 0, 255)); };
-  return Rgb{q(r), q(g), q(b)};
-}
+using Rgb = lightfx::Rgb;
+bool ParseColor(const std::string& s, Rgb* out) { return lightfx::ParseHex(s, out); }
+std::string ColorStr(const Rgb& c) { return lightfx::ToHex(c); }
 
 int ZoneIndex(const std::string& key, std::string* prop) {
   // light.kbd.color -> zone 0, prop "color"; light.bar.* -> 2; light.logo.* -> 3
@@ -167,7 +139,10 @@ void Controller::PollMisc() {
       k.SetI(p + "speed", light_[i].speed);
     }
   }
-  k.SetI("light.idle", cfg_.Int("cfg.light.idle", 60));
+  k.SetI("light.idle", cfg_.Int("cfg.light.idle", 0));
+  k.SetB("light.battdim", cfg_.Bool("cfg.light.battdim", false));
+  k.SetI("light.battlevel", Clamp<long long>(cfg_.Int("cfg.light.battlevel", 2), 1, 4));
+  k.SetB("light.sleepoff", cfg_.Bool("cfg.light.sleepoff", true));
   std::lock_guard<std::mutex> g(snapMu_);
   sMisc_ = k;
 }
@@ -231,8 +206,28 @@ Result Controller::SetDevice(const std::string& key, bool on) {
 }
 
 // ------------------------------------------------------------------------------------------------ lighting
+// The user's lighting setting (light_[z], stored in cfg.light.*) is what they chose. What the keyboard shows right now can differ for a
+// reason that comes and goes: idle (the UI watcher reports it), the display being off or the machine sleeping, and the battery
+// limit. LightSuppressed() names the reason lights are forced off; EffectiveBright() applies the battery limit. Neither touches the
+// stored setting, so the choice is back the moment the reason is gone.
+std::string Controller::LightSuppressed() const {
+  if (lightIdle_) return "idle";
+  if (cfg_.Bool("cfg.light.sleepoff", true)) {
+    if (lightSuspended_) return "sleep";
+    if (lightDisplayOff_) return "display";
+  }
+  return "";
+}
+
+int Controller::LightEffectiveBright(int z) const {
+  int b = Clamp(light_[z].bright, 1, 4);
+  if (z == 0 && cfg_.Bool("cfg.light.battdim", false) && acKnown_ && !acNow_) b = std::min(b, static_cast<int>(Clamp<long long>(cfg_.Int("cfg.light.battlevel", 2), 1, 4)));
+  return b;
+}
+
 void Controller::LightApply() {
   if (!hw_.light) return;
+  const bool forcedOff = !LightSuppressed().empty();
   for (int z : {0, 2, 3}) {
     LightZoneState& s = light_[z];
     if (!s.present) continue;
@@ -244,54 +239,108 @@ void Controller::LightApply() {
       hw_.light->Send(ZoneEnum(z), rep);
     };
     const uint8_t zn = static_cast<uint8_t>(z), zc = ZoneCmd(z);
-    if (!s.power) {
+    if (!s.power || forcedOff) {
       if (z == 0) send({0x00, 0x09, 0x02, 0, 0, 0, 0, 0, 0});
       send({0x00, 0x12, 0x00, 0x03, 0, 0, 0, 0, 0});
       send({0x00, 0x08, 0x05, 0, 0, 0, 0, 0, 0});
       send({0x00, 0x08, 0x01, zn, 0, 0, 0, 0, 0});
       send({0x00, 0x1A, zn, 0x00, 0x00, 0, 0, 0, 0x01});
+      lightShownOff_[z] = true;
       continue;
     }
     send({0x00, 0x1A, zn, 0x01, 0x04, 0, 0, 0, 0x01});
     send({0x00, 0x14, zn, 0x01, s.r, s.g, s.b, 0, 0x00});
-    send({0x00, 0x08, zc, 0x01, static_cast<uint8_t>(z == 0 ? 0x07 : 0x01), BrightHid(z, s.bright), static_cast<uint8_t>(z == 0 ? 0x08 : 0x01), 0, 0x00});
+    send({0x00, 0x08, zc, 0x01, static_cast<uint8_t>(z == 0 ? 0x07 : 0x01), BrightHid(z, z == 0 ? LightEffectiveBright(0) : s.bright), static_cast<uint8_t>(z == 0 ? 0x08 : 0x01), 0, 0x00});
     lastLightRgb_[z][0] = s.r; lastLightRgb_[z][1] = s.g; lastLightRgb_[z][2] = s.b;
+    lightShownOff_[z] = false;
   }
 }
 
 void Controller::LightTick() {
   if (!hw_.light) return;
   LightZoneState& s = light_[0];
-  if (!s.present || !s.power || s.effect == 0) return;
+  if (!s.present || !s.power || s.effect == 0 || lightShownOff_[0] || !LightSuppressed().empty()) return;
   const uint64_t now = hw_.clock ? hw_.clock->NowMs() : 0;
-  const double period = 12000.0 / (s.speed * 1.0 + 1.0);  // ms for one cycle: speed 1 ~6 s, speed 10 ~1.1 s
-  double ph = std::fmod(static_cast<double>(now), period) / period;
-  Rgb base{s.r, s.g, s.b}, out = base;
-  double f = 1.0;
-  switch (s.effect) {
-    case 1: f = (1.0 - std::cos(ph * 6.283185307)) * 0.5; break;                 // breathing
-    case 2: out = Hsv(ph * 360.0, 1.0, 1.0); break;                              // colour cycle
-    case 3: {                                                                     // CPU temperature gradient
-      long long t = cfg_.Int("cfg.light.tempnow", 0);
-      KV snap = Snapshot();
-      t = snap.Int("cpu.temp", t);
-      out = Hsv(Clamp((95.0 - static_cast<double>(t)) / 55.0, 0.0, 1.0) * 120.0, 1.0, 1.0);
-      break;
-    }
-    case 4: f = ph < 0.35 ? 1.0 - ph / 0.35 : 0.0; break;                         // pulse
-    default: break;
-  }
-  Rgb c{static_cast<uint8_t>(out.r * f), static_cast<uint8_t>(out.g * f), static_cast<uint8_t>(out.b * f)};
+  long long t = cfg_.Int("cfg.light.tempnow", 0);
+  if (s.effect == lightfx::kTemp) t = Snapshot().Int("cpu.temp", t);
+  const Rgb c = lightfx::EffectColor(s.effect, s.speed, now, Rgb{s.r, s.g, s.b}, t);
   if (std::abs(c.r - lastLightRgb_[0][0]) + std::abs(c.g - lastLightRgb_[0][1]) + std::abs(c.b - lastLightRgb_[0][2]) < 6) return;
   uint8_t rep[9] = {0x00, 0x14, 0x00, 0x01, c.r, c.g, c.b, 0x00, 0x00};
   hw_.light->Send(LightZone::Keyboard, rep);
   lastLightRgb_[0][0] = c.r; lastLightRgb_[0][1] = c.g; lastLightRgb_[0][2] = c.b;
 }
 
+// Runs once a second from Housekeeping: reacts to the charger being plugged in or out (battery limit), and re-applies the lights a
+// moment after resume / display wake, because the keyboard controller often comes back with its own defaults (or not at all yet).
+void Controller::LightPolicyTick() {
+  if (!hw_.light) return;
+  const uint64_t now = hw_.clock ? hw_.clock->NowMs() : 0;
+  if (lightIdle_ && (cfg_.Int("cfg.light.idle", 0) <= 0 || now - lightIdleBeat_ > kLightIdleSilenceMs)) {
+    // the program that watches the keyboard stopped talking (closed, crashed, or the timeout was switched off): never stay dark
+    L(mgp::LogLevel::Info, "lighting: idle watcher silent, lights restored");
+    lightIdle_ = false;
+    LightApply();
+    SyncSnapshot();
+  }
+  if (acKnown_) {
+    const int ac = acNow_ ? 1 : 0;
+    if (lightAcSeen_ >= 0 && ac != lightAcSeen_ && cfg_.Bool("cfg.light.battdim", false)) LightApply();
+    lightAcSeen_ = ac;
+  }
+  if (lightReapplyAt_ && now >= lightReapplyAt_) {
+    LightApply();
+    lightReapplyAt_ = --lightReapplyLeft_ > 0 ? now + 4500 : 0;
+  }
+}
+
+// Power events (service: power notifications; local mode: the window). Called from Housekeeping on the worker thread.
+void Controller::LightEvent(const std::string& ev) {
+  if (!hw_.light) return;
+  const uint64_t now = hw_.clock ? hw_.clock->NowMs() : 0;
+  const bool sleepOff = cfg_.Bool("cfg.light.sleepoff", true);
+  if (ev == "display_off") {
+    lightDisplayOff_ = true;
+    if (sleepOff) LightApply();
+  } else if (ev == "suspend") {
+    lightSuspended_ = true;
+    if (sleepOff) LightApply();
+  } else if (ev == "display_on" || ev == "resume") {
+    lightDisplayOff_ = false;
+    lightSuspended_ = false;
+    // Light up at once (after a plain display wake the keyboard controller is fine), then look again after 1.5 s and 6 s: after a
+    // resume it may come back late, or with its own defaults.
+    LightApply();
+    lightReapplyAt_ = now + 1500;
+    lightReapplyLeft_ = 2;
+  }
+  SyncSnapshot();
+}
+
+// The UI's idle watcher (it can see the user's input; this process, running as SYSTEM in session 0, cannot) reports the state: on=1 once
+// the idle time has passed and again every few seconds while it lasts, on=0 on the next key press or mouse move.
+Result Controller::LightIdleState(const KV& args) {
+  if (!hw_.light || !light_[0].present) return Fail("unsupported", "no keyboard lighting");
+  const bool on = args.Int("on", 0) != 0;
+  const uint64_t now = hw_.clock ? hw_.clock->NowMs() : 0;
+  if (on && cfg_.Int("cfg.light.idle", 0) <= 0) return Ok();   // switched off meanwhile: ignore a late report
+  if (on) lightIdleBeat_ = now;
+  if (on == lightIdle_) return Ok();
+  lightIdle_ = on;
+  L(mgp::LogLevel::Info, on ? "lighting: idle, lights off" : "lighting: activity, lights back on");
+  LightApply();
+  SyncSnapshot();
+  return Ok();
+}
+
 Result Controller::SetLight(const std::string& key, const std::string& raw) {
-  if (key == "light.idle") {
-    cfg_.Set("cfg.light.idle", raw);
+  if (key == "light.idle" || key == "light.battdim" || key == "light.battlevel" || key == "light.sleepoff") {
+    cfg_.Set("cfg." + key, raw);
     SaveConfig();
+    if (key != "light.idle") LightApply();   // the dimming / sleep rules apply to what is shown right now
+    else if (lightIdle_ && std::atoi(raw.c_str()) <= 0) {
+      lightIdle_ = false;
+      LightApply();
+    }
     return Ok();
   }
   std::string prop;

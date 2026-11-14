@@ -76,7 +76,10 @@ const std::vector<SettingDef> kTable = {
     BOOL("light.logo.power", Ev::Family, "light.logo", true),
     TEXT("light.logo.color", Ev::Family, "light.logo", true),
     INT("light.logo.bright", 1, 4, 1, "", Ev::Family, "light.logo", true),
-    INT("light.idle", 0, 600, 5, "s", Ev::Os, "", false),
+    INT("light.idle", 0, 600, 5, "s", Ev::Os, "light.kbd", false),
+    BOOL("light.battdim", Ev::Os, "light.kbd", false),
+    INT("light.battlevel", 1, 4, 1, "", Ev::Os, "light.kbd", false),
+    BOOL("light.sleepoff", Ev::Os, "light.kbd", false),
     // ---- display (Windows API) ----------------------------------------------------------------------------------
     INT("disp.bright", 0, 100, 1, "%", Ev::Os, "disp.bright", false),
     INT("disp.refresh", 30, 480, 1, "Hz", Ev::Os, "disp.refresh", false),

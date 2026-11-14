@@ -651,6 +651,189 @@ TEST(ctl_lighting) {
   CHECK_EQ(r.S().Str("light.kbd.power"), std::string("0"));
 }
 
+// What the keyboard was last told: "off" (the power-off sequence), or the brightness byte of the last level command.
+namespace {
+struct LastLight {
+  bool off = false;
+  int level = -1;   // HID brightness byte of the keyboard
+};
+LastLight KbdNow(Rig& r) {
+  LastLight l;
+  for (auto& p : r.w.light.sent) {
+    if (p.first != LightZone::Keyboard) continue;
+    if (p.second[1] == 0x1A && p.second[3] == 0x00) l.off = true;    // power-off sequence ends with 1A zone 00
+    if (p.second[1] == 0x1A && p.second[3] == 0x01) l.off = false;   // power-on sequence starts with 1A zone 01
+    if (p.second[1] == 0x08 && p.second[2] == 0x02) l.level = p.second[5];
+  }
+  return l;
+}
+KV IdleOn(int on) {
+  KV a;
+  a.SetI("on", on);
+  return a;
+}
+}  // namespace
+
+TEST(ctl_lighting_idle_state_is_temporary) {
+  Rig r;
+  CHECK(r.Set("light.kbd.color", "#10aa40").ok);
+  CHECK(r.Set("light.kbd.bright", "3").ok);
+  CHECK(r.Set("light.idle", "30").ok);
+  CHECK_EQ(r.S().Int("light.idle"), 30);
+  CHECK_EQ(r.S().Str("light.off.why"), std::string(""));
+  CHECK(!KbdNow(r).off);
+  // the UI's watcher reports idle: the keyboard goes dark, the stored setting does not change
+  CHECK(r.Cmd("light.idle.state", IdleOn(1)).ok);
+  CHECK(KbdNow(r).off);
+  CHECK_EQ(r.S().Str("light.off.why"), std::string("idle"));
+  CHECK_EQ(r.S().Str("light.kbd.power"), std::string("1"));
+  CHECK_EQ(r.S().Str("light.kbd.color"), std::string("#10aa40"));
+  // a repeated report only keeps the state alive; it does not send anything again
+  const size_t n = r.w.light.sent.size();
+  CHECK(r.Cmd("light.idle.state", IdleOn(1)).ok);
+  CHECK_EQ(r.w.light.sent.size(), n);
+  // input: everything comes back, colour and brightness as they were
+  CHECK(r.Cmd("light.idle.state", IdleOn(0)).ok);
+  CHECK(!KbdNow(r).off);
+  CHECK_EQ(r.S().Str("light.off.why"), std::string(""));
+  bool sawColor = false;
+  for (size_t i = n; i < r.w.light.sent.size(); i++) {
+    const auto& p = r.w.light.sent[i].second;
+    if (p[1] == 0x14 && p[4] == 0x10 && p[5] == 0xAA && p[6] == 0x40) sawColor = true;
+  }
+  CHECK(sawColor);
+  CHECK_EQ(KbdNow(r).level, 8 + 2 * 14);   // level 3
+}
+
+TEST(ctl_lighting_idle_ends_when_the_watcher_goes_silent) {
+  Rig r;
+  CHECK(r.Set("light.idle", "10").ok);
+  CHECK(r.Cmd("light.idle.state", IdleOn(1)).ok);
+  CHECK(KbdNow(r).off);
+  r.Run(10);   // the report is repeated every few seconds while idle: here it is not
+  CHECK(KbdNow(r).off);
+  CHECK(r.Cmd("light.idle.state", IdleOn(1)).ok);   // heartbeat
+  r.Run(15);
+  CHECK(KbdNow(r).off);
+  r.Run(10);   // 25 s without a report: the UI is gone, so the lights must not stay dark
+  CHECK(!KbdNow(r).off);
+  CHECK_EQ(r.S().Str("light.off.why"), std::string(""));
+}
+
+TEST(ctl_lighting_idle_switched_off_wakes_the_lights) {
+  Rig r;
+  CHECK(r.Set("light.idle", "30").ok);
+  CHECK(r.Cmd("light.idle.state", IdleOn(1)).ok);
+  CHECK(KbdNow(r).off);
+  CHECK(r.Set("light.idle", "0").ok);
+  CHECK(!KbdNow(r).off);
+  CHECK_EQ(r.S().Str("light.off.why"), std::string(""));
+  // a late report from a watcher that has not noticed yet changes nothing
+  CHECK(r.Cmd("light.idle.state", IdleOn(1)).ok);
+  CHECK(!KbdNow(r).off);
+}
+
+TEST(ctl_lighting_idle_needs_a_keyboard_controller) {
+  Rig r;
+  r.w.light.kbd = false;
+  CHECK(r.Cmd("probe").ok);
+  CHECK_EQ(r.Cmd("light.idle.state", IdleOn(1)).code, std::string("unsupported"));
+  CHECK_EQ(r.Set("light.idle", "30").code, std::string("unsupported"));    // capability gate: nothing to time out
+  CHECK_EQ(r.Set("light.battdim", "1").code, std::string("unsupported"));
+}
+
+TEST(ctl_lighting_dims_on_battery) {
+  Rig r;
+  CHECK(r.Set("light.kbd.bright", "4").ok);
+  CHECK(r.Set("light.battdim", "1").ok);
+  CHECK(r.Set("light.battlevel", "2").ok);
+  r.Run(2);
+  CHECK_EQ(KbdNow(r).level, 8 + 3 * 14);   // on the charger: the chosen level 4
+  CHECK_EQ(r.S().Int("light.bright.eff"), 4);
+  r.w.plat.ac = false;
+  r.Run(3);
+  CHECK_EQ(KbdNow(r).level, 8 + 1 * 14);   // unplugged: limited to level 2
+  CHECK_EQ(r.S().Int("light.bright.eff"), 2);
+  CHECK_EQ(r.S().Int("light.kbd.bright"), 4);   // the stored choice is untouched
+  r.w.plat.ac = true;
+  r.Run(3);
+  CHECK_EQ(KbdNow(r).level, 8 + 3 * 14);
+  // a level below the limit is never raised
+  r.w.plat.ac = false;
+  CHECK(r.Set("light.kbd.bright", "1").ok);
+  r.Run(3);
+  CHECK_EQ(KbdNow(r).level, 8);
+  // switching the rule off while on battery restores the chosen level straight away
+  CHECK(r.Set("light.kbd.bright", "4").ok);
+  r.Run(2);
+  CHECK_EQ(KbdNow(r).level, 8 + 1 * 14);
+  CHECK(r.Set("light.battdim", "0").ok);
+  CHECK_EQ(KbdNow(r).level, 8 + 3 * 14);
+}
+
+TEST(ctl_lighting_follows_the_display_and_sleep) {
+  Rig r;
+  CHECK(r.Set("light.kbd.color", "#ff8000").ok);
+  CHECK(r.S().Bool("light.sleepoff"));   // on by default
+  r.c.Notify("display_off");
+  r.Run(2);
+  CHECK(KbdNow(r).off);
+  CHECK_EQ(r.S().Str("light.off.why"), std::string("display"));
+  CHECK_EQ(r.S().Str("light.kbd.power"), std::string("1"));
+  r.c.Notify("display_on");
+  r.Run(2);   // the lights come back a moment after the wake, then once more a few seconds later
+  CHECK(!KbdNow(r).off);
+  CHECK_EQ(r.S().Str("light.off.why"), std::string(""));
+  // suspend / resume
+  r.c.Notify("suspend");
+  r.Run(2);
+  CHECK(KbdNow(r).off);
+  CHECK_EQ(r.S().Str("light.off.why"), std::string("sleep"));
+  r.w.light.sent.clear();
+  r.c.Notify("resume");
+  r.Run(2);
+  CHECK(!KbdNow(r).off);
+  const size_t first = r.w.light.sent.size();
+  CHECK(first > 0);
+  r.Run(8);
+  CHECK(r.w.light.sent.size() > first);   // the second look after a few seconds
+  CHECK(!KbdNow(r).off);
+  // with the option off the lights ignore the display and sleep, but resume still restores them
+  CHECK(r.Set("light.sleepoff", "0").ok);
+  r.c.Notify("display_off");
+  r.Run(2);
+  CHECK(!KbdNow(r).off);
+  CHECK_EQ(r.S().Str("light.off.why"), std::string(""));
+}
+
+TEST(ctl_lighting_user_off_wins_over_every_reason) {
+  Rig r;
+  CHECK(r.Set("light.kbd.power", "0").ok);
+  CHECK(r.Set("light.idle", "30").ok);
+  CHECK(r.Cmd("light.idle.state", IdleOn(1)).ok);
+  CHECK(r.Cmd("light.idle.state", IdleOn(0)).ok);
+  r.c.Notify("resume");
+  r.Run(3);
+  CHECK(KbdNow(r).off);   // the user turned the light off: nothing switches it on again
+  CHECK_EQ(r.S().Str("light.kbd.power"), std::string("0"));
+}
+
+TEST(ctl_lighting_effects_pause_while_the_lights_are_off) {
+  Rig r;
+  CHECK(r.Set("light.kbd.effect", "cycle").ok);
+  CHECK(r.Set("light.idle", "30").ok);
+  r.Run(2, 100);
+  const size_t streaming = r.w.light.sent.size();
+  CHECK(r.Cmd("light.idle.state", IdleOn(1)).ok);
+  const size_t atIdle = r.w.light.sent.size();
+  r.Run(3, 100);
+  CHECK_EQ(r.w.light.sent.size(), atIdle);   // not a single colour report while dark
+  CHECK(streaming > 0);
+  CHECK(r.Cmd("light.idle.state", IdleOn(0)).ok);
+  r.Run(2, 100);
+  CHECK(r.w.light.sent.size() > atIdle + 5);  // the effect runs again
+}
+
 // ------------------------------------------------------------------------------------------------ profiles
 TEST(ctl_builtin_profiles_apply) {
   Rig r;

@@ -312,9 +312,53 @@ void App::RunAction(const std::string& id) {
 }
 
 // ------------------------------------------------------------------------------------------------ overlay and housekeeping
+// Keyboard light "turn off when idle". The service runs in session 0 and cannot see the user's keyboard or mouse, so this process
+// watches the last input time (GetLastInputInfo: no hook, nothing is recorded) and reports the state to the controller: on=1 once the
+// idle time has passed and again every 5 s while it lasts (the controller treats silence as "the watcher is gone" and lights up),
+// on=0 with the next key press or mouse move. While the lock screen or a UAC prompt is up, input does not reach this session, so
+// that counts as "not idle": the keyboard stays usable for typing a password.
+void App::LightIdleTick() {
+  Impl& d = *d_;
+  const double now = NowSeconds();
+  if (now - d.lightIdleT < 0.5) return;
+  d.lightIdleT = now;
+  const bool linked = backend_ && backend_->Connected();
+  const long long limit = linked ? I("light.idle", 0) : 0;
+  const bool watch = limit > 0 && CapOk("light.kbd");
+  bool idle = false;
+  if (watch) {
+    LASTINPUTINFO li;
+    li.cbSize = sizeof li;
+    li.dwTime = 0;
+    if (GetLastInputInfo(&li)) {
+      const double idleS = static_cast<double>(static_cast<DWORD>(GetTickCount() - li.dwTime)) / 1000.0;
+      idle = idleS >= static_cast<double>(limit);
+    }
+    if (idle) {
+      HDESK input = OpenInputDesktop(0, FALSE, DESKTOP_SWITCHDESKTOP);
+      if (!input) idle = false;   // secure desktop (lock screen, UAC)
+      else CloseDesktop(input);
+    }
+  }
+  KV a;
+  if (idle) {
+    if (!d.lightIdleSent || now - d.lightIdleBeat >= 5.0) {
+      a.SetI("on", 1);
+      CmdQuiet("light.idle.state", a);
+      d.lightIdleSent = true;
+      d.lightIdleBeat = now;
+    }
+  } else if (d.lightIdleSent) {
+    a.SetI("on", 0);
+    if (linked) CmdQuiet("light.idle.state", a);
+    d.lightIdleSent = false;
+  }
+}
+
 void App::SessionTick() {
   Impl& d = *d_;
   const double now = NowSeconds();
+  LightIdleTick();
 
   if (d.capturing && now - d.captureT > 20) {   // nobody pressed anything: do not keep swallowing keys
     CancelKeyCapture();

@@ -1,0 +1,165 @@
+# Lighting: preset colours, the picker, hex entry, effects, brightness with Confirm, power switch, idle timeout, battery dimming,
+# display and sleep events, restore defaults.
+# Run: BaseControl.exe --sim --script tests/ui/lighting_flow.txt --size 1360x1500
+say == 1. defaults ==
+page lighting
+expect light.kbd.power 1
+expect light.kbd.effect static
+expect light.kbd.color #ffffff
+expect light.kbd.bright 4
+expect light.idle 0
+expect light.battdim 0
+expect light.sleepoff 1
+expect light.off.why
+shot /tmp/shots/l_default.png
+
+say == 2. a preset colour is applied at once ==
+clickid sw#light.preset#2
+wait 600
+expect light.kbd.color #ff2d2d
+shot /tmp/shots/l_red.png
+
+say == 3. dragging in the picker, the colour is sent when you let go ==
+dragby lp.hue 60 0
+wait 700
+expect light.kbd.color !#ff2d2d
+let hueMoved snap:light.kbd.color
+dragby lp.sv 100 -40
+wait 700
+expect light.kbd.color !$hueMoved
+shot /tmp/shots/l_picker.png
+
+say == 4. hex entry: a good value is applied, a bad one is refused ==
+clickid in#light.hex
+type #12ab34
+clickid bt#light.hex
+wait 700
+expect light.kbd.color #12ab34
+clickid in#light.hex
+type nonsense
+clickid bt#light.hex
+wait 700
+expect light.kbd.color #12ab34
+
+say == 5. effects, and the speed slider that waits for Confirm ==
+clickid seg#light.effect#1
+wait 700
+expect light.kbd.effect breathing
+dragid sl#light.kbd.speed 0.95
+expect light.kbd.speed 5
+expectdraft light.kbd.speed 1
+shot /tmp/shots/l_speed_draft.png
+clickid ok#light.kbd.speed
+wait 700
+expect light.kbd.speed !5
+shot /tmp/shots/l_breathing.png
+clickid seg#light.effect#3
+wait 700
+expect light.kbd.effect temp
+shot /tmp/shots/l_temp.png
+clickid seg#light.effect#0
+wait 700
+expect light.kbd.effect static
+
+say == 6. brightness waits for Confirm ==
+dragid sl#light.kbd.bright 0.0
+expect light.kbd.bright 4
+expectdraft light.kbd.bright 1 1
+clickid ok#light.kbd.bright
+wait 700
+expect light.kbd.bright 1
+expect light.bright.eff 1
+shot /tmp/shots/l_dim.png
+
+say == 7. the power switch ==
+clickid sw#light.kbd.power
+wait 700
+expect light.kbd.power 0
+shot /tmp/shots/l_off.png
+clickid sw#light.kbd.power
+wait 700
+expect light.kbd.power 1
+
+say == 8. idle timeout ==
+clickid sw#light.idle
+wait 700
+expect light.idle 30
+clickid cmb#light.idle
+clickid opt#3
+wait 700
+expect light.idle 60
+cmd light.idle.state on=1
+wait 700
+expect light.off.why idle
+shot /tmp/shots/l_idle.png
+cmd light.idle.state on=0
+wait 700
+expect light.off.why
+clickid sw#light.idle
+wait 700
+expect light.idle 0
+say   (a late idle report after the timeout was switched off does nothing)
+cmd light.idle.state on=1
+wait 700
+expect light.off.why
+
+say == 9. dimming on battery ==
+dragid sl#light.kbd.bright 1.0
+clickid ok#light.kbd.bright
+wait 700
+expect light.kbd.bright 4
+clickid sw#light.battdim
+wait 700
+expect light.battdim 1
+clickid seg#light.battlevel#1
+wait 700
+expect light.battlevel 2
+external power.ac 0
+wait 3500
+expect light.bright.eff 2
+expect light.kbd.bright 4
+shot /tmp/shots/l_battery.png
+external power.ac 1
+wait 3500
+expect light.bright.eff 4
+
+say == 10. display and sleep ==
+notify display_off
+wait 2500
+expect light.off.why display
+shot /tmp/shots/l_display_off.png
+notify display_on
+wait 2500
+expect light.off.why
+notify suspend
+wait 2500
+expect light.off.why sleep
+notify resume
+wait 2500
+expect light.off.why
+clickid sw#light.sleepoff
+wait 700
+expect light.sleepoff 0
+notify display_off
+wait 2500
+expect light.off.why
+notify display_on
+wait 1500
+clickid sw#light.sleepoff
+wait 700
+expect light.sleepoff 1
+
+say == 11. restore defaults ==
+clickid sw#light.preset#6
+wait 700
+clickid seg#light.effect#2
+wait 700
+expect light.kbd.effect cycle
+clickid light.reset
+wait 2500
+expect light.kbd.color #ffffff
+expect light.kbd.effect static
+expect light.kbd.bright 4
+expect light.kbd.speed 5
+expect light.kbd.power 1
+shot /tmp/shots/l_restored.png

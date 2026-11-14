@@ -93,7 +93,8 @@ class Card {
   // Integer setting that is offered as a list of values (refresh rates): drop-down + Confirm, same draft semantics as EnumConfirm.
   void ListConfirm(const std::string& key, const std::string& label, const std::string& desc, const std::vector<int>& values, const std::string& unit = "");
   // One row: text field + button. Returns true when the button (or Enter) was pressed.
-  bool InputRow(const std::string& id, std::string* text, const std::string& hint, const std::string& button, bool enabled = true, size_t maxLen = 32);
+  bool InputRow(const std::string& id, std::string* text, const std::string& hint, const std::string& button, bool enabled = true, size_t maxLen = 32,
+                bool selectOnClick = false);
   bool Button(const std::string& id, const std::string& label, Btn style = Btn::Normal, IconId icon = IconId::None, bool enabled = true, float width = 0);
 
   static float Head(const std::string& sub) { return sub.empty() ? 54.0f : 70.0f; }

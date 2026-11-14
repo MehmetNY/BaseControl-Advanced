@@ -8,6 +8,7 @@
 #include "../src/common/fan.h"
 #include "../src/common/fsutil.h"
 #include "../src/common/kv.h"
+#include "../src/common/lightfx.h"
 #include "../src/common/rapl.h"
 #include "../src/common/registers.h"
 #include "../src/common/settings_reg.h"
@@ -583,4 +584,52 @@ TEST(profile_text_roundtrip_and_builtins) {
   std::vector<std::string> l = ProfileList(snap);
   CHECK_EQ(l.size(), static_cast<size_t>(4));
   CHECK_EQ(l[2], std::string("My game"));
+}
+
+// ------------------------------------------------------------------------------------------------ keyboard light effects
+TEST(lightfx_hex_roundtrip_and_rejects) {
+  lightfx::Rgb c;
+  CHECK(lightfx::ParseHex("#10AA40", &c));
+  CHECK_EQ(static_cast<int>(c.r), 0x10);
+  CHECK_EQ(static_cast<int>(c.g), 0xAA);
+  CHECK_EQ(static_cast<int>(c.b), 0x40);
+  CHECK_EQ(lightfx::ToHex(c), std::string("#10aa40"));
+  for (const char* bad : {"", "#12345", "#1234567", "10aa40", "#10aa4g", "#10 a40", "red"}) CHECK(!lightfx::ParseHex(bad, &c));
+}
+
+TEST(lightfx_effects_have_the_right_shape) {
+  using namespace lightfx;
+  const Rgb base{200, 100, 50};
+  // static: always the chosen colour
+  Rgb s = EffectColor(kStatic, 5, 12345, base, 60);
+  CHECK(s.r == 200 && s.g == 100 && s.b == 50);
+  // breathing: dark at the start of the cycle, brightest at half of it
+  const double period = PeriodMs(5);
+  Rgb b0 = EffectColor(kBreathing, 5, 0, base, 60);
+  Rgb bh = EffectColor(kBreathing, 5, static_cast<uint64_t>(period / 2), base, 60);
+  CHECK(b0.r == 0 && b0.g == 0 && b0.b == 0);
+  CHECK(bh.r >= 198 && bh.g >= 99);
+  // pulse: starts bright, is dark for the last part of the cycle
+  Rgb p0 = EffectColor(kPulse, 5, 0, base, 60);
+  Rgb p9 = EffectColor(kPulse, 5, static_cast<uint64_t>(period * 0.9), base, 60);
+  CHECK(p0.r == 200);
+  CHECK(p9.r == 0 && p9.g == 0 && p9.b == 0);
+  // cycle ignores the base colour and starts at red
+  Rgb c0 = EffectColor(kCycle, 5, 0, base, 60);
+  CHECK(c0.r == 255 && c0.g == 0 && c0.b == 0);
+  // temperature: cool = green, hot = red, in between = yellow-ish
+  Rgb cool = EffectColor(kTemp, 5, 0, base, 35);
+  Rgb hot = EffectColor(kTemp, 5, 0, base, 95);
+  Rgb mid = EffectColor(kTemp, 5, 0, base, 67);
+  CHECK(cool.g == 255 && cool.r == 0);
+  CHECK(hot.r == 255 && hot.g == 0);
+  CHECK(mid.r > 100 && mid.g > 100);
+  // faster speed = shorter cycle, and the speed is clamped
+  CHECK(PeriodMs(10) < PeriodMs(1));
+  CHECK(PeriodMs(0) == PeriodMs(1));
+  CHECK(PeriodMs(99) == PeriodMs(10));
+  CHECK(LevelFraction(1) < LevelFraction(4));
+  CHECK(LevelFraction(0) == LevelFraction(1) && LevelFraction(9) == 1.0);
+  CHECK_EQ(std::string(EffectName(3)), std::string("temp"));
+  CHECK_EQ(std::string(EffectName(99)), std::string("pulse"));
 }

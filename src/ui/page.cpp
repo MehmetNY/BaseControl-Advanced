@@ -585,10 +585,10 @@ void Card::ListConfirm(const std::string& key, const std::string& label, const s
   if (cut) ui.Tip(Rect(row.x, row.y + 62, row.w, 34), text);
 }
 
-bool Card::InputRow(const std::string& id, std::string* text, const std::string& hint, const std::string& button, bool enabled, size_t maxLen) {
+bool Card::InputRow(const std::string& id, std::string* text, const std::string& hint, const std::string& button, bool enabled, size_t maxLen, bool selectOnClick) {
   const Rect r = Row(50);
   const float bw = std::max(88.0f, c.ui.gfx.TextW(button, FontId::Label) + 36);
-  const bool enter = c.ui.TextInput("in#" + id, Rect(r.x, r.y + 5, r.w - bw - 10, 38), text, hint, maxLen);
+  const bool enter = c.ui.TextInput("in#" + id, Rect(r.x, r.y + 5, r.w - bw - 10, 38), text, hint, maxLen, selectOnClick);
   const bool click = c.ui.Button("bt#" + id, Rect(r.r() - bw, r.y + 5, bw, 38), button, Btn::Normal, IconId::None, enabled);
   return (click || enter) && enabled;
 }

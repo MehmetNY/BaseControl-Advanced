@@ -91,6 +91,8 @@ class App {
   uint64_t Set(const std::string& key, const std::string& value, const std::string& label = "", const KV& args = KV(), std::function<void(const Result&)> done = nullptr);
   uint64_t Cmd(const std::string& name, const KV& args = KV(), const std::string& label = "", std::function<void(const Result&)> done = nullptr);
   uint64_t Cfg(const std::string& key, const std::string& value, std::function<void(const Result&)> done = nullptr);
+  // A command nobody asked for in so many words (background watchers): no toast on success, failure, or a missing connection.
+  uint64_t CmdQuiet(const std::string& name, const KV& args = KV());
   // Several settings in order; stops at the first failure.
   void Chain(std::vector<Request> reqs, std::vector<std::string> labels);
 
@@ -146,6 +148,7 @@ class App {
   void MakeBackend();
   void Tick();                           // results, snapshot, history
   void SessionTick();                    // overlay refresh and key-capture timeout (real window only)
+  void LightIdleTick();                  // reports "the user is idle" to the keyboard-light policy (the service cannot see the user's input)
   void AutoRefresh();                    // "lower the refresh rate on battery / follow the profile"
   void UpdateInterest();                 // keep polling while the overlay is up even if the window is hidden
   void Announce(const std::string& title, const std::string& text);   // toast in the window, tray balloon otherwise
@@ -155,11 +158,12 @@ class App {
     Request req;
     std::string label;
     std::function<void(const Result&)> done;
+    bool quiet = false;
   };
   void OnResult(const Op& op, const Result& r);
   struct ChainSt;
   void ChainNext(const std::shared_ptr<ChainSt>& st);
-  uint64_t Submit(const Request& r, const std::string& label, std::function<void(const Result&)> done);
+  uint64_t Submit(const Request& r, const std::string& label, std::function<void(const Result&)> done, bool quiet = false);
   void AskConsent(const Op& op, const std::string& name, const Result& r);
   void AskExperimental(const Op& op);
   void AskActivation(const Op& op);

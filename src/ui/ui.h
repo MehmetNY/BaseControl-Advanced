@@ -79,7 +79,7 @@ class Ui {
   bool Switch(const std::string& id, const Rect& r, bool on, bool enabled = true);   // true = the user clicked it (caller flips the value)
   int Segmented(const std::string& id, const Rect& r, const std::vector<std::string>& items, int cur, bool enabled = true);  // clicked index or -1
   int Combo(const std::string& id, const Rect& r, const std::vector<std::string>& items, int cur, bool enabled = true);      // chosen index or -1
-  bool TextInput(const std::string& id, const Rect& r, std::string* text, const std::string& hint = "", size_t maxLen = 48);   // true = Enter pressed
+  bool TextInput(const std::string& id, const Rect& r, std::string* text, const std::string& hint = "", size_t maxLen = 48, bool selectOnClick = false);   // true = Enter pressed
   // `live` is what the hardware reports right now (drawn as a marker); *v is the user's draft. Returns true when *v changed.
   bool Slider(const std::string& id, const Rect& r, int vmin, int vmax, int step, int* v, int live, int softMax = -1, bool enabled = true, uint32_t col = 0);
   void Chip(const Rect& r, const std::string& text, uint32_t fg, uint32_t bg = 0);

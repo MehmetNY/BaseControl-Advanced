@@ -62,7 +62,7 @@ class Controller {
   uint64_t Submit(const Request& r);            // async; poll with TakeResult
   bool TakeResult(uint64_t id, Result* out);
   void SetInterest(bool visible);               // UI visible -> fast polling
-  void Notify(const std::string& event);        // "resume" | "display_on" | "ac_change" (reapply triggers)
+  void Notify(const std::string& event);        // "resume" | "suspend" | "display_on" | "display_off" | "ac_change"
 
   // ---- test / manual helpers ----
   void PollOnce(bool full = true);              // one poll + housekeeping pass on the calling thread
@@ -142,6 +142,11 @@ class Controller {
   Result SetLight(const std::string& key, const std::string& raw);
   void LightTick();
   void LightApply();
+  std::string LightSuppressed() const;       // why the lights are forced off right now: "idle" | "sleep" | "display" | "" (not forced)
+  int LightEffectiveBright(int zone) const;  // brightness level actually sent (battery limit applied)
+  void LightPolicyTick();
+  void LightEvent(const std::string& ev);
+  Result LightIdleState(const KV& args);
   Result ApplyProfile(const std::string& name, const KV& args);
   Result SaveProfile(const std::string& name);
   Result DeleteProfile(const std::string& name);
@@ -223,6 +228,12 @@ class Controller {
   bool appRecheck_ = false;               // the mappings were edited: look again even if the same program is still the match
   uint8_t lastLightRgb_[4][3] = {};
   uint64_t lightSeq_ = 0;
+  // lighting policy (see ctl_misc.cpp): temporary reasons for the lights to be off, none of them stored
+  static constexpr uint64_t kLightIdleSilenceMs = 20000;   // the idle watcher repeats its report every few seconds; this long without one ends idle
+  bool lightIdle_ = false, lightDisplayOff_ = false, lightSuspended_ = false;
+  bool lightShownOff_[4] = {false, false, false, false};   // the zone was last sent the "off" sequence
+  uint64_t lightIdleBeat_ = 0, lightReapplyAt_ = 0;
+  int lightReapplyLeft_ = 0, lightAcSeen_ = -1;
   bool fpsOk_ = false;   // a frame-rate source is present (set by ProbeMisc)
 
   // consecutive mismatch counters for "keep" enforcement

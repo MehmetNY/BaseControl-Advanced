@@ -245,9 +245,9 @@ void App::Go(Page p) {
 }
 
 // ------------------------------------------------------------------------------------------------ requests
-uint64_t App::Submit(const Request& r, const std::string& label, std::function<void(const Result&)> done) {
+uint64_t App::Submit(const Request& r, const std::string& label, std::function<void(const Result&)> done, bool quiet) {
   if (!backend_ || !backend_->Connected()) {
-    ui_.Toast(T("Not connected to the BaseControl service."), ToastKind::Warn, T("Open the Overview page for ways to connect."));
+    if (!quiet) ui_.Toast(T("Not connected to the BaseControl service."), ToastKind::Warn, T("Open the Overview page for ways to connect."));
     Result nr;
     nr.code = "unsupported";
     nr.msg = "not connected";
@@ -259,7 +259,7 @@ uint64_t App::Submit(const Request& r, const std::string& label, std::function<v
     Result nr;
     nr.code = "busy";
     nr.msg = "request rejected by the backend";
-    ui_.Toast(T("The request was rejected."), ToastKind::Error);
+    if (!quiet) ui_.Toast(T("The request was rejected."), ToastKind::Error);
     if (done) done(nr);
     return 0;
   }
@@ -268,6 +268,7 @@ uint64_t App::Submit(const Request& r, const std::string& label, std::function<v
   op.req = r;
   op.label = label;
   op.done = std::move(done);
+  op.quiet = quiet;
   ops_.push_back(op);
   pendingKeys_[r.op == "set" ? r.key : r.op + ":" + r.key]++;
   dirty_ = true;
@@ -289,6 +290,14 @@ uint64_t App::Cmd(const std::string& name, const KV& args, const std::string& la
   r.key = name;
   r.args = args;
   return Submit(r, label, std::move(done));
+}
+
+uint64_t App::CmdQuiet(const std::string& name, const KV& args) {
+  Request r;
+  r.op = "cmd";
+  r.key = name;
+  r.args = args;
+  return Submit(r, "", nullptr, true);
 }
 
 uint64_t App::Cfg(const std::string& key, const std::string& value, std::function<void(const Result&)> done) {
@@ -356,6 +365,10 @@ void App::OnResult(const Op& op, const Result& r) {
     return;
   }
 
+  if (op.quiet) {   // a background report: its failure is not the user's business
+    if (op.done) op.done(r);
+    return;
+  }
   // ---- recoverable "ask first" outcomes: the operation continues (or not) after the dialog
   if (r.code == "gate.experimental") return AskExperimental(op);
   if (r.code == "gate.consent") return AskConsent(op, r.data.Str("consent"), r);

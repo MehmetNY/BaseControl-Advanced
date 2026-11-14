@@ -42,7 +42,7 @@ void Controller::ProbeCpu() {
       why = "MSR read failed (is the IntelMSR module loaded for this CPU?)";
     }
   }
-  const char* kMsrCaps[] = {"msr.pkg", "msr.icc", "msr.volt", "msr.pf"};
+  const char* kMsrCaps[] = {"msr.pkg", "msr.psys", "msr.bdp", "msr.icc", "msr.volt", "msr.pf"};
   if (!msrOk_) {
     SetCap("msr", "absent", why.empty() ? "PawnIO driver / IntelMSR module not available" : why);
     for (const char* c : kMsrCaps) SetCap(c, "absent", "needs the PawnIO MSR driver");
@@ -53,6 +53,12 @@ void Controller::ProbeCpu() {
       if (rapl::DecodePkgLimit(v, units_).lock) SetCap("msr.pkg", "locked", "MSR 0x610 is locked by the firmware until reboot");
       else SetCap("msr.pkg", "ok");
     } else SetCap("msr.pkg", "absent");
+    if (MsrR(rapl::kMsrPlatformPowerLimit, &v)) {
+      if (rapl::DecodePkgLimit(v, units_).lock) SetCap("msr.psys", "locked", "MSR 0x65C (platform power limit) is locked by the firmware until reboot");
+      else SetCap("msr.psys", "ok");
+    } else SetCap("msr.psys", "absent", "this CPU does not expose the platform (PSys) power limit");
+    if (MsrR(rapl::kMsrPowerCtl, &v)) SetCap("msr.bdp", "ok");
+    else SetCap("msr.bdp", "absent", "MSR 0x1FC (POWER_CTL) cannot be read");
     if (MsrR(rapl::kMsrVrCurrentConfig, &v)) {
       if (rapl::IccLocked(v)) SetCap("msr.icc", "locked", "MSR 0x601 is locked by the firmware");
       else SetCap("msr.icc", "ok");
@@ -84,6 +90,15 @@ void Controller::PollMsr(bool full) {
     k.SetB("msr.clamp", p.pl1Clamp && p.pl2Clamp);
     k.SetB("msr.lock", p.lock);
   }
+  if (MsrR(rapl::kMsrPlatformPowerLimit, &v)) {
+    rapl::PkgLimit p = rapl::DecodePkgLimit(v, units_);
+    k.SetF("msr.psys.pl1", p.pl1W, 0);
+    k.SetF("msr.psys.pl2", p.pl2W, 0);
+    k.SetB("msr.psys.pl1.en", p.pl1En);
+    k.SetB("msr.psys.pl2.en", p.pl2En);
+    k.SetB("msr.psys.lock", p.lock);
+  }
+  if (MsrR(rapl::kMsrPowerCtl, &v)) k.SetB("msr.bdp", (v >> rapl::kPowerCtlBdProchotBit) & 1);
   // energy counters -> watts
   const uint32_t e[6] = {rapl::kMsrPkgEnergy, rapl::kMsrPp0Energy, 0x641, 0x619, 0x64D, 0};
   static const char* kNames[5] = {"cpu.pkg.w", "cpu.core.w", "cpu.igpu.w", "cpu.dram.w", "cpu.psys.w"};
@@ -171,7 +186,7 @@ Result Controller::SetMsr(const std::string& key, int value) {
     r.data.Set("consent", "msr_write");
     return r;
   }
-  const bool raising = (key == "msr.pl1" || key == "msr.pl2");
+  const bool raising = (key == "msr.pl1" || key == "msr.pl2" || key == "msr.psys.pl1" || key == "msr.psys.pl2");
   KV snap = Snapshot();
   if (raising && snap.Int("cpu.temp", snap.Int("cpu.temp.msr", 0)) >= 92 && value > snap.Int(key, 0))
     return Fail("gate.thermal", "CPU is hotter than 92 C; refusing to raise a power limit");
@@ -197,6 +212,41 @@ Result Controller::SetMsr(const std::string& key, int value) {
     if (!MsrR(rapl::kMsrPkgPowerLimit, &back) || ((back ^ nv) & 0x7FFFFFFFFFFFFFFFULL) != 0) {
       hw_.msr->Write(rapl::kMsrPkgPowerLimit, old);
       return Fail("reverted", "the value did not stick (the EC/firmware rewrote MSR 0x610); previous value restored");
+    }
+    return Ok();
+  }
+  if (key == "msr.psys.pl1" || key == "msr.psys.pl2" || key == "msr.psys.pl1.en" || key == "msr.psys.pl2.en") {
+    uint64_t old;
+    if (!MsrR(rapl::kMsrPlatformPowerLimit, &old)) return Fail("failed.hw", "cannot read MSR 0x65C");
+    rapl::PkgLimit p = rapl::DecodePkgLimit(old, units_);
+    if (p.lock) return Fail("unsupported", "MSR 0x65C is locked until the next reboot");
+    if (key == "msr.psys.pl1") p.pl1W = value;
+    else if (key == "msr.psys.pl2") p.pl2W = value;
+    else if (key == "msr.psys.pl1.en") p.pl1En = value != 0;
+    else p.pl2En = value != 0;
+    if (p.pl2W < p.pl1W) return Fail("range", "platform PL2 must be >= PL1");
+    uint64_t nv;
+    if (!rapl::EncodePkgLimit(old, p, units_, &nv)) return Fail("range", "value cannot be represented in the RAPL fields");
+    if (!hw_.msr->Write(rapl::kMsrPlatformPowerLimit, nv)) return Fail("failed.hw", "MSR write refused by the driver");
+    if (hw_.clock) hw_.clock->SleepMs(120);
+    uint64_t back = 0;
+    if (!MsrR(rapl::kMsrPlatformPowerLimit, &back) || ((back ^ nv) & 0x7FFFFFFFFFFFFFFFULL) != 0) {
+      hw_.msr->Write(rapl::kMsrPlatformPowerLimit, old);
+      return Fail("reverted", "the value did not stick (the firmware rewrote MSR 0x65C); previous value restored");
+    }
+    return Ok();
+  }
+  if (key == "msr.bdp") {
+    uint64_t old;
+    if (!MsrR(rapl::kMsrPowerCtl, &old)) return Fail("failed.hw", "cannot read MSR 0x1FC");
+    const uint64_t bit = 1ULL << rapl::kPowerCtlBdProchotBit;
+    const uint64_t nv = value ? (old | bit) : (old & ~bit);
+    if (nv == old) return Ok();
+    if (!hw_.msr->Write(rapl::kMsrPowerCtl, nv)) return Fail("failed.hw", "MSR write refused by the driver");
+    uint64_t back = 0;
+    if (!MsrR(rapl::kMsrPowerCtl, &back) || ((back ^ nv) & bit) != 0) {
+      hw_.msr->Write(rapl::kMsrPowerCtl, old);
+      return Fail("reverted", "the setting did not stick; previous value restored");
     }
     return Ok();
   }
@@ -273,6 +323,8 @@ void Controller::PollOs(bool full) {
   KV k;
   if (hw_.power) {
     SysStatus s = hw_.power->Status();
+    acNow_ = s.ac;
+    acKnown_ = true;
     k.SetB("power.ac", s.ac);
     if (s.battPct >= 0) k.SetI("power.batt.pct", s.battPct);
     if (s.battSecs >= 0) k.SetI("power.batt.secs", s.battSecs);

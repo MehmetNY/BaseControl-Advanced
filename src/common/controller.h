@@ -147,6 +147,11 @@ class Controller {
   Result DeleteProfile(const std::string& name);
   Result OemTakeover(bool takeover);
   void AppProfileTick();
+  // Application profiles: slots cfg.app.<i>.exe / .profile / .name (i < 32, lower slot = higher priority). The commands keep them valid.
+  Result AppSet(const KV& args);      // app.set: i (slot; empty = new entry), exe, profile, name (optional display name)
+  Result AppDelete(const KV& args);   // app.delete: i
+  Result AppMove(const KV& args);     // app.move: i, dir (-1 = up, 1 = down)
+  void PowerSourceTick();   // switches the profile when the charger is plugged / unplugged (cfg.prof.auto)
   void Reapply(const char* why);
   KV CaptureProfileValues();
   std::vector<std::string> ProfileNames() const;
@@ -211,9 +216,14 @@ class Controller {
   double lightPhase_ = 0;
 
   std::string appRunning_, profileBeforeApp_;
+  bool acNow_ = true, acKnown_ = false;   // power source as last read by PollOs
+  int acSeen_ = -1;                       // power source PowerSourceTick last reacted to (-1 = not yet looked)
+  std::string profileOnAc_;               // profile that was active when the charger was unplugged
   uint64_t lastAppScan_ = 0;
+  bool appRecheck_ = false;               // the mappings were edited: look again even if the same program is still the match
   uint8_t lastLightRgb_[4][3] = {};
   uint64_t lightSeq_ = 0;
+  bool fpsOk_ = false;   // a frame-rate source is present (set by ProbeMisc)
 
   // consecutive mismatch counters for "keep" enforcement
   std::map<std::string, int> mismatch_;

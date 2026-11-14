@@ -4,6 +4,7 @@
 #include <cstdlib>
 
 #include "../src/common/colorramp.h"
+#include "../src/common/profile_text.h"
 #include "../src/common/fan.h"
 #include "../src/common/fsutil.h"
 #include "../src/common/kv.h"
@@ -97,7 +98,7 @@ TEST(kv_basic_and_serialize) {
 
 // ------------------------------------------------------------------------------------------------ fan curves
 TEST(fan_defaults_are_valid_and_floored) {
-  for (const fan::Curve& c : {fan::DefaultCpu(), fan::DefaultGpu(), fan::QuietCpu(), fan::TurboCpu()}) {
+  for (const fan::Curve& c : {fan::DefaultCpu(), fan::DefaultGpu(), fan::QuietCpu(), fan::TurboCpu(), fan::QuietGpu(), fan::TurboGpu()}) {
     std::string why;
     CHECK(fan::Validate(c, &why));
     if (!why.empty()) std::printf("    %s\n", why.c_str());
@@ -129,7 +130,7 @@ TEST(fan_safety_floor_table) {
 }
 
 TEST(fan_pack_unpack_roundtrip) {
-  for (const fan::Curve& c : {fan::DefaultCpu(), fan::DefaultGpu(), fan::QuietCpu(), fan::TurboCpu()}) {
+  for (const fan::Curve& c : {fan::DefaultCpu(), fan::DefaultGpu(), fan::QuietCpu(), fan::TurboCpu(), fan::QuietGpu(), fan::TurboGpu()}) {
     fan::TableImage img = fan::Pack(c);
     fan::Curve back;
     std::string why;
@@ -176,6 +177,53 @@ TEST(fan_text_roundtrip_and_sanitize) {
   CHECK_EQ(fixed.front().pct, 0);
   CHECK_EQ(fixed.back().pct, 100);
   for (size_t i = 1; i < fixed.size(); i++) CHECK(fixed[i].temp - fixed[i - 1].temp >= fan::kMinSpacing);
+}
+
+TEST(fan_editor_moves_keep_every_curve_valid) {
+  for (const fan::Curve& base : {fan::DefaultCpu(), fan::DefaultGpu(), fan::QuietCpu(), fan::TurboCpu(), fan::QuietGpu(), fan::TurboGpu()}) {
+    for (int i = 0; i < static_cast<int>(base.size()); i++) {
+      for (int t = -10; t <= 130; t += 4) {
+        for (int p = -5; p <= 110; p += 9) {
+          fan::Curve m = fan::MovePoint(base, i, t, p);
+          std::string why;
+          if (!fan::Validate(m, &why)) std::printf("    row %d -> %d C / %d %%: %s\n", i, t, p, why.c_str());
+          CHECK(fan::Validate(m, nullptr));
+          CHECK(fan::Monotonic(m));
+          CHECK_EQ(m.size(), base.size());
+          CHECK_EQ(m.front().pct, 0);
+          CHECK_EQ(m.back().pct, 100);
+        }
+      }
+    }
+  }
+  // a point cannot cross its neighbours
+  fan::Curve c = fan::DefaultCpu();
+  fan::Curve m = fan::MovePoint(c, 3, 40, 42);   // wants to jump far left of row 2
+  CHECK(m[3].temp - m[2].temp >= fan::kMinSpacing);
+  // a point cannot go below the safety floor of its own temperature
+  m = fan::MovePoint(c, 4, 82, 1);
+  CHECK(m[4].pct >= fan::SafetyFloor(m[4].temp));
+}
+
+TEST(fan_editor_add_and_remove_points) {
+  fan::Curve c = fan::DefaultCpu();                   // 9 rows
+  fan::Curve a = fan::AddPoint(c, 54);
+  CHECK_EQ(a.size(), c.size() + 1);
+  CHECK(fan::Validate(a, nullptr));
+  for (int t = 30; t <= 110; t++) CHECK_EQ(fan::DutyAt(a, t), fan::DutyAt(c, t));   // splitting a step does not change the behaviour
+  CHECK_EQ(fan::AddPoint(a, 70).size(), a.size() == 10 ? a.size() : a.size() + 1);  // the table holds at most 10 rows
+  CHECK_EQ(fan::AddPoint(c, 51).size(), c.size());    // 1 C from row 1: too close
+  CHECK_EQ(fan::AddPoint(c, 10).size(), c.size());    // below the first row
+  CHECK_EQ(fan::AddPoint(c, 120).size(), c.size());   // above the last row
+  fan::Curve r = fan::RemovePoint(a, 2);
+  CHECK_EQ(r.size(), a.size() - 1);
+  CHECK(fan::Validate(r, nullptr));
+  CHECK_EQ(fan::RemovePoint(c, 0).size(), c.size());  // row 0 stays
+  fan::Curve two = {{40, 0}, {60, 100}};
+  CHECK_EQ(fan::RemovePoint(two, 1).size(), static_cast<size_t>(2));   // never below two rows
+  // removing a step only ever adds cooling
+  fan::Curve r2 = fan::RemovePoint(c, 4);
+  for (int t = 30; t <= 110; t++) CHECK(fan::DutyAt(r2, t) >= fan::DutyAt(c, t));
 }
 
 // ------------------------------------------------------------------------------------------------ RAPL / MSR codecs
@@ -505,4 +553,34 @@ TEST(colorramp_extremes_stay_inside_windows_limits) {
   BuildGammaRamp(y, r);
   CHECK(r[0][255] == 65535);                     // full white is reachable
   CHECK(r[1][128] <= (128 + 127) * 256);
+}
+
+TEST(profile_text_roundtrip_and_builtins) {
+  using namespace bc;
+  CHECK(IsBuiltinProfile("Quiet"));
+  CHECK(IsBuiltinProfile("overboost"));
+  CHECK(!IsBuiltinProfile("My game"));
+  CHECK_EQ(BuiltinProfiles().size(), static_cast<size_t>(4));
+  KV v;
+  v.Set("ec.pl1", "60");
+  v.Set("fan.cpu.curve", "30:25,40:30,100:100");
+  v.Set("weird", "a=b|c\\d");
+  const std::string t = FormatProfileValues(v);
+  CHECK(t.find("ec.pl1=60") != std::string::npos);
+  // exactly one '|' between the three entries, none inside a value
+  size_t bars = 0;
+  for (char ch : t) bars += ch == '|';
+  CHECK_EQ(bars, static_cast<size_t>(2));
+  KV back = ParseProfileValues(t);
+  CHECK_EQ(back.Size(), static_cast<size_t>(3));
+  CHECK_EQ(back.Str("ec.pl1"), std::string("60"));
+  CHECK_EQ(back.Str("fan.cpu.curve"), std::string("30:25,40:30,100:100"));
+  CHECK_EQ(back.Str("weird"), std::string("a=b|c\\d"));
+  CHECK_EQ(ParseProfileValues("").Size(), static_cast<size_t>(0));
+  CHECK_EQ(ParseProfileValues("garbage|=x|k=").Size(), static_cast<size_t>(1));
+  KV snap;
+  snap.Set("profile.list", "Quiet,Balanced, My game ,,My game,Enthusiast");
+  std::vector<std::string> l = ProfileList(snap);
+  CHECK_EQ(l.size(), static_cast<size_t>(4));
+  CHECK_EQ(l[2], std::string("My game"));
 }

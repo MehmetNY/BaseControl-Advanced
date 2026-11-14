@@ -38,10 +38,23 @@ int DutyAt(const Curve& c, int tempC);                      // evaluation rule, 
 std::string ToText(const Curve& c);                         // "30:0,45:20,..."
 bool FromText(const std::string& s, Curve* out);
 
+// ---- editing helpers for the curve editor (every result is Sanitize()d, so it passes Validate())
+// Moves row `index` to (temp, pct): row 0 only changes its temperature (its duty is always 0), the last row keeps 100 %.
+// The temperature stays at least kMinSpacing from both neighbours; the duty never drops below the previous row's and rises as
+// far as the safety floor and monotonic order require (later rows are pushed up, never down).
+Curve MovePoint(Curve c, int index, int temp, int pct);
+// Splits the step that covers `temp` in two (same duty on both sides) so it can be dragged. No-op when the table is full or
+// `temp` is closer than kMinSpacing to an existing row.
+Curve AddPoint(Curve c, int temp);
+// Removes row `index` (never row 0, never below two rows). The next row's higher duty then covers the removed step.
+Curve RemovePoint(Curve c, int index);
+
 Curve DefaultCpu();
 Curve DefaultGpu();
 Curve QuietCpu();
 Curve TurboCpu();
+Curve QuietGpu();
+Curve TurboGpu();
 
 }  // namespace fan
 }  // namespace bc

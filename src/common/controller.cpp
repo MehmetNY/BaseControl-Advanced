@@ -7,6 +7,7 @@
 #include "../mgp/core/hardware_identity_guard.h"
 #include "../mgp/core/smbios.h"
 #include "fsutil.h"
+#include "profile_text.h"
 #include "registers.h"
 #include "util.h"
 
@@ -58,7 +59,6 @@ KV Preset(const std::string& name) {
   }
   return k;
 }
-const char* kBuiltin[] = {"Quiet", "Balanced", "Enthusiast", "Overboost"};
 }  // namespace
 
 // ------------------------------------------------------------------------------------------------ lifecycle
@@ -99,6 +99,13 @@ void Controller::Stop() {
   stop_ = true;
   qCv_.notify_all();
   if (th_.joinable()) th_.join();
+  // Safety: a fixed fan duty has no thermal feedback of its own; this process's watchdog is its only protection.
+  // Hand the fans back to the EC on the way out (the stored choice is re-applied the next time the controller starts).
+  if (ecConnected_ && Snapshot().Str("fan.mode") == "fixed") {
+    L(mgp::LogLevel::Info, "stopping: returning the fans to automatic mode");
+    Result r = SetFanMode(0);
+    if (!r.ok) L(mgp::LogLevel::Warn, "could not return the fans to automatic mode: " + r.msg);
+  }
   if (engine_) engine_->Shutdown();
   started_ = false;
 }
@@ -228,7 +235,11 @@ void Controller::SyncSnapshot() {
   st.SetI("ec.writes", gec_ ? gec_->writes() : 0);
   st.SetI("ec.refused", gec_ ? gec_->refused() : 0);
   st.Set("profile.active", activeProfile_);
+  st.Set("app.active", appRunning_);               // the program whose profile is applied right now ("" = none)
+  st.Set("app.before", profileBeforeApp_);         // the profile that comes back when it closes
   st.Set("profile.list", Join(ProfileNames(), ","));
+  // what each profile stores, for the Profiles page: "ec.pl1=60|ec.pl2=80|..."
+  for (auto& p : profiles_) st.Set("profile.v." + p.first, FormatProfileValues(p.second));
   for (auto& p : cfg_.All()) st.Set(p.first, p.second);
   auto tail = ring_->Tail(30);
   st.Set("log.tail", Join(tail, "\n"));
@@ -276,6 +287,7 @@ void Controller::PublishStatic() {
     s.Set("host.cpu", h.cpu);
     s.Set("host.ram", h.ram);
     s.Set("host.name", h.machineName);
+    s.Set("host.gpus", h.gpus);
     s.Set("host.bios", h.biosVersion);
     s.Set("host.vendor", h.sysVendor);
     s.Set("host.product", h.sysProduct);
@@ -307,7 +319,7 @@ void Controller::SaveConfig() {
 
 void Controller::LoadProfiles() {
   profiles_.clear();
-  for (const char* n : kBuiltin) profiles_[n] = Preset(n);
+  for (const std::string& n : BuiltinProfiles()) profiles_[n] = Preset(n);
   if (opt_.dataDir.empty()) return;
   std::string text;
   if (fs::ReadAll(fs::Join(opt_.dataDir, "profiles.kv"), &text, 4u << 20)) {
@@ -350,14 +362,9 @@ void Controller::SaveDesired() {
 }
 
 std::vector<std::string> Controller::ProfileNames() const {
-  std::vector<std::string> v;
-  for (const char* n : kBuiltin) v.push_back(n);
-  for (auto& p : profiles_) {
-    bool builtin = false;
-    for (const char* n : kBuiltin)
-      if (p.first == n) builtin = true;
-    if (!builtin) v.push_back(p.first);
-  }
+  std::vector<std::string> v = BuiltinProfiles();
+  for (auto& p : profiles_)
+    if (!IsBuiltinProfile(p.first)) v.push_back(p.first);
   return v;
 }
 
@@ -493,6 +500,10 @@ Result Controller::DoCfg(const std::string& key, const std::string& raw) {
   for (char c : key)
     if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '.' || c == '_')) return Fail("range", "bad config key");
   cfg_.Set(key, raw);
+  if (key == "cfg.app.auto") {
+    appRecheck_ = true;
+    lastAppScan_ = 0;   // switching the matching on or off takes effect on the next tick, not 3 s later
+  }
   if (key == "cfg.readonly" && gec_) gec_->SetReadOnly(raw == "1");
   SaveConfig();
   SyncSnapshot();
@@ -508,6 +519,9 @@ Result Controller::DoCmd(const std::string& name, const KV& args) {
   if (name == "profile.apply") return ApplyProfile(args.Str("name"), args);
   if (name == "profile.save") return SaveProfile(args.Str("name"));
   if (name == "profile.delete") return DeleteProfile(args.Str("name"));
+  if (name == "app.set") return AppSet(args);
+  if (name == "app.delete") return AppDelete(args);
+  if (name == "app.move") return AppMove(args);
   if (name == "oem.takeover") return OemTakeover(true);
   if (name == "oem.restore") return OemTakeover(false);
   if (name == "ec.bringup") {
@@ -534,6 +548,7 @@ Result Controller::DoCmd(const std::string& name, const KV& args) {
 void Controller::Housekeeping() {
   FanWatchdog();
   AppProfileTick();
+  PowerSourceTick();
   // events -> delayed re-apply (firmware resets values after resume / AC change / display wake)
   std::vector<std::string> ev;
   {

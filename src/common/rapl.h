@@ -23,6 +23,12 @@ inline constexpr uint32_t kMsrPkgEnergy = 0x611;
 inline constexpr uint32_t kMsrPkgPerfStatus = 0x613;
 inline constexpr uint32_t kMsrPkgPowerInfo = 0x614;
 inline constexpr uint32_t kMsrPp0Energy = 0x639;
+// MSR_PLATFORM_POWER_LIMIT (PSys): same field layout as MSR_PKG_POWER_LIMIT, but it bounds the whole platform (CPU + GPU +
+// everything the CPU's PSys meter sees). When it is lower than the demand, CPU and GPU are slowed down together.
+inline constexpr uint32_t kMsrPlatformPowerLimit = 0x65C;
+// MSR_POWER_CTL: bit 0 = Bidirectional PROCHOT enable (other chips may ask the CPU to throttle), bit 1 = C1E enable.
+inline constexpr uint32_t kMsrPowerCtl = 0x1FC;
+inline constexpr int kPowerCtlBdProchotBit = 0;
 
 struct Units {
   double powerW = 0.125;      // 1 / 2^PU

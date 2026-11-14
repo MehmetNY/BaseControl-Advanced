@@ -78,6 +78,7 @@ class Platform {
   bool msrFirmwareOwns = false;  // firmware rewrites MSR 0x610 from the EC values continuously (writes do not stick)
   bool msrPkgLocked = false;     // MSR 0x610 lock bit
   bool iccLocked = false;        // MSR 0x601 lock bit
+  bool msrPsysLocked = false;    // MSR 0x65C (platform power limit) lock bit
   bool ocMailboxOpen = true;     // voltage mailbox answers (false = BIOS closed it)
   bool nvmlAvailable = true;
   int nvLagSamples = 0;          // NVML needs N reads before it shows a new cTGP
@@ -169,6 +170,15 @@ struct GpuExtra : IGpuExtra {
   bool OffsetRange(int* cmin, int* cmax, int* mmin, int* mmax) override { *cmin = -500; *cmax = 500; *mmin = -1000; *mmax = 1500; return true; }
   bool SetCoreOffset(int mhz, std::string*) override { std::lock_guard<std::recursive_mutex> g(p_.mu); p_.gpuCoreOffset = mhz; return true; }
   bool SetMemOffset(int mhz, std::string*) override { std::lock_guard<std::recursive_mutex> g(p_.mu); p_.gpuMemOffset = mhz; return true; }
+ private:
+  Platform& p_;
+};
+
+// Frame rate that follows the simulated GPU load: lighter load = more frames. Only for the simulator and the README pictures.
+struct FpsSim : IFpsSource {
+  explicit FpsSim(Platform& p) : p_(p) {}
+  bool Available(std::string*) override { return true; }
+  double Fps(std::string* app) override;
  private:
   Platform& p_;
 };
@@ -275,6 +285,7 @@ struct World {
   Oem oem;
   Light light;
   Host host;
+  FpsSim fps;
   Smbios smbios;
   Lock lock;
   Hardware hw();

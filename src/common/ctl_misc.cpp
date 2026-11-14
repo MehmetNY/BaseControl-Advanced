@@ -1,8 +1,10 @@
 // Controller: display, device switches, RGB lighting (ITE HID), profiles, application profiles, OEM coexistence.
 #include <algorithm>
+#include <cstring>
 #include <cmath>
 
 #include "controller.h"
+#include "profile_text.h"
 #include "registers.h"
 #include "util.h"
 
@@ -74,6 +76,12 @@ void Controller::ProbeMisc() {
   } else {
     for (const char* c : {"dev.wifi", "dev.bt", "dev.cam", "dev.touchpad"}) SetCap(c, "absent");
   }
+  {
+    std::string why;
+    const bool ok = hw_.fps && hw_.fps->Available(&why);
+    fpsOk_ = ok;
+    SetCap("fps", ok ? "ok" : "absent", ok ? "" : (hw_.fps ? why : std::string("the frame counter needs the BaseControl service (event tracing)")));
+  }
   std::string info;
   std::vector<LightZone> zones;
   if (hw_.light) zones = hw_.light->Detect(&info);
@@ -131,6 +139,14 @@ void Controller::PollMisc() {
     if ((v = hw_.devices->Get(Dev::Bluetooth)) >= 0) k.SetB("dev.bt", v);
     if ((v = hw_.devices->Get(Dev::Webcam)) >= 0) k.SetB("dev.cam", v);
     if ((v = hw_.devices->Get(Dev::Touchpad)) >= 0) k.SetB("dev.touchpad", v);
+  }
+  if (hw_.fps && fpsOk_) {
+    std::string app;
+    const double f = hw_.fps->Fps(&app);
+    if (f >= 0) {
+      k.SetI("fps.cur", static_cast<long long>(std::lround(f)));
+      k.Set("fps.app", app);
+    }
   }
   if (hw_.oem) {
     OemSvcState o = hw_.oem->Probe();
@@ -311,11 +327,42 @@ KV Controller::CaptureProfileValues() {
   return out;
 }
 
+namespace {
+// Well-formed UTF-8 only (no overlong forms, surrogates or values above U+10FFFF), so a profile name can never smuggle control bytes.
+bool ValidUtf8(const std::string& s) {
+  size_t i = 0;
+  while (i < s.size()) {
+    const unsigned char c = static_cast<unsigned char>(s[i]);
+    size_t len = 0;
+    unsigned cp = 0;
+    if (c < 0x80) { len = 1; cp = c; }
+    else if (c >= 0xC2 && c <= 0xDF) { len = 2; cp = c & 0x1Fu; }
+    else if (c >= 0xE0 && c <= 0xEF) { len = 3; cp = c & 0x0Fu; }
+    else if (c >= 0xF0 && c <= 0xF4) { len = 4; cp = c & 0x07u; }
+    else return false;
+    if (i + len > s.size()) return false;
+    for (size_t k = 1; k < len; k++) {
+      const unsigned char cc = static_cast<unsigned char>(s[i + k]);
+      if ((cc & 0xC0) != 0x80) return false;
+      cp = (cp << 6) | (cc & 0x3Fu);
+    }
+    if ((len == 3 && cp < 0x800) || (len == 4 && cp < 0x10000) || cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) return false;
+    if (cp < 0x20 || cp == 0x7F || (cp >= 0x80 && cp < 0xA0)) return false;   // control characters
+    i += len;
+  }
+  return true;
+}
+}  // namespace
+
 Result Controller::SaveProfile(const std::string& name) {
   std::string n = Trim(name);
   if (n.empty() || n.size() > 32) return Fail("range", "profile name must be 1..32 characters");
-  for (char c : n)
-    if (!(std::isalnum(static_cast<unsigned char>(c)) || c == ' ' || c == '-' || c == '_')) return Fail("range", "profile names may contain letters, digits, space, - and _");
+  if (!ValidUtf8(n)) return Fail("range", "profile names must be valid UTF-8 text");
+  for (char c : n) {
+    const unsigned char u = static_cast<unsigned char>(c);
+    if (!(u >= 0x80 || std::isalnum(u) || c == ' ' || c == '-' || c == '_')) return Fail("range", "profile names may contain letters, digits, space, - and _");
+  }
+  if (IsBuiltinProfile(n)) return Fail("range", "that name belongs to a built-in profile; pick another name");
   profiles_[n] = CaptureProfileValues();
   activeProfile_ = n;
   SaveProfiles();
@@ -324,8 +371,7 @@ Result Controller::SaveProfile(const std::string& name) {
 }
 
 Result Controller::DeleteProfile(const std::string& name) {
-  for (const char* b : {"Quiet", "Balanced", "Enthusiast", "Overboost"})
-    if (name == b) return Fail("range", "built-in profiles cannot be deleted (edit and save them under another name)");
+  if (IsBuiltinProfile(name)) return Fail("range", "built-in profiles cannot be deleted (edit and save them under another name)");
   if (!profiles_.erase(name)) return Fail("unknown", "no such profile");
   if (activeProfile_ == name) activeProfile_.clear();
   SaveProfiles();
@@ -384,32 +430,194 @@ Result Controller::ApplyProfile(const std::string& name, const KV& args) {
 }
 
 // ------------------------------------------------------------------------------------------------ application profiles
+namespace {
+constexpr int kAppSlots = 32;
+
+struct AppEntry {
+  std::string exe, profile, name;
+  bool Used() const { return !exe.empty(); }
+};
+
+AppEntry ReadAppSlot(const KV& cfg, int i) {
+  AppEntry e;
+  e.exe = cfg.Str(Fmt("cfg.app.%d.exe", i));
+  e.profile = cfg.Str(Fmt("cfg.app.%d.profile", i));
+  e.name = cfg.Str(Fmt("cfg.app.%d.name", i));
+  return e;
+}
+
+void WriteAppSlot(KV& cfg, int i, const AppEntry& e) {
+  const char* parts[3] = {"exe", "profile", "name"};
+  const std::string* vals[3] = {&e.exe, &e.profile, &e.name};
+  for (int k = 0; k < 3; k++) {
+    const std::string key = Fmt("cfg.app.%d.%s", i, parts[k]);
+    if (e.Used() && !vals[k]->empty()) cfg.Set(key, *vals[k]);
+    else cfg.Erase(key);
+  }
+}
+
+// Image name as Windows lists it, lower case. Only plain file names: no path, no wildcard, no control character.
+bool NormalizeExe(const std::string& in, std::string* out) {
+  std::string e = Lower(Trim(in));
+  if (e.empty() || e.size() > 64) return false;
+  for (unsigned char c : e)
+    if (c < 0x20 || c == 0x7F || std::strchr("\\/:*?\"<>|", c)) return false;
+  if (e.find('.') == std::string::npos) e += ".exe";
+  if (e.size() < 5 || e.compare(e.size() - 4, 4, ".exe") != 0 || e == ".exe") return false;
+  *out = e;
+  return true;
+}
+
+bool ParseSlot(const KV& args, const char* key, int* out) {
+  const std::string v = Trim(args.Str(key));
+  if (v.empty()) return false;
+  char* end = nullptr;
+  const long n = std::strtol(v.c_str(), &end, 10);
+  if (!end || *end || n < 0 || n >= kAppSlots) return false;
+  *out = static_cast<int>(n);
+  return true;
+}
+}  // namespace
+
+Result Controller::AppSet(const KV& args) {
+  std::string exe;
+  if (!NormalizeExe(args.Str("exe"), &exe)) return Fail("range", "the program must be a plain file name such as game.exe");
+  const std::string profile = Trim(args.Str("profile"));
+  if (profiles_.count(profile) == 0) return Fail("unknown", "no such profile: " + profile);
+  std::string name = Trim(args.Str("name"));
+  if (name.size() > 48 || !ValidUtf8(name)) return Fail("range", "the display name must be valid text of at most 48 bytes");
+
+  int slot = -1;
+  const bool editing = !Trim(args.Str("i")).empty();
+  if (editing && !ParseSlot(args, "i", &slot)) return Fail("range", "bad slot");
+  if (editing && !ReadAppSlot(cfg_, slot).Used()) return Fail("range", "that slot is empty");
+  int last = -1, firstFree = -1;
+  for (int i = 0; i < kAppSlots; i++) {
+    const AppEntry e = ReadAppSlot(cfg_, i);
+    if (e.Used()) {
+      last = i;
+      if (e.exe == exe && i != slot) return Fail("range", "that program is already in the list");
+    } else if (firstFree < 0) {
+      firstFree = i;
+    }
+  }
+  if (!editing) {
+    slot = last + 1 < kAppSlots ? last + 1 : firstFree;
+    if (slot < 0) return Fail("range", "the list is full (32 programs)");
+  }
+  AppEntry e;
+  e.exe = exe;
+  e.profile = profile;
+  e.name = name;
+  WriteAppSlot(cfg_, slot, e);
+  SaveConfig();
+  appRecheck_ = true;
+  lastAppScan_ = 0;
+  SyncSnapshot();
+  return Ok();
+}
+
+Result Controller::AppDelete(const KV& args) {
+  int slot = 0;
+  if (!ParseSlot(args, "i", &slot) || !ReadAppSlot(cfg_, slot).Used()) return Fail("range", "no such entry");
+  WriteAppSlot(cfg_, slot, AppEntry());
+  SaveConfig();
+  appRecheck_ = true;
+  lastAppScan_ = 0;
+  SyncSnapshot();
+  return Ok();
+}
+
+Result Controller::AppMove(const KV& args) {
+  int slot = 0;
+  if (!ParseSlot(args, "i", &slot) || !ReadAppSlot(cfg_, slot).Used()) return Fail("range", "no such entry");
+  const int dir = Trim(args.Str("dir")) == "-1" ? -1 : 1;
+  int other = slot + dir;
+  while (other >= 0 && other < kAppSlots && !ReadAppSlot(cfg_, other).Used()) other += dir;
+  if (other < 0 || other >= kAppSlots) return Fail("range", "already at the end of the list");
+  const AppEntry a = ReadAppSlot(cfg_, slot), b = ReadAppSlot(cfg_, other);
+  WriteAppSlot(cfg_, slot, b);
+  WriteAppSlot(cfg_, other, a);
+  SaveConfig();
+  appRecheck_ = true;
+  lastAppScan_ = 0;
+  SyncSnapshot();
+  return Ok();
+}
+
+// Programs that switch the profile while they run. The first entry of the list that is running wins; when it closes the profile
+// that was active before it comes back. Entries whose profile no longer exists are skipped.
 void Controller::AppProfileTick() {
   const uint64_t now = hw_.clock ? hw_.clock->NowMs() : 0;
   if (now - lastAppScan_ < 3000) return;
   lastAppScan_ = now;
   if (!hw_.power) return;
+  const bool recheck = appRecheck_;
+  appRecheck_ = false;
+  if (!cfg_.Bool("cfg.app.auto", true)) {   // switched off: leave a running program's profile as soon as possible
+    if (!appRunning_.empty()) {
+      L(mgp::LogLevel::Info, "application profiles switched off");
+      appRunning_.clear();
+      if (!profileBeforeApp_.empty()) ApplyProfile(profileBeforeApp_, KV());
+      profileBeforeApp_.clear();
+      SyncSnapshot();
+    }
+    return;
+  }
   struct Map { std::string exe, profile; };
   std::vector<Map> maps;
-  for (int i = 0; i < 32; i++) {
-    std::string e = cfg_.Str(Fmt("cfg.app.%d.exe", i)), p = cfg_.Str(Fmt("cfg.app.%d.profile", i));
-    if (!e.empty() && !p.empty()) maps.push_back({Lower(e), p});
+  for (int i = 0; i < kAppSlots; i++) {
+    const AppEntry e = ReadAppSlot(cfg_, i);
+    if (e.Used() && !e.profile.empty() && profiles_.count(e.profile)) maps.push_back({Lower(e.exe), e.profile});
   }
   if (maps.empty() && appRunning_.empty()) return;
   std::vector<std::string> run = hw_.power->RunningExes();
   std::string hit, hitProfile;
   for (auto& m : maps)
     if (std::find(run.begin(), run.end(), m.exe) != run.end()) { hit = m.exe; hitProfile = m.profile; break; }
-  if (!hit.empty() && hit != appRunning_) {
+  if (!hit.empty() && (hit != appRunning_ || (recheck && activeProfile_ != hitProfile))) {
     if (appRunning_.empty()) profileBeforeApp_ = activeProfile_;
     appRunning_ = hit;
     L(mgp::LogLevel::Info, "application profile: " + hit + " -> " + hitProfile);
     ApplyProfile(hitProfile, KV());
+    SyncSnapshot();
   } else if (hit.empty() && !appRunning_.empty()) {
     L(mgp::LogLevel::Info, "application profile: " + appRunning_ + " closed");
     appRunning_.clear();
     if (!profileBeforeApp_.empty()) ApplyProfile(profileBeforeApp_, KV());
     profileBeforeApp_.clear();
+    SyncSnapshot();
+  }
+}
+
+// Plugging or unplugging the charger switches the profile (cfg.prof.auto): battery -> cfg.prof.batt (default Quiet), charger back ->
+// cfg.prof.ac, or the profile that was active before unplugging. It reacts to a change only, so a profile chosen by hand stays.
+void Controller::PowerSourceTick() {
+  if (!hw_.power || !acKnown_ || !cfg_.Bool("cfg.prof.auto", false)) {
+    acSeen_ = -1;
+    return;
+  }
+  const int ac = acNow_ ? 1 : 0;
+  if (acSeen_ < 0) {   // first look after switching on: remember the state, change nothing
+    acSeen_ = ac;
+    return;
+  }
+  if (ac == acSeen_) return;
+  acSeen_ = ac;
+  if (!appRunning_.empty()) return;   // a running application's profile wins
+  if (!ac) {
+    const std::string want = cfg_.Str("cfg.prof.batt", "Quiet");
+    if (profiles_.count(want) == 0 || want == activeProfile_) return;
+    profileOnAc_ = activeProfile_;
+    L(mgp::LogLevel::Info, "power source: on battery -> profile " + want);
+    ApplyProfile(want, KV());
+  } else {
+    std::string want = cfg_.Str("cfg.prof.ac", "");
+    if (want.empty()) want = profileOnAc_;
+    profileOnAc_.clear();
+    if (want.empty() || profiles_.count(want) == 0 || want == activeProfile_) return;
+    L(mgp::LogLevel::Info, "power source: charger connected -> profile " + want);
+    ApplyProfile(want, KV());
   }
 }
 

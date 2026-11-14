@@ -1,5 +1,7 @@
 #include "winutil.h"
 
+#include <sddl.h>
+
 #include <shlobj.h>
 #include <winver.h>
 
@@ -56,6 +58,15 @@ std::string ProgramDataDir() {
   std::wstring base = KnownFolder(CSIDL_COMMON_APPDATA);
   if (base.empty()) base = L"C:\\ProgramData";
   const std::string d = U(base) + "\\BaseControl";
+  if (!fs::IsDir(d) && IsElevated()) {
+    // the service reads its configuration from here: only SYSTEM and Administrators may write, everybody may read
+    PSECURITY_DESCRIPTOR sd = nullptr;
+    if (ConvertStringSecurityDescriptorToSecurityDescriptorW(L"D:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;0x1200a9;;;BU)", SDDL_REVISION_1, &sd, nullptr)) {
+      SECURITY_ATTRIBUTES sa = {sizeof sa, sd, FALSE};
+      CreateDirectoryW(W(d).c_str(), &sa);
+      LocalFree(sd);
+    }
+  }
   fs::MakeDirs(d);
   return d;
 }

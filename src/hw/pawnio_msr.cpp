@@ -16,10 +16,10 @@ typedef HRESULT(STDAPICALLTYPE* PFN_ver)(PULONG);
 constexpr uint32_t kMsrRaplUnit = 0x606;
 
 // MSRs that are per logical processor / core: a write must reach every CPU, a read is taken from CPU 0.
-bool IsPerCoreMsr(uint32_t msr) { return msr == 0x1A4; }
+bool IsPerCoreMsr(uint32_t msr) { return msr == 0x1A4 || msr == 0x1FC; }
 
 // Our own write allow-list (the module has a broader one): only what the controller really needs.
-bool WriteAllowed(uint32_t msr) { return msr == 0x610 || msr == 0x601 || msr == 0x150 || msr == 0x1A4; }
+bool WriteAllowed(uint32_t msr) { return msr == 0x610 || msr == 0x65C || msr == 0x601 || msr == 0x150 || msr == 0x1A4 || msr == 0x1FC; }
 
 bool Trusted(const std::wstring& dir) {
   std::wstring d = dir;

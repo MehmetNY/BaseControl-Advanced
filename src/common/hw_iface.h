@@ -116,6 +116,17 @@ class IOsDevices {
   virtual bool Set(Dev d, bool on, std::string* why) = 0;
 };
 
+// ------------------------------------------------------------------------------------------------ frame rate of the program in front
+// Optional. A real implementation needs an event-tracing session (administrator), i.e. it lives in the service.
+class IFpsSource {
+ public:
+  virtual ~IFpsSource() = default;
+  virtual bool Available(std::string* why) = 0;
+  // Frames presented per second over the last second by the busiest graphics process; -1 when nothing was presented lately.
+  // `app` receives that process' image name.
+  virtual double Fps(std::string* app) = 0;
+};
+
 // ------------------------------------------------------------------------------------------------ OEM Control Center coexistence
 struct OemSvcState {
   bool installed = false;
@@ -154,6 +165,7 @@ class ICrossProcessLock {
 // ------------------------------------------------------------------------------------------------ identity / misc
 struct HostInfo {
   std::string os, cpu, ram, machineName;
+  std::string gpus;   // display adapters installed in Windows, ';' separated (integrated first when the driver lists it first)
   std::string biosVendor, biosVersion, sysVendor, sysProduct, boardName;
   bool elevated = true;
 };
@@ -179,6 +191,7 @@ struct Hardware {
   IOemControl* oem = nullptr;
   ILightHid* light = nullptr;
   IHostInfo* host = nullptr;
+  IFpsSource* fps = nullptr;               // optional
   ICrossProcessLock* applyLock = nullptr;  // optional
 };
 

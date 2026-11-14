@@ -44,6 +44,12 @@ Platform::Platform(Clock& clock) : clk(clock) {
   uint64_t v = 0;
   rapl::EncodePkgLimit(0, pk, u, &v);
   msr[0x610] = v;
+  rapl::PkgLimit ps;   // platform (PSys) limit: an assumption of the model, not a measurement
+  ps.pl1W = 210; ps.pl2W = 250; ps.pl1En = ps.pl2En = true; ps.pl1Clamp = ps.pl2Clamp = false; ps.tau1S = 28; ps.tau2S = 0.00244;
+  uint64_t vp = 0;
+  rapl::EncodePkgLimit(0, ps, u, &vp);
+  msr[0x65C] = vp;
+  msr[0x1FC] = 0x3;                                            // BD PROCHOT on, C1E on
   msr[0x614] = (360ULL) | (200ULL << 16) | (1600ULL << 32);    // TDP 45 W, min 25 W, max 200 W
   msr[0x601] = 1040;                                           // Icc max 130 A, unlocked
   msr[0x1A2] = 100ULL << 16;                                   // TjMax 100, TCC offset 0
@@ -154,8 +160,8 @@ mgp::EcByte Platform::EcWrite(uint16_t a, uint8_t v) {
 
 // ------------------------------------------------------------------------------------------------ MSR access
 bool Platform::MsrAllowed(uint32_t m, bool write) const {
-  static const uint32_t kRead[] = {0x0CE, 0x198, 0x19C, 0x1A2, 0x1A4, 0x1AD, 0x1B1, 0x150, 0x601, 0x606, 0x610, 0x611, 0x613, 0x614, 0x619, 0x639, 0x641, 0x64D};
-  static const uint32_t kWrite[] = {0x1A4, 0x150, 0x601, 0x610};
+  static const uint32_t kRead[] = {0x0CE, 0x198, 0x19C, 0x1A2, 0x1A4, 0x1AD, 0x1B1, 0x150, 0x601, 0x606, 0x610, 0x611, 0x613, 0x614, 0x619, 0x639, 0x641, 0x64D, 0x65C, 0x1FC};
+  static const uint32_t kWrite[] = {0x1A4, 0x150, 0x601, 0x610, 0x65C, 0x1FC};
   if (write) {
     for (uint32_t x : kWrite)
       if (x == m) return true;
@@ -176,6 +182,7 @@ bool Platform::MsrRead(uint32_t m, uint64_t* v) {
   auto it = msr.find(m);
   *v = it == msr.end() ? 0 : it->second;
   if (m == 0x610 && msrPkgLocked) *v |= (1ULL << 63);
+  if (m == 0x65C && msrPsysLocked) *v |= (1ULL << 63);
   return true;
 }
 
@@ -209,6 +216,10 @@ bool Platform::MsrWrite(uint32_t m, uint64_t v) {
     case 0x610:
       if (msrPkgLocked) return false;
       msr[0x610] = v & ~(1ULL << 63);
+      return true;
+    case 0x65C:
+      if (msrPsysLocked) return false;
+      msr[0x65C] = v & ~(1ULL << 63);
       return true;
     case 0x601:
       if (iccLocked) return false;
@@ -432,6 +443,14 @@ bool Nv::ReadDynamic(mgp::NvDynamic& o) {
   return true;
 }
 
+double FpsSim::Fps(std::string* app) {
+  std::lock_guard<std::recursive_mutex> g(p_.mu);
+  p_.Step();
+  if (p_.gpuLoad < 0.20) return -1;   // nothing heavy is drawing: no "game"
+  if (app) *app = "sim-game.exe";
+  return std::floor(244.0 - 150.0 * p_.gpuLoad);
+}
+
 bool Msr::Open(std::string* why) {
   if (!p_.msrAvailable) {
     if (why) *why = "PawnIO driver / IntelMSR module not available (simulated)";
@@ -587,6 +606,7 @@ HostInfo Host::Get() {
   h.cpu = "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz";
   h.ram = "32 GB";
   h.machineName = "SIM-TULPAR";
+  h.gpus = "Intel(R) UHD Graphics;NVIDIA GeForce RTX 3070 Laptop GPU";
   h.biosVendor = "INSYDE";
   h.biosVersion = "N.1.07Mon08";
   h.sysVendor = "MONSTER";
@@ -641,7 +661,7 @@ std::vector<uint8_t> BuildSmbios(const std::string& manuf, const std::string& pr
 }
 
 World::World(Model m, bool realClock)
-    : clock(realClock), plat(clock), ec(plat), nv(plat), msr(plat), gpu(plat), power(plat) {
+    : clock(realClock), plat(clock), ec(plat), nv(plat), msr(plat), gpu(plat), power(plat), fps(plat) {
   if (m == Model::Exact) smbios.raw = BuildSmbios("MONSTER", "TULPAR T5 V21.7", "N.1.07Mon08", "GM5TG7Y");
   else if (m == Model::Family) smbios.raw = BuildSmbios("SCHENKER", "XMG NEO 15 M21", "N.1.07Mon08", "GM5TG7W");
   else {
@@ -666,6 +686,7 @@ Hardware World::hw() {
   h.oem = &oem;
   h.light = &light;
   h.host = &host;
+  h.fps = &fps;
   h.applyLock = &lock;
   return h;
 }

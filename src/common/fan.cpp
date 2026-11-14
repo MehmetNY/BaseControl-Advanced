@@ -1,6 +1,7 @@
 #include "fan.h"
 
 #include <algorithm>
+#include <cstdlib>
 
 #include "util.h"
 
@@ -61,6 +62,40 @@ Curve Sanitize(Curve c) {
   c.back().pct = 100;
   for (size_t i = 1; i < c.size(); i++) c[i].pct = std::max(c[i].pct, c[i - 1].pct == 0 ? 1 : c[i - 1].pct);
   return c;
+}
+
+Curve MovePoint(Curve c, int index, int temp, int pct) {
+  const int n = static_cast<int>(c.size());
+  if (index < 0 || index >= n) return c;
+  const int lo = index > 0 ? c[static_cast<size_t>(index - 1)].temp + kMinSpacing : 0;
+  const int hi = index + 1 < n ? c[static_cast<size_t>(index + 1)].temp - kMinSpacing : kMaxTemp;
+  c[static_cast<size_t>(index)].temp = Clamp(temp, lo, std::max(lo, hi));
+  if (index > 0 && index + 1 < n) {
+    const int floorPct = std::max({1, c[static_cast<size_t>(index - 1)].pct, SafetyFloor(c[static_cast<size_t>(index)].temp)});
+    c[static_cast<size_t>(index)].pct = Clamp(pct, floorPct, 100);
+  }
+  return Sanitize(c);
+}
+
+Curve AddPoint(Curve c, int temp) {
+  if (c.size() >= static_cast<size_t>(kActiveRows) || c.size() < 2) return c;
+  for (size_t i = 0; i < c.size(); i++)
+    if (std::abs(c[i].temp - temp) < kMinSpacing) return c;
+  size_t at = c.size();
+  for (size_t i = 1; i < c.size(); i++)
+    if (temp < c[i].temp) { at = i; break; }
+  if (at == c.size() || temp <= c[0].temp) return c;   // above the last row or below the first: nothing to split
+  Row r;
+  r.temp = temp;
+  r.pct = c[at].pct;
+  c.insert(c.begin() + static_cast<long>(at), r);
+  return Sanitize(c);
+}
+
+Curve RemovePoint(Curve c, int index) {
+  if (index <= 0 || index >= static_cast<int>(c.size()) || c.size() <= 2) return c;
+  c.erase(c.begin() + index);
+  return Sanitize(c);
 }
 
 TableImage Pack(const Curve& c) {
@@ -134,6 +169,8 @@ Curve DefaultCpu() { return {{40, 0}, {50, 25}, {58, 32}, {66, 42}, {74, 55}, {8
 Curve DefaultGpu() { return {{40, 0}, {50, 25}, {58, 32}, {64, 42}, {70, 55}, {76, 68}, {82, 80}, {88, 92}, {94, 100}}; }
 Curve QuietCpu() { return {{45, 0}, {58, 22}, {68, 30}, {76, 40}, {84, 55}, {90, 72}, {96, 92}, {102, 100}}; }
 Curve TurboCpu() { return {{35, 0}, {44, 35}, {52, 48}, {60, 62}, {68, 75}, {76, 88}, {84, 100}}; }
+Curve QuietGpu() { return {{45, 0}, {58, 22}, {66, 30}, {72, 40}, {78, 55}, {84, 72}, {90, 92}, {96, 100}}; }
+Curve TurboGpu() { return {{35, 0}, {44, 35}, {52, 50}, {60, 65}, {68, 80}, {74, 92}, {80, 100}}; }
 
 }  // namespace fan
 }  // namespace bc

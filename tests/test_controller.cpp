@@ -477,6 +477,19 @@ TEST(ctl_fixed_fan_and_watchdog) {
   CHECK_EQ(r.S().Str("fan.guard"), std::string("ok"));
 }
 
+TEST(ctl_stop_returns_fixed_fans_to_auto) {
+  Rig r;
+  r.Cfg("cfg.experimental", "1");
+  CHECK(r.Set("fan.fixed.cpu", "40").ok);
+  CHECK(r.Set("fan.fixed.gpu", "40").ok);
+  CHECK(r.Set("fan.mode", "fixed", Consent("fan_fixed")).ok);
+  CHECK_EQ(r.Ec(reg::kFanFixedCpu), static_cast<uint8_t>(0x80 | 40));
+  r.c.Stop();  // no watchdog from here on: the fans must not stay at a fixed duty
+  CHECK_EQ(r.Ec(reg::kFanFixedCpu) & 0x80, 0);
+  CHECK_EQ(r.Ec(reg::kFanFixedGpu) & 0x80, 0);
+  CHECK(r.w.log.Has("returning the fans"));
+}
+
 // ------------------------------------------------------------------------------------------------ battery / preferences
 TEST(ctl_battery_and_preferences) {
   Rig r;
@@ -545,6 +558,43 @@ TEST(ctl_msr_undervolt_roundtrip) {
   CHECK(r.Set("msr.volt.core", "-70", Consent("msr_write")).ok);
   CHECK(std::abs(static_cast<int>(r.S().Int("msr.volt.core")) + 70) <= 1);
   CHECK_EQ(r.Set("msr.volt.core", "20").code, std::string("range"));
+}
+
+TEST(ctl_msr_platform_limit_and_bd_prochot) {
+  Rig r;
+  CHECK_EQ(r.S().Str("cap.msr.psys"), std::string("ok"));
+  CHECK_EQ(r.S().Int("msr.psys.pl1"), 210LL);
+  CHECK_EQ(r.S().Int("msr.psys.pl2"), 250LL);
+  CHECK_EQ(r.S().Str("msr.bdp"), std::string("1"));
+  CHECK_EQ(r.Set("msr.psys.pl1", "230").code, std::string("gate.experimental"));
+  r.Cfg("cfg.experimental", "1");
+  CHECK_EQ(r.Set("msr.psys.pl1", "230").code, std::string("gate.consent"));
+  CHECK(r.Set("msr.psys.pl1", "230", Consent("msr_write")).ok);
+  CHECK_EQ(r.S().Int("msr.psys.pl1"), 230LL);
+  CHECK_EQ(r.S().Int("msr.psys.pl2"), 250LL);          // the neighbour is untouched
+  CHECK_EQ(r.Set("msr.psys.pl1", "300").code, std::string("range"));   // PL1 above PL2
+  CHECK(r.Set("msr.psys.pl2", "320").ok);
+  CHECK(r.Set("msr.psys.pl1", "300").ok);
+  CHECK(r.Set("msr.psys.pl2.en", "0").ok);
+  CHECK_EQ(r.S().Str("msr.psys.pl2.en"), std::string("0"));
+  // BD PROCHOT: off, then on again; the other bits of MSR 0x1FC survive
+  CHECK(r.Set("msr.bdp", "0").ok);
+  CHECK_EQ(r.S().Str("msr.bdp"), std::string("0"));
+  CHECK_EQ(r.w.plat.msr[0x1FC], 0x2ULL);
+  CHECK(r.Set("msr.bdp", "1").ok);
+  CHECK_EQ(r.w.plat.msr[0x1FC], 0x3ULL);
+}
+
+TEST(ctl_msr_platform_limit_locked_or_absent) {
+  Rig r;
+  r.w.plat.msrPsysLocked = true;
+  r.c.ExecuteSync([] { Request q; q.op = "cmd"; q.key = "probe"; return q; }());
+  r.Cfg("cfg.experimental", "1");
+  CHECK_EQ(r.S().Str("cap.msr.psys"), std::string("locked"));
+  CHECK_EQ(r.S().Str("msr.psys.lock"), std::string("1"));
+  CHECK_EQ(r.Set("msr.psys.pl1", "230", Consent("msr_write")).code, std::string("unsupported"));
+  // BD PROCHOT is independent of the PSys lock
+  CHECK(r.Set("msr.bdp", "0", Consent("msr_write")).ok);
 }
 
 // ------------------------------------------------------------------------------------------------ Windows policy / display / devices / light
@@ -641,9 +691,23 @@ TEST(ctl_custom_profile_save_apply_delete) {
   KV bad;
   bad.Set("name", "evil=name|x");
   CHECK_EQ(r.Cmd("profile.save", bad).code, std::string("range"));
+  bad.Set("name", "a,b");   // the comma separates the names in the published list
+  CHECK_EQ(r.Cmd("profile.save", bad).code, std::string("range"));
+  bad.Set("name", std::string("ctl\x01name"));
+  CHECK_EQ(r.Cmd("profile.save", bad).code, std::string("range"));
+  bad.Set("name", std::string("broken\xC3"));   // truncated UTF-8
+  CHECK_EQ(r.Cmd("profile.save", bad).code, std::string("range"));
+  KV tr;
+  tr.Set("name", "G\xC3\xBCnd\xC3\xBCz \xC5\x9F""ark\xC4\xB1");   // Turkish letters are fine
+  CHECK(r.Cmd("profile.save", tr).ok);
+  CHECK(r.S().Str("profile.list").find("G\xC3\xBCnd\xC3\xBCz") != std::string::npos);
+  CHECK(r.Cmd("profile.delete", tr).ok);
   KV builtin;
   builtin.Set("name", "Quiet");
   CHECK_EQ(r.Cmd("profile.delete", builtin).code, std::string("range"));
+  CHECK_EQ(r.Cmd("profile.save", builtin).code, std::string("range"));   // a built-in name cannot be overwritten
+  builtin.Set("name", "overboost");
+  CHECK_EQ(r.Cmd("profile.save", builtin).code, std::string("range"));
   CHECK(r.Cmd("profile.delete", a).ok);
   CHECK(r.S().Str("profile.list").find("My game") == std::string::npos);
 }
@@ -750,6 +814,196 @@ TEST(ctl_application_profile_switching) {
   r.w.power.exes = {"explorer.exe"};
   r.Run(5);
   CHECK_EQ(r.Ec(reg::kPl1), static_cast<uint8_t>(60));  // back to the previous profile
+}
+
+TEST(ctl_application_profile_commands) {
+  Rig r;
+  auto set = [&](const char* slot, const std::string& exe, const std::string& profile, const std::string& name = "") {
+    KV a;
+    if (*slot) a.Set("i", slot);
+    a.Set("exe", exe);
+    a.Set("profile", profile);
+    a.Set("name", name);
+    return r.Cmd("app.set", a);
+  };
+  auto slotCmd = [&](const char* cmd, const char* slot, const char* dir = nullptr) {
+    KV a;
+    a.Set("i", slot);
+    if (dir) a.Set("dir", dir);
+    return r.Cmd(cmd, a);
+  };
+  // adding appends and normalises the image name (trimmed, lower case, ".exe" added)
+  CHECK(set("", "  Game.EXE ", "Overboost", "My game").ok);
+  CHECK(set("", "blender", "Enthusiast").ok);
+  KV s = r.S();
+  CHECK_EQ(s.Str("cfg.app.0.exe"), std::string("game.exe"));
+  CHECK_EQ(s.Str("cfg.app.0.profile"), std::string("Overboost"));
+  CHECK_EQ(s.Str("cfg.app.0.name"), std::string("My game"));
+  CHECK_EQ(s.Str("cfg.app.1.exe"), std::string("blender.exe"));
+  CHECK_EQ(s.Str("cfg.app.1.name"), std::string(""));
+  // refused: a path, a wildcard, an unknown profile, a duplicate, an over-long name, bad or empty slots
+  CHECK(!set("", "C:\\Games\\game.exe", "Quiet").ok);
+  CHECK(!set("", "ga*me.exe", "Quiet").ok);
+  CHECK(!set("", "notexe.dll", "Quiet").ok);
+  CHECK(!set("", "x.exe", "No such profile").ok);
+  CHECK(!set("", "GAME.exe", "Quiet").ok);
+  CHECK(!set("", "name.exe", "Quiet", std::string(49, 'x')).ok);
+  CHECK(!set("", "", "Quiet").ok);
+  CHECK(!set("7", "y.exe", "Quiet").ok);
+  CHECK(!set("32", "y.exe", "Quiet").ok);
+  CHECK(!set("abc", "y.exe", "Quiet").ok);
+  CHECK(!slotCmd("app.delete", "9").ok);
+  CHECK(!slotCmd("app.move", "0", "-1").ok);   // already first
+  CHECK(!slotCmd("app.move", "1", "1").ok);    // already last
+  // editing keeps the program name allowed for its own slot
+  CHECK(set("0", "game.exe", "Balanced", "My game").ok);
+  CHECK_EQ(r.S().Str("cfg.app.0.profile"), std::string("Balanced"));
+
+  // the first running entry of the list wins; the previous profile comes back when it closes
+  KV b;
+  b.Set("name", "Quiet");
+  CHECK(r.Cmd("profile.apply", b).ok);
+  r.w.power.exes = {"explorer.exe", "blender.exe"};
+  r.Run(5);
+  CHECK_EQ(r.S().Str("app.active"), std::string("blender.exe"));
+  CHECK_EQ(r.S().Str("profile.active"), std::string("Enthusiast"));
+  CHECK_EQ(r.S().Str("app.before"), std::string("Quiet"));
+  r.w.power.exes = {"blender.exe", "game.exe"};
+  r.Run(5);
+  CHECK_EQ(r.S().Str("app.active"), std::string("game.exe"));   // slot 0 outranks slot 1 while both run
+  CHECK_EQ(r.S().Str("profile.active"), std::string("Balanced"));
+  CHECK(slotCmd("app.move", "1", "-1").ok);                     // blender moves above the game
+  CHECK_EQ(r.S().Str("cfg.app.0.exe"), std::string("blender.exe"));
+  CHECK_EQ(r.S().Str("cfg.app.1.exe"), std::string("game.exe"));
+  CHECK_EQ(r.S().Str("cfg.app.1.name"), std::string("My game"));
+  r.Run(5);
+  CHECK_EQ(r.S().Str("app.active"), std::string("blender.exe"));
+  CHECK_EQ(r.S().Str("profile.active"), std::string("Enthusiast"));
+  // editing the profile of the running match applies it right away, without waiting for the program to restart
+  CHECK(set("0", "blender.exe", "Overboost").ok);
+  r.Run(5);
+  CHECK_EQ(r.S().Str("profile.active"), std::string("Overboost"));
+  CHECK_EQ(r.Ec(reg::kPl1), static_cast<uint8_t>(120));
+  // switching the whole feature off hands control back at once
+  CHECK(r.Cfg("cfg.app.auto", "0").ok);
+  r.Run(5);
+  CHECK_EQ(r.S().Str("app.active"), std::string(""));
+  CHECK_EQ(r.S().Str("profile.active"), std::string("Quiet"));
+  r.w.power.exes = {"explorer.exe"};
+  r.Run(5);
+  r.w.power.exes = {"game.exe"};
+  r.Run(5);
+  CHECK_EQ(r.S().Str("profile.active"), std::string("Quiet"));   // matching is off: nothing changes
+  CHECK(r.Cfg("cfg.app.auto", "1").ok);
+  r.Run(5);
+  CHECK_EQ(r.S().Str("app.active"), std::string("game.exe"));
+  // deleting the entry that matches ends its profile
+  CHECK(slotCmd("app.delete", "1").ok);
+  r.Run(5);
+  CHECK_EQ(r.S().Str("app.active"), std::string(""));
+  CHECK_EQ(r.S().Str("profile.active"), std::string("Quiet"));
+  CHECK_EQ(r.S().Str("cfg.app.1.exe"), std::string(""));
+  CHECK(!slotCmd("app.delete", "1").ok);
+
+  // an entry whose profile was deleted is skipped instead of blocking the entries below it
+  CHECK(r.Cmd("profile.apply", b).ok);
+  KV n;
+  n.Set("name", "Night");
+  CHECK(r.Cmd("profile.save", n).ok);
+  CHECK(set("", "night.exe", "Night").ok);
+  CHECK(r.Cmd("profile.delete", n).ok);
+  r.w.power.exes = {"night.exe", "explorer.exe"};
+  r.Run(5);
+  CHECK_EQ(r.S().Str("app.active"), std::string(""));
+  CHECK_EQ(r.S().Str("cfg.app.1.profile"), std::string("Night"));   // still listed, so the page can flag it
+}
+
+TEST(ctl_power_source_profile_switching) {
+  Rig r;
+  KV a;
+  a.Set("name", "Overboost");
+  CHECK(r.Cmd("profile.apply", a).ok);
+  CHECK_EQ(r.Ec(reg::kPl1), static_cast<uint8_t>(120));
+  // switched off: unplugging changes nothing
+  r.w.plat.ac = false;
+  r.Run(5);
+  CHECK_EQ(r.S().Str("profile.active"), std::string("Overboost"));
+  r.w.plat.ac = true;
+  r.Run(5);
+  // switched on: the first look only records the state ...
+  CHECK(r.Cfg("cfg.prof.auto", "1").ok);
+  r.Run(5);
+  CHECK_EQ(r.S().Str("profile.active"), std::string("Overboost"));
+  // ... unplugging then picks the battery profile (default Quiet) ...
+  r.w.plat.ac = false;
+  r.Run(5);
+  CHECK_EQ(r.S().Str("profile.active"), std::string("Quiet"));
+  CHECK_EQ(r.Ec(reg::kPl1), static_cast<uint8_t>(35));
+  // ... and plugging back in restores what was running before
+  r.w.plat.ac = true;
+  r.Run(5);
+  CHECK_EQ(r.S().Str("profile.active"), std::string("Overboost"));
+  CHECK_EQ(r.Ec(reg::kPl1), static_cast<uint8_t>(120));
+  // explicit profiles for both sources
+  CHECK(r.Cfg("cfg.prof.batt", "Balanced").ok);
+  CHECK(r.Cfg("cfg.prof.ac", "Enthusiast").ok);
+  r.w.plat.ac = false;
+  r.Run(5);
+  CHECK_EQ(r.S().Str("profile.active"), std::string("Balanced"));
+  r.w.plat.ac = true;
+  r.Run(5);
+  CHECK_EQ(r.S().Str("profile.active"), std::string("Enthusiast"));
+  // a profile chosen by hand stays: the rule reacts to a change, not to a state
+  KV q;
+  q.Set("name", "Quiet");
+  CHECK(r.Cmd("profile.apply", q).ok);
+  r.Run(10);
+  CHECK_EQ(r.S().Str("profile.active"), std::string("Quiet"));
+  // an unknown profile name is ignored instead of breaking anything
+  CHECK(r.Cfg("cfg.prof.batt", "Does not exist").ok);
+  r.w.plat.ac = false;
+  r.Run(5);
+  CHECK_EQ(r.S().Str("profile.active"), std::string("Quiet"));
+}
+
+TEST(ctl_power_source_yields_to_application_profile) {
+  Rig r;
+  CHECK(r.Cfg("cfg.prof.auto", "1").ok);
+  CHECK(r.Cfg("cfg.app.0.exe", "game.exe").ok);
+  CHECK(r.Cfg("cfg.app.0.profile", "Overboost").ok);
+  KV a;
+  a.Set("name", "Balanced");
+  CHECK(r.Cmd("profile.apply", a).ok);
+  r.Run(5);
+  r.w.power.exes = {"explorer.exe", "game.exe"};
+  r.Run(5);
+  CHECK_EQ(r.S().Str("profile.active"), std::string("Overboost"));
+  // unplugging while the game runs must not override the game's profile
+  r.w.plat.ac = false;
+  r.Run(5);
+  CHECK_EQ(r.S().Str("profile.active"), std::string("Overboost"));
+  CHECK_EQ(r.Ec(reg::kPl1), static_cast<uint8_t>(120));
+  // closing the game returns to the profile that was active before it
+  r.w.power.exes = {"explorer.exe"};
+  r.Run(5);
+  CHECK_EQ(r.S().Str("profile.active"), std::string("Balanced"));
+}
+
+TEST(ctl_profile_summaries_are_published) {
+  Rig r;
+  r.Set("ec.pl1", "95");
+  r.Set("ec.pl2", "110");
+  KV a;
+  a.Set("name", "My game");
+  CHECK(r.Cmd("profile.save", a).ok);
+  KV s = r.S();
+  const std::string v = s.Str("profile.v.My game");
+  CHECK(v.find("ec.pl1=95") != std::string::npos);
+  CHECK(v.find("ec.pl2=110") != std::string::npos);
+  CHECK(!s.Str("profile.v.Quiet").empty());
+  CHECK(!s.Str("profile.v.Overboost").empty());
+  CHECK(r.Cmd("profile.delete", a).ok);
+  CHECK(!r.S().Has("profile.v.My game"));
 }
 
 // ------------------------------------------------------------------------------------------------ misc plumbing

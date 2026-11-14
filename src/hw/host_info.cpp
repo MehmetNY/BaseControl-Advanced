@@ -3,6 +3,7 @@
 #include <cpuid.h>
 
 #include <cstring>
+#include <cwchar>
 
 #include "../common/util.h"
 #include "../mgp/core/smbios.h"
@@ -60,6 +61,35 @@ std::string OsName() {
   return Fmt("%s%s%s (build %lu)", name, ver.empty() ? "" : " ", ver.c_str(), static_cast<unsigned long>(v.dwBuildNumber));
 }
 
+// Display adapters Windows knows about (the class key lists every installed adapter, also one that is not driving a screen).
+std::string GpuNames() {
+  std::string out;
+  HKEY cls = nullptr;
+  if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}", 0,
+                    KEY_READ | KEY_WOW64_64KEY, &cls) != ERROR_SUCCESS)
+    return out;
+  for (DWORD i = 0; i < 16; i++) {
+    wchar_t sub[16];
+    swprintf(sub, 16, L"%04lu", static_cast<unsigned long>(i));
+    HKEY k = nullptr;
+    if (RegOpenKeyExW(cls, sub, 0, KEY_READ | KEY_WOW64_64KEY, &k) != ERROR_SUCCESS) continue;
+    wchar_t buf[256] = {0};
+    DWORD sz = sizeof buf - 2, type = 0;
+    const LONG rc = RegQueryValueExW(k, L"DriverDesc", nullptr, &type, reinterpret_cast<BYTE*>(buf), &sz);
+    RegCloseKey(k);
+    if (rc != ERROR_SUCCESS || type != REG_SZ) continue;
+    const std::string name = Trim(U(buf));
+    const std::string low = Lower(name);
+    if (name.empty() || low.find("basic display") != std::string::npos || low.find("remote") != std::string::npos ||
+        low.find("virtual") != std::string::npos || low.find("hyper-v") != std::string::npos)
+      continue;
+    if ((";" + out + ";").find(";" + name + ";") != std::string::npos) continue;
+    out += (out.empty() ? "" : ";") + name;
+  }
+  RegCloseKey(cls);
+  return out;
+}
+
 }  // namespace
 
 HostInfo HostInfoWin::Get() {
@@ -70,6 +100,7 @@ HostInfo HostInfoWin::Get() {
   HostInfo h;
   h.os = OsName();
   h.cpu = CpuBrand();
+  h.gpus = GpuNames();
   MEMORYSTATUSEX m;
   m.dwLength = sizeof m;
   if (GlobalMemoryStatusEx(&m)) {

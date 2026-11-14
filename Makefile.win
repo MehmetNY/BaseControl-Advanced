@@ -7,7 +7,7 @@ VERSION ?= 1.0.0
 VER_NUM := $(shell echo $(VERSION) | awk -F. '{printf "%d,%d,%d,0", $$1, $$2, $$3}')
 
 CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -Wpedantic -Wshadow -D__USE_MINGW_ANSI_STDIO=1 -DBC_VERSION=\"$(VERSION)\" -Isrc
-LDFLAGS  := -static -static-libgcc -static-libstdc++ -mwindows -Wl,--nxcompat -Wl,--dynamicbase -Wl,--high-entropy-va
+LDFLAGS  := -static -static-libgcc -static-libstdc++ -mwindows -Wl,--nxcompat -Wl,--dynamicbase -Wl,--high-entropy-va -Wl,--no-insert-timestamp
 LDLIBS   := -lgdiplus -lsetupapi -lhid -lwlanapi -lpowrprof -lversion -lshell32 -lole32 -loleaut32 -luuid -luser32 -lgdi32 -ladvapi32 -lcomctl32 -lshlwapi -luxtheme -lwinmm -lbcrypt -lcrypt32 -lcomdlg32 -ldwmapi
 
 SRC := src/main.cpp $(wildcard src/common/*.cpp) $(wildcard src/mgp/core/*.cpp) $(wildcard src/mgp/win/*.cpp) \
@@ -31,7 +31,7 @@ build/win/obj/res.o: res/app.rc res/app.ico res/app.manifest build/win/version_r
 
 $(EXE): $(OBJ) build/win/obj/res.o
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
-	$(STRIP) --strip-all -o build/win/BaseControl.min.exe $@   # the release binary: no COFF symbol table (tools/verify_pe.py checks it)
+	SOURCE_DATE_EPOCH=0 $(STRIP) --strip-all -o build/win/BaseControl.min.exe $@   # the release binary: no COFF symbol table (tools/verify_pe.py checks it); a fixed timestamp keeps it byte-identical whichever directory builds it
 	@ls -l $@ build/win/BaseControl.min.exe
 
 clean:

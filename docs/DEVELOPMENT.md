@@ -51,6 +51,8 @@ build/win/BaseControl.exe --sim --font Inter --shot custom out.png --size 1360x1
 
 `tools/make_release.sh` runs the host tests, builds the Windows executable, runs the generated-documentation and translation checks and `tools/verify_pe.py` on the exact file that is shipped, then writes into `dist/`: the installer (`...-Setup.exe`, built with NSIS from `installer/BaseControl.nsi`), the bare program (`...-portable.exe`), a zip with the program, licence, notices, `README.txt` and the documentation, and `SHA256SUMS.txt`. Nothing is signed or uploaded; the script prints the `gh release create` command for a pre-release. `SKIP_TESTS=1` skips `make test`; `VERSION=x.y.z` overrides the version. `installer/README.txt` is the plain-text read-me (English and Turkish) that the installer puts next to the program.
 
+The program itself is built to be reproducible: it is linked without a timestamp and stripped with `SOURCE_DATE_EPOCH=0`, so building the same source with the same toolchain (the release was made with mingw-w64 GCC 13 and binutils 2.41 on Linux) gives a byte-identical `BaseControl.exe`. That was checked from two different directories; it was not checked with any other compiler. The installer is not byte-for-byte reproducible, because NSIS embeds file times.
+
 The pictures in the README come from `tools/render_screenshots.sh`: it renders the main pages from the simulator in English and Turkish into `docs/images/` (every picture shows SIMULATION in its top bar, because none of them was taken from a real laptop) and then calls `tools/make_banner.py` for the two banners. Run it after an interface change so the README matches the program.
 
 ## Code map

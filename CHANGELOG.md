@@ -12,7 +12,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - **Performance**: four profiles (Quiet, Balanced, Enthusiast, Overboost), custom profiles, application profiles, fan modes (auto, boost, custom curves with up to 10 points, fixed speed) and a fan watchdog.
 - **Live values and a Confirm button on every slider** that changes a hardware or Windows setting. A slider edits a draft; nothing is sent until you press *Confirm*.
 - **Advanced CPU panel** (ThrottleStop-style): package PL1/PL2 with time windows, platform limits, current limit, undervolt offsets, prefetchers and the values the CPU reports. Opens to the right of the page (below it on narrow windows). Needs the optional [PawnIO](https://pawnio.eu) driver.
-- **GPU power target** up to 150 W through the vendored [MONSTER GPU POWER](https://github.com/MehmetNY/Monster-XMG-Gpu-Power-Control) engine, with per-step consent above the OEM's 140 W maximum.
+- **GPU power target** up to 150 W through the vendored [MONSTER GPU POWER](https://github.com/MehmetNY/Monster-XMG-Gpu-Power-Control) engine, offered only on the exactly identified Tulpar T5 V21.7 and with per-step consent above the OEM's 140 W maximum.
 - Windows CPU policy (boost mode, energy preference, minimum/maximum state, core parking) and GPU clock offsets through NVML.
 - Keyboard lighting (colour, brightness, effects), battery charge profile and health, display colour and refresh rate, device manager switches, in-game overlay, key remapping, drive health.
 - A **SYSTEM service** with a restricted named pipe so the window needs no administrator rights; an installer; a portable executable; `--local` mode for elevated use without the service.

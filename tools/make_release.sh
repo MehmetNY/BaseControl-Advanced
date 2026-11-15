@@ -7,10 +7,10 @@
 #   SHA256SUMS.txt                                checksums of the three files above
 #
 # Everything is checked on the way: the host tests, a warning-free Windows build, the generated documentation, and tools/verify_pe.py on the
-# exact file that is shipped. Nothing is signed and nothing is uploaded; the last line prints the command that publishes a beta (pre-release).
+# exact file that is shipped. Nothing is signed and nothing is uploaded; the last lines say how to publish a pre-release.
 #
 #   tools/make_release.sh                 # version from Makefile.win
-#   VERSION=1.0.1 tools/make_release.sh
+#   VERSION=2.0.1 tools/make_release.sh
 #   SKIP_TESTS=1 tools/make_release.sh    # skip "make test" (the other checks still run)
 #
 # Needs: x86_64-w64-mingw32-g++ (mingw-w64), makensis (NSIS 3), python3, zip, sha256sum.
@@ -21,7 +21,7 @@ ROOT=$PWD
 VERSION=${VERSION:-$(sed -n 's/^VERSION ?= *//p' Makefile.win | head -1)}
 [ -n "$VERSION" ] || { echo "cannot read the version from Makefile.win" >&2; exit 1; }
 JOBS=${JOBS:-$(nproc 2>/dev/null || echo 4)}
-NUMVER=${VERSION%%-*}           # 1.0.0-beta -> 1.0.0 (the version resource of the installer wants a.b.c.d)
+NUMVER=${VERSION%%-*}           # 2.1.0-rc1 -> 2.1.0 (the version resource of the installer wants a.b.c.d)
 NAME="Control-Center-Advanced-$VERSION"
 
 for tool in x86_64-w64-mingw32-g++ makensis python3 zip sha256sum; do
@@ -76,8 +76,10 @@ echo
 cat dist/SHA256SUMS.txt
 cat <<EOF
 
-Ready. To publish a beta (pre-release; unsigned, first hardware trial found problems):
+Ready. Nothing was signed or uploaded. To publish a pre-release (unsigned, not yet tried on the laptop):
 
   gh release create v$VERSION --prerelease --title "Control Center Advanced $VERSION" --notes-file <notes.md> \\
      dist/$NAME-Setup.exe dist/$NAME-portable.exe dist/$NAME-portable.zip dist/SHA256SUMS.txt
+
+or upload the four files and the notes on the repository's Releases page (New release, tick "Set as a pre-release").
 EOF

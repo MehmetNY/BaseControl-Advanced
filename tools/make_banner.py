@@ -11,24 +11,25 @@ import sys
 from PIL import Image, ImageDraw, ImageFilter
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from make_art import BG_BOTTOM, BG_TOP, BOLT_B, MUTED, TEXT, bolt_layer, font, gradient  # noqa: E402
+from make_art import ACCENT, BG_BOTTOM, BG_TOP, BOLT_B, MUTED, TEXT, bolt_layer, font, gradient  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 IMG = os.path.join(ROOT, "docs", "images")
 W, H = 1600, 580
-PEACH = (0xE2, 0xA3, 0x87)
-LINE = (0x34, 0x35, 0x32)
+PILL_TEXT = (0xFF, 0xC9, 0xA3)       # the accent, lightened, for text on the translucent pills
+NOTE = (0x7A, 0x86, 0x99)
+LINE = (0x2E, 0x38, 0x46)
 
 TEXTS = {
     "en": {
         "tag": ["A light, native control centre for the", "Monster Tulpar T5 / XMG Neo 15 M21"],
-        "pills": ["Live values", "Confirm first", "Advanced CPU panel"],
+        "pills": ["Live values", "Confirm first", "GPU power to 150 W"],
         "note": "Pictured: the built-in simulator, not a real laptop.",
         "shots": "",
     },
     "tr": {
         "tag": ["Monster Tulpar T5 / XMG Neo 15 M21 için", "hafif, yerel bir denetim merkezi"],
-        "pills": ["Canlı değerler", "Önce onay", "Gelişmiş CPU paneli"],
+        "pills": ["Canlı değerler", "Önce onay", "150 W'a GPU gücü"],
         "note": "Görülen: yerleşik simülatör, gerçek bir dizüstü değil.",
         "shots": "tr",
     },
@@ -70,7 +71,7 @@ def banner(lang):
     img = gradient(W, H, BG_TOP, BG_BOTTOM).convert("RGBA")
 
     glow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    ImageDraw.Draw(glow).ellipse((760, -140, 1760, 560), fill=PEACH + (62,))
+    ImageDraw.Draw(glow).ellipse((760, -140, 1760, 560), fill=ACCENT + (62,))
     img = Image.alpha_composite(img, glow.filter(ImageFilter.GaussianBlur(120)))
 
     dots = Image.new("RGBA", (W, H), (0, 0, 0, 0))
@@ -93,7 +94,7 @@ def banner(lang):
     m = Image.new("L", (138, 138), 0)
     ImageDraw.Draw(m).rounded_rectangle((0, 0, 137, 137), radius=38, fill=255)
     badge.putalpha(m)
-    ImageDraw.Draw(badge).rounded_rectangle((1, 1, 136, 136), radius=37, outline=PEACH + (110,), width=3)
+    ImageDraw.Draw(badge).rounded_rectangle((1, 1, 136, 136), radius=37, outline=ACCENT + (110,), width=3)
     badge.alpha_composite(bolt_layer(104), (17, 17))
     img.alpha_composite(badge, (96, 74))
 
@@ -107,7 +108,7 @@ def banner(lang):
         d.text((96, y), line, font=font("Inter-Regular", 30), fill=MUTED)
         y += 42
     # The pills are drawn on a transparent layer and composited: ImageDraw on an RGBA picture replaces pixels instead of blending, so a
-    # translucent fill drawn straight onto the banner would come out as solid peach under light text.
+    # translucent fill drawn straight onto the banner would come out as solid orange under light text.
     x = 96
     f = font("Inter-Medium", 21)
     layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
@@ -115,14 +116,14 @@ def banner(lang):
     placed = []
     for text in t["pills"]:
         w = int(d.textlength(text, font=f)) + 36
-        ld.rounded_rectangle((x, 500, x + w, 540), radius=20, outline=PEACH + (150,), fill=PEACH + (28,), width=2)
+        ld.rounded_rectangle((x, 500, x + w, 540), radius=20, outline=ACCENT + (150,), fill=ACCENT + (28,), width=2)
         placed.append((x, text))
         x += w + 12
     img = Image.alpha_composite(img, layer)
     d = ImageDraw.Draw(img)
     for px, text in placed:
-        d.text((px + 18, 508), text, font=f, fill=(0xF0, 0xBF, 0xA6))
-    d.text((96, 552), t["note"], font=font("Inter-Regular", 15), fill=(0x74, 0x73, 0x6D))
+        d.text((px + 18, 508), text, font=f, fill=PILL_TEXT)
+    d.text((96, 552), t["note"], font=font("Inter-Regular", 15), fill=NOTE)
     return img.convert("RGB")
 
 

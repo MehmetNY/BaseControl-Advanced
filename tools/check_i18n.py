@@ -23,7 +23,7 @@ TABLE = os.path.join(SRC, "i18n_tr.inc")
 # produce the explanations the UI shows for a disabled or refused setting (capability reasons, failure messages); the UI looks them up
 # with TMsg(), which also matches the ones built with Fmt(N_("... %d ...")).
 BACKEND = [os.path.join(ROOT, "src", "common", f) for f in
-           ("controller.cpp", "ctl_cpu.cpp", "ctl_ec.cpp", "ctl_gpu.cpp", "ctl_misc.cpp", "ctl_storage.cpp")]
+           ("controller.cpp", "ctl_ec.cpp", "ctl_gpu.cpp", "ctl_misc.cpp", "ctl_oem.cpp", "ctl_os.cpp", "ctl_storage.cpp")]
 EXTRA = [os.path.join(ROOT, "src", "common", "keymap.cpp")] + BACKEND
 SKIP = {"i18n.cpp"}   # the implementation itself
 

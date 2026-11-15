@@ -18,15 +18,15 @@ WINE=${WINE-/usr/lib/wine/wine64}
 FONT=${FONT:-Inter}
 export WINEPREFIX=${WINEPREFIX:-$HOME/.wine-cca} WINEDEBUG=-all DISPLAY=${DISPLAY:-:99}
 
-# name:page:size[:extra,extra]   (--drafts gives a page a lived-in state, --advanced opens the Advanced CPU panel)
+# name:page:size[:extra,extra]   (--drafts gives a page a lived-in state: sliders with an unconfirmed draft)
 SHOTS=(
-  "hero-custom:custom:1360x900:--advanced,--drafts"
+  "hero-custom:custom:1360x1100:--drafts"
   "overview:overview:1360x860"
-  "profiles:profiles:1360x860:--drafts"
+  "profiles:profiles:1360x860"
   "fan:fan:1360x900"
   "display:display:1360x860"
   "battery:battery:1360x860"
-  "safety:safety:1360x900"
+  "service:service:1360x900"
   "deviceinfo:deviceinfo:1360x860"
 )
 
@@ -49,12 +49,32 @@ for lang in en tr; do
       echo "FAIL $lang $name"; fail=$((fail + 1))
     fi
   done
-  # Lighting: a script gives the keyboard a colour (the hex field is below the fold of a short window, so it runs tall and is cropped).
+  # Lighting: a script gives every light block its own colour (a rainbow from the left; the page is tall, so it runs tall and is cropped).
   cat > "$tmp/light.txt" <<EOF
 page lighting
-clickid in#light.hex
-type #e2a387
-clickid bt#light.hex
+clickid zn#1
+clickid sw#light.preset#2
+wait 400
+clickid zn#2
+clickid sw#light.preset#3
+wait 400
+clickid zn#3
+clickid sw#light.preset#4
+wait 400
+clickid zn#4
+clickid sw#light.preset#6
+wait 400
+clickid zn#5
+clickid sw#light.preset#8
+wait 400
+clickid zn#6
+clickid sw#light.preset#9
+wait 400
+clickid zn#7
+clickid sw#light.preset#10
+wait 400
+clickid zn#8
+clickid sw#light.preset#11
 wait 800
 shot $tmp/lighting-$lang.png
 EOF

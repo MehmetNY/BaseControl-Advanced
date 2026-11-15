@@ -14,12 +14,13 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "installer")
 FONT_DIRS = ["/usr/share/fonts/opentype/inter", "/usr/share/fonts/truetype/inter", os.path.join(ROOT, "assets")]
 
-BG_TOP = (0x2A, 0x2B, 0x29)
-BG_BOTTOM = (0x14, 0x15, 0x15)
-BOLT_A = (0xF0, 0xBF, 0xA6)
-BOLT_B = (0xD9, 0x8F, 0x70)
-TEXT = (0xF2, 0xEF, 0xEA)
-MUTED = (0x9A, 0x97, 0x92)
+BG_TOP = (0x1F, 0x26, 0x31)
+BG_BOTTOM = (0x0D, 0x10, 0x15)
+BOLT_A = (0xFF, 0xB0, 0x70)
+BOLT_B = (0xFF, 0x6A, 0x1F)
+ACCENT = (0xFF, 0x7A, 0x2F)
+TEXT = (0xF5, 0xF8, 0xFC)
+MUTED = (0xA3, 0xAF, 0xC2)
 BOLT = [(146, 34), (74, 138), (116, 138), (102, 222), (182, 108), (138, 108)]   # the polygon of assets/icon.svg, 256-unit grid
 
 
@@ -44,7 +45,7 @@ def gradient(w, h, top, bottom):
 
 
 def bolt_layer(size):
-    """The lightning bolt of the icon as an RGBA layer with the peach gradient, `size` pixels square."""
+    """The lightning bolt of the icon as an RGBA layer with the orange gradient, `size` pixels square."""
     ss = 4                                           # supersample for smooth edges
     n = size * ss
     mask = Image.new("L", (n, n), 0)
@@ -65,12 +66,12 @@ def welcome():
     w, h = 164, 314
     img = gradient(w, h, BG_TOP, BG_BOTTOM).convert("RGBA")
     glow = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    ImageDraw.Draw(glow).ellipse((-30, 20, w + 30, 190), fill=(0xE2, 0xA3, 0x87, 70))
+    ImageDraw.Draw(glow).ellipse((-30, 20, w + 30, 190), fill=ACCENT + (80,))
     img = Image.alpha_composite(img, glow.filter(ImageFilter.GaussianBlur(34)))
     bolt = bolt_layer(110)
     img.alpha_composite(bolt, ((w - 110) // 2, 52))
     d = ImageDraw.Draw(img)
-    d.rounded_rectangle((18, 196, w - 18, 199), radius=1, fill=(0xE2, 0xA3, 0x87, 150))
+    d.rounded_rectangle((18, 196, w - 18, 199), radius=1, fill=ACCENT + (170,))
     d.text((18, 216), "Control Center", font=font("Inter-SemiBold", 18), fill=TEXT)
     d.text((18, 244), "ADVANCED", font=font("Inter-Medium", 11), fill=BOLT_B)
     d.text((18, 284), "GM5TG7 control centre", font=font("Inter-Regular", 10), fill=MUTED)

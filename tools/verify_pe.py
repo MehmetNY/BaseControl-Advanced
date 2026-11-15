@@ -7,13 +7,15 @@ It cannot run the program (that needs Windows); it checks what the file itself s
 
   * a 64-bit (AMD64) GUI executable, not a DLL
   * hardening flags: ASLR (DYNAMIC_BASE with a relocation table), high-entropy ASLR, DEP (NX_COMPAT)
-  * the embedded manifest asks for "asInvoker" (the window must not need administrator rights; only the service runs as SYSTEM), declares
-    per-monitor DPI awareness and the Windows 10/11 compatibility id
+  * the embedded manifest asks for "requireAdministrator" (the program is one elevated process: it reads the embedded controller through
+    the vendor's driver and can start the vendor's services; it installs nothing of its own), declares per-monitor DPI awareness and the
+    Windows 10/11 compatibility id
   * the version resource matches --version, and the product name/company are the expected ones
   * every imported DLL is a Windows system DLL (no third-party or driver-loader DLL is linked in), and no import is one of a short list of
     things this program must never use (kernel driver loaders, remote-access APIs)
-  * no networking library is imported (Winsock, WinINet, WinHTTP, URLMon): the program has no code path that talks to the internet
-  * no debug directory / no build-machine path in the file, no embedded secrets (private keys, OEM broker credentials)
+  * the only networking library is Winsock, which carries the link to the vendor's service on the same computer; the build contains the
+    guard that refuses every address except the loopback one, and no Internet client library (WinINet, WinHTTP, URLMon, DNS) is imported
+  * no debug directory / no build-machine path in the file, no embedded secrets (private keys, tokens, a broker URL with a password)
   * the program carries no extra payload: no overlay after the last section, and no section that looks packed or encrypted
 """
 import argparse
@@ -35,13 +37,17 @@ SYSTEM_DLLS = {
     "shlwapi.dll", "setupapi.dll", "hid.dll", "wlanapi.dll", "powrprof.dll", "version.dll", "uxtheme.dll", "winmm.dll", "bcrypt.dll",
     "crypt32.dll", "dwmapi.dll", "gdiplus.dll", "msvcrt.dll", "ntdll.dll", "imm32.dll", "winspool.drv", "netapi32.dll",
     "iphlpapi.dll", "psapi.dll", "wtsapi32.dll", "userenv.dll", "secur32.dll", "rpcrt4.dll", "cfgmgr32.dll", "dxgi.dll", "d3d11.dll",
+    "ws2_32.dll",        # the loopback link to the vendor's service (see LOOPBACK_GUARD)
     "api-ms-win-crt-runtime-l1-1-0.dll",
 }
 # Things that must never be linked: loaders of third-party kernel drivers or vulnerable-driver helpers.
 FORBIDDEN_DLLS = {"winring0.dll", "winring0x64.dll", "inpout32.dll", "inpoutx64.dll", "phymem.dll", "pawnio.dll", "libusb-1.0.dll"}
 FORBIDDEN_IMPORTS = {"NtLoadDriver", "ZwLoadDriver", "MmMapIoSpace"}
-# The program never talks to the internet: none of the Windows networking client libraries may be imported.
-NETWORK_DLLS = {"ws2_32.dll", "wsock32.dll", "mswsock.dll", "wininet.dll", "winhttp.dll", "urlmon.dll", "dnsapi.dll"}
+# The program never talks to the internet: no Windows Internet client library may be imported. Winsock (ws2_32.dll) is allowed because the
+# link to the vendor's service is a TCP connection to 127.0.0.1; src/oem/tcp.cpp refuses any other address, and the text it reports when it
+# does is looked for in the file below.
+NETWORK_DLLS = {"wsock32.dll", "mswsock.dll", "wininet.dll", "winhttp.dll", "urlmon.dll", "dnsapi.dll"}
+LOOPBACK_GUARD = b"refusing to connect to a non-loopback address"
 SECRET_PATTERNS = [
     rb"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----",
     rb"mqtts?://[^\s\"']*:[^\s\"'@]*@",          # a broker URL with user:password
@@ -114,8 +120,7 @@ def main():
     check(len(manifests) == 1, "one embedded manifest")
     if manifests:
         m = manifests[0].decode("utf-8", "replace")
-        check('level="asInvoker"' in m, 'manifest asks for asInvoker (the window never needs administrator rights)')
-        check("requireAdministrator" not in m and "highestAvailable" not in m, "manifest does not request elevation")
+        check('level="requireAdministrator"' in m, "manifest asks for requireAdministrator (one elevated process; nothing is installed)")
         check("PerMonitorV2" in m, "manifest declares per-monitor DPI awareness (V2)")
         check("8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a" in m and "1f676c76-80e1-4239-95bb-83d0f6d0da78" in m, "manifest lists Windows 10/11 and 8.1 compatibility")
         check('uiAccess="false"' in m, "manifest: uiAccess=false")
@@ -154,7 +159,9 @@ def main():
     bad = sorted(d for d in dlls if d in FORBIDDEN_DLLS)
     check(not bad, "no driver-loader DLL is linked" + ("" if not bad else " (%s)" % ", ".join(bad)))
     net = sorted(d for d in dlls if d in NETWORK_DLLS)
-    check(not net, "no networking library is imported (Winsock/WinINet/WinHTTP)" + ("" if not net else " (%s)" % ", ".join(net)))
+    check(not net, "no Internet client library is imported (WinINet/WinHTTP/URLMon/DNS)" + ("" if not net else " (%s)" % ", ".join(net)))
+    if "ws2_32.dll" in dlls:
+        check(LOOPBACK_GUARD in raw, "Winsock is only for the loopback link: the guard that refuses other addresses is in the file")
     badf = sorted(f for fs in dlls.values() for f in fs if f in FORBIDDEN_IMPORTS)
     check(not badf, "no kernel-driver import" + ("" if not badf else " (%s)" % ", ".join(badf)))
     check(len(dlls) > 0 and all(len(v) > 0 for v in dlls.values()), "import table is well-formed (%d DLLs)" % len(dlls))
@@ -186,7 +193,7 @@ def main():
         m = re.search(pat, raw)
         if m:
             found.append(pat.decode("latin-1")[:30])
-    check(not found, "no embedded private key, broker credential or token" + ("" if not found else " (%s)" % ", ".join(found)))
+    check(not found, "no embedded private key, token or credentialed broker URL" + ("" if not found else " (%s)" % ", ".join(found)))
 
     if a.json:
         report["problems"] = problems

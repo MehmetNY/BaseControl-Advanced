@@ -13,7 +13,7 @@ body:
     attributes:
       label: Control Center Advanced version
       description: "Device info > About, or run `ControlCenterAdvanced.exe --version`."
-      placeholder: "1.0.0-beta"
+      placeholder: "2.0.0"
     validations:
       required: true
   - type: dropdown
@@ -21,10 +21,21 @@ body:
     attributes:
       label: How are you running it?
       options:
-        - Installed, with the service
-        - Portable executable, with the service
-        - Portable executable, "Run elevated without the service" (local mode)
+        - Installed (Setup.exe)
+        - Portable executable
         - Simulator (--sim)
+    validations:
+      required: true
+  - type: dropdown
+    id: vendor
+    attributes:
+      label: The vendor's Control Center
+      description: "The top bar chip and the Service page say what the link to the vendor's service is doing."
+      options:
+        - Installed, and the Service page says connected
+        - Installed, but the Service page says offline or refused
+        - Not installed
+        - Not applicable (simulator)
     validations:
       required: true
   - type: dropdown
@@ -59,7 +70,7 @@ body:
     attributes:
       label: Steps to reproduce
       placeholder: |
-        1. Performance > Custom profiles
+        1. Performance > Custom mode
         2. Move PL1 to ...
         3. Press Confirm
     validations:
@@ -74,5 +85,5 @@ body:
     id: diagnostics
     attributes:
       label: Diagnostics
-      description: "Safety and service > Diagnostics > Copy diagnostics, then paste it here. It contains no serial numbers and no user name, but please read it and remove anything you would rather not share."
+      description: "Service > Diagnostics > Copy diagnostics, then paste it here. It contains no serial numbers and no user name, but please read it and remove anything you would rather not share."
       render: text

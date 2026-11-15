@@ -1,83 +1,86 @@
 # Architecture
 
-Control Center Advanced is one statically linked Windows executable (`ControlCenterAdvanced.exe`, about 3.7 MB, no runtime to install) that plays several roles depending on how it is started. The window, the SYSTEM service and the simulator run the *same* control logic; only the hardware underneath differs.
+Control Center Advanced is one statically linked Windows executable (`ControlCenterAdvanced.exe`, about 3.6 MB, no runtime to install) and it runs as **one elevated process**. It installs no service, no driver and no helper of its own. The privileged work is done by the vendor's own Control Center, which came with the laptop: the program talks to it the way the vendor's window does.
 
 ```mermaid
 flowchart LR
-  subgraph U["User session"]
-    W["Window / tray<br/>ControlCenterAdvanced.exe"]
-    UC["Session controller<br/>display, touchpad"]
-  end
-  subgraph S["SYSTEM service (ControlCenterAdvanced.exe --service)"]
-    PS["Pipe server<br/>typed requests only"]
-    C["Controller<br/>probe · validate · gate · apply · verify · roll back"]
+  subgraph P["ControlCenterAdvanced.exe - one process, administrator rights"]
+    UI["Window / tray<br/>GDI+ immediate-mode UI"]
+    C["Controller<br/>probe · validate · gate · send · read back"]
+    L["Link<br/>MQTT 3.1.1 client"]
     G["Write guard<br/>allow-list + never-write list"]
-    FW["Fan watchdog"]
+    MGP["GPU power engine<br/>(MONSTER GPU POWER core)"]
   end
-  W -- "named pipe<br/>\\\\.\\pipe\\ControlCenterAdvanced.v1" --> PS --> C
-  W --- UC
-  C --> G --> EC[("Embedded controller<br/>OEM ACPIDriver device")]
-  C --> MSR["CPU registers<br/>PawnIO (optional)"]
-  C --> NV["NVIDIA driver<br/>NVML"]
-  C --> HID["Keyboard light<br/>ITE HID"]
-  C --> OS["Windows power plan,<br/>radios, OEM services"]
-  FW -.-> C
+  subgraph V["The vendor's Control Center (installed with the laptop)"]
+    B["GCUBridge<br/>MQTT broker, 127.0.0.1:13688"]
+    S["GCUService<br/>EC · keyboard light · WMI · NVAPI · JSON profiles"]
+  end
+  UI --> C --> L -- "TCP, loopback only" --> B --> S
+  S --> EC[("Embedded controller")]
+  S --> KB["Keyboard light"]
+  C -- "reads only" --> RD["ACPIDriver<br/>(OEM device)"] --> EC
+  MGP --> G --> RD
+  C --> NV["NVIDIA driver (NVML)"]
+  C --> OS["Windows: display, radios,<br/>power events, Task Scheduler"]
 ```
 
-## Roles of the executable
+## Why it is built this way
 
-| Start | Role |
+The first version (1.0.0-beta) did the privileged work itself: its own SYSTEM service, an optional third-party driver for CPU registers, a direct line to the keyboard controller. On the target laptop the keyboard light then only worked in its leftmost part. The cause was not established, and it does not need to be: the vendor's program already drives that hardware correctly, so a second implementation is the wrong thing to maintain.
+
+Version 2 follows the original instead. The original Control Center is a user interface that sends small JSON messages over a local MQTT connection to a broker (`GCUBridge`) and to the hardware service (`GCUService`), which holds the device profiles and does everything that needs privileges: the embedded controller, the keyboard controller, WMI, the NVIDIA driver. Control Center Advanced is a different interface for the same two services, so every setting that the original has goes through the code path that the vendor wrote and tested for this laptop. The protocol is described in [PROTOCOL](PROTOCOL.md).
+
+## One process, a few ways to start it
+
+| Start | What happens |
 |---|---|
-| `ControlCenterAdvanced.exe` | The window. Talks to the service over a named pipe; needs no administrator rights. The display settings (brightness, refresh rate, colour) and the touchpad switch are handled by a second, small controller inside the window's own session, because they need the user's desktop; the window merges its snapshot with the service's. The same process also owns the keyboard hook (Windows-key lock, Num Lock lock, key remapping), the overlay hotkey and the touchpad corner tap, which only make sense in the signed-in session. |
-| `--tray` | The same window, started hidden in the notification area (this is the command *Start with Windows* writes to the user's Run key). |
-| `--service` | The Windows service: LocalSystem, delayed automatic start, restarted after a crash (after 5, 15 and 60 s). Owns all privileged hardware access, applies the saved settings at start-up and after sleep, runs the lighting effects and the fan watchdog. |
-| `--local` | Window and controller in one process, for use without the service. Needs administrator rights; started without them, the program asks Windows to restart it elevated. |
-| `--sim` | Window on a *simulated* laptop (a small physical model plus an EC memory image). Used by the tests and for the README screenshots; every such screenshot says SIMULATION. |
-| `--service-console`, `--probe`, `--install-service`, `--uninstall-service`, `--start-service`, `--stop-service`, `--restore-oem` | Command-line verbs (see `ControlCenterAdvanced.exe --help`). |
-| `--script <file>` | Scripted UI test on the simulator, offscreen. |
+| `ControlCenterAdvanced.exe` | The window, and the controller inside it. The manifest asks for administrator rights, so Windows shows its prompt once; if it was bypassed the program restarts itself elevated. One window per user session: a second start brings the first one forward. |
+| `--tray` | The same, started hidden in the notification area. *Start with Windows* is a Task Scheduler task (`ControlCenterAdvanced_Autostart`) that runs this with the highest rights of your account, because Windows does not start elevated programs from the Run key. No prompt appears at sign-in. |
+| `--sim` | The window on a *simulated* laptop: a small physical model, an EC memory image and a fake vendor service. The tests and the README pictures use it; every such picture says SIMULATION. |
+| `--probe` | Prints what this machine reports (hardware, link, capabilities) and exits. |
+| `--shot <page> <png>`, `--script <file>` | Offscreen rendering and scripted UI tests on the simulator. |
+
+## What talks to what
+
+| Direction | What | How |
+|---|---|---|
+| Out | Power limits and GPU clock offsets of the **Custom** mode, the performance mode, the Turbo Fan, the fan curves and mode, the keyboard light, the charge profile, the Fn lock / AC-boot / USB-power switches | Typed JSON messages to the vendor's service over `127.0.0.1:13688` (topics `Fan/Control`, `Keyboard/Ctrl`, `Setting/Control`, `BatteryProtection/Control`, `Customize/Control`). |
+| In | The service's status messages (`Fan/Status`, `Fan/Table`, `Keyboard/Status`, `Setting/Status`, `System/BatteryProtection`) | Same connection. The service also broadcasts changes made by other windows, so the screen follows them. |
+| In | **Live values**: PL1/PL2/PL4, TCC offset, fan speeds and temperatures, the charge profile, the switches | Read-only access to the embedded controller through the OEM's `ACPIDriver` device. |
+| In | Everything else: GPU readings, display, storage, components | NVML, Windows APIs, SMBIOS. |
+| Out | The extended GPU power (cTGP), the only thing written to the embedded controller directly | The vendored [MONSTER GPU POWER](https://github.com/MehmetNY/Monster-XMG-Gpu-Power-Control) engine, through the [write guard](REGISTERS.md#the-write-guard). |
+| Out | Display brightness, refresh rate and colour, the touchpad switch, radios, the Task Scheduler entry | Windows APIs, in the same process. |
+
+The program never opens a socket to anything but the loopback address: the transport refuses every other host, and `tools/verify_pe.py` checks that the release binary contains that guard and imports no Internet client library.
 
 ## Source layout
 
 | Folder | What lives there |
 |---|---|
-| `src/common/` | The controller and everything that has no `<windows.h>` in it: the settings registry, the EC register map and write guard, fan curves, RAPL encoding, lighting effects, profiles, key map, overlay settings. It only talks to the interfaces in `hw_iface.h`, so it runs unchanged on the simulator and in the unit tests on Linux. |
-| `src/hw/` | The Windows implementations of those interfaces: the EC (`ACPIDriver` IOCTLs), PawnIO MSR access, NVML, ITE HID lighting, display, power plan, radios, SMBIOS and storage reports, the OEM service control. |
-| `src/mgp/` | The vendored core of [MONSTER GPU POWER](https://github.com/MehmetNY/Monster-XMG-Gpu-Power-Control) (the author's own GPL-3.0 project): the GPU power engine, the OEM profile file transaction, hardware identity guard. |
-| `src/svc/` | The service, the pipe server/client, the wire protocol and the three backends the window can talk to (local, pipe, composite). |
-| `src/sim/` | The simulated machine. |
+| `src/common/` | The controller and everything that has no `<windows.h>` in it: the settings registry, the EC register map and write guard, fan curves, key map, overlay settings, the message texts. It only talks to the interfaces in `hw_iface.h`, so it runs unchanged on the simulator and in the unit tests on Linux. `ctl_oem.cpp` is the part that speaks to the vendor's service. |
+| `src/oem/` | The link: a small JSON reader/writer, an MQTT 3.1.1 client (packets, session, keep-alive, reconnect), the message builders and the allow-lists (`proto.cpp`), a loopback-only TCP transport. |
+| `src/hw/` | The Windows implementations of the interfaces: the EC (`ACPIDriver` IOCTLs, reads), NVML, display, power plan, radios, SMBIOS and storage reports, Task Scheduler, detection and start of the vendor's services. |
+| `src/mgp/` | The vendored core of MONSTER GPU POWER (the author's own GPL-3.0 project): the GPU power engine, the OEM profile file transaction, the hardware identity guard. |
+| `src/sim/` | The simulated machine, including a fake vendor service and broker (`fake_oem.*`) that speaks the same protocol over an in-memory pipe. |
 | `src/ui/` | The window: a small immediate-mode toolkit on GDI+ (no web view, no .NET, no UI framework), the pages, the translations. |
 | `tests/` | Host unit tests (`make test`) and the scripted UI flows (`tests/ui`, run under Wine or on Windows by `tools/run_ui_flows.sh`). |
 
 ## What happens when you press *Confirm*
 
-1. The slider only changes a **draft** in the window. Nothing is sent while you move it.
-2. *Confirm* sends one typed request, `set <key> <value>`. The wire protocol has no way to name an address: the key must exist in the [settings registry](SETTINGS.md).
-3. The controller checks, in order: the read-only switch, the evidence gate (experimental settings are refused until you allow them), the model gate (an unrecognised laptop gets no hardware writes), the value against its range and step, the capability probe, and, where it applies, an explicit confirmation for values above the OEM's own maximum.
-4. The handler writes through the **write guard**, reads the value back and compares. If the value did not stick (the firmware sometimes rewrites it) the previous value is restored and the result says so.
+1. The slider only changes a **draft** in the window. Nothing is sent while you move it; the thin marker on the track is the value that is live right now and keeps following changes made by other programs.
+2. *Confirm* sends one typed request, `set <key> <value>`. The key must exist in the [settings registry](SETTINGS.md); the request cannot name an address.
+3. The controller checks, in order: the read-only switch, the active mode (the values of the vendor's ready-made modes are never edited - see [SAFETY](SAFETY.md)), the value against the range and step and against the range the service reports, the relations between values (PL1 ≤ PL2 ≤ PL4), and, where it applies, an explicit confirmation.
+4. It builds the message the vendor's window would send and publishes it. The service changes its profile and answers with its status; the controller waits for that echo, then reads the embedded controller to see that the value really arrived. If either does not match, the result says *failed* and why - the program never claims a change it could not see.
 5. The window shows the live value from the next snapshot, not the value you asked for, so a slider always shows what the hardware reports.
-6. Settings you confirmed are remembered and applied again after sleep, a charger change or a display wake, because firmware likes to put its own values back.
-
-## Safety layers
-
-- **Typed settings only.** No raw register access from the UI, the pipe or a profile.
-- **Write guard.** Allow-list with bit masks and value rules for every EC write, a never-write list that wins over it, a read-only kill switch. It also wraps the GPU engine's writes. See [REGISTERS](REGISTERS.md).
-- **Evidence tiers.** Every setting is *Verified*, *Family*, *Experimental* or *Os*; the window shows the tier and gates the risky ones. See [SETTINGS](SETTINGS.md).
-- **Probes.** Mappings documented only for the chassis family are plausibility-checked at start-up and the feature is disabled when the probe fails.
-- **Read-back and rollback** on every write.
-- **Fan watchdog.** While a custom or fixed fan setting is active, the fixed duty is released and fan boost is switched on when the CPU is at 97 °C or more, or the GPU at 92 °C or more, in two consecutive one-second checks. The two temperatures are read every second even while the window is hidden (a unit test covers the reaction time with the window shown and hidden).
-- **Thermal gate.** Power limits are not raised while the CPU is at 92 °C or hotter.
-- **Pipe hardening.** The first pipe instance is created with the first-instance flag (a process that grabbed the name earlier is detected), remote clients are rejected by the pipe itself, the access list gives SYSTEM and administrators full control and signed-in users read/write, the decoder is strict, requests are limited to 16 KB, there are at most 8 clients, and each connection has a token bucket (20 requests per second, burst 40, a change costs four). An *administrators only* option makes the service refuse change requests from non-administrators.
-- **Service binary location.** The service only ever runs a binary from a protected folder; installing from a portable copy first copies it below Program Files.
-- **No driver is shipped.** The EC is reached through the OEM's own `ACPIDriver` device; CPU registers go through PawnIO if *you* install it ([SETUP](SETUP.md)).
 
 ## Polling and resource use
 
-- The window repaints only when something changed (plus short animations); its timer slows from 100 ms to 1 s while it is hidden in the tray.
-- The controller reads the EC and GPU every second while the window is visible and every five seconds while it is not; the one exception is a custom or fixed fan setting, where the two temperatures the fan watchdog judges are read every second regardless (two register reads, not the whole table). Drive health is read only while the window is open, so a sleeping drive is never woken for nobody.
-- There is no updater and no telemetry. The executable imports no networking library (no Winsock, WinINet or WinHTTP; `tools/verify_pe.py` fails the release build if one ever appears), so the only thing that can leave your machine is a link you click on the About page, which Windows opens in your own browser.
+- The window repaints only when something changed (plus short animations); its timer slows down while it is hidden in the tray.
+- The controller reads the embedded controller and the GPU every second while the window is visible and every five seconds while it is not. The link to the vendor's service is event-driven: the service pushes its status, and the program asks for a full refresh once a minute and on demand. Drive health is read only while the window is open, so a sleeping drive is never woken for nobody.
+- There is no updater and no telemetry. The only thing that can leave your machine is a link you click on the *About* page, which Windows opens in your own browser.
 
 These are design choices, not measurements. Nobody has profiled the release build on real hardware yet; if you do, please share the numbers in an issue.
 
 ## The simulator
 
-`--sim` (and the unit tests) run the real controller against `src/sim/`: a small physical model of power, temperature, fans and battery with an EC memory image and an MSR file. It exercises the logic - activation delays, firmware resets, locked registers, verify and rollback paths - and it is **not evidence about real hardware**: every behaviour in it is an assumption that is written down so it can be questioned. See [CAPABILITIES](CAPABILITIES.md) for what has and has not been verified on a real laptop.
+`--sim` (and the unit tests) run the real controller and the real link against `src/sim/`: a small physical model of power, temperature, fans and battery with an EC memory image, plus a fake broker and service that implement the messages listed in [PROTOCOL](PROTOCOL.md). It exercises the logic - echoes, refusals, a service that goes away and comes back, another program changing a value, a service that accepts a value and does not apply it - and it is **not evidence about real hardware**: every behaviour in it is an assumption that is written down so it can be questioned. See [CAPABILITIES](CAPABILITIES.md) for what has and has not been verified on a real laptop.

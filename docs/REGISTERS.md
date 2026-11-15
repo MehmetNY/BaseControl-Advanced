@@ -4,7 +4,7 @@
 
 The laptop's embedded controller (EC) is reached through the `ACPIDriver` device (`\\.\ACPIDriver`) that the OEM's Control Center package installs; Control Center Advanced neither ships nor modifies that driver, so the EC features need it to be present (the Overview page shows whether the controller is reachable). Every address the program uses lives in `src/common/registers.h`; this page is generated from it. Names are the program's own and the notes say what is known about each register. **Nothing here is a vendor document**: the mappings come from the owner's measurements, the OEM Control Center's behaviour and independent open-source work on the same EC family (see [NOTICE](../NOTICE.txt)); the table does not say which source each single entry comes from.
 
-Writes never go straight to the EC: they pass the **write guard** (below), which refuses anything that is not on its allow-list.
+Almost everything below is only **read**: the live values on every page, and the check that a change made through the vendor's service really arrived. The one thing this program writes to the EC itself is the GPU power target (cTGP, `0x0743` and `0x0744`), and only through the write guard (below).
 
 ## Identity / status
 
@@ -12,7 +12,6 @@ Writes never go straight to the EC: they pass the **write guard** (below), which
 |---|---|---|
 | `0x0740` | `kProjectId` | raw>>1 = project id (IDY family) |
 | `0x0741` | `kEcActive` | EC "service active" byte (bit0 set = EC processes PL/fan/GPU writes) |
-| `0x0454` | `kEcVersion` | EC firmware version (single byte) |
 
 ## Sensors (read only)
 
@@ -30,7 +29,7 @@ Writes never go straight to the EC: they pass the **write guard** (below), which
 | `0x075B` | `kCpuFanDuty` | raw/2 = percent |
 | `0x075C` | `kGpuFanDuty` |  |
 
-## CPU power (EC path; same registers the OEM Control Center writes)
+## CPU power (read only)
 
 | Address | Name | Note |
 |---|---|---|
@@ -39,9 +38,6 @@ Writes never go straight to the EC: they pass the **write guard** (below), which
 | `0x0785` | `kPl4` | observed raw 200 while the OEM UI showed 200 W -> raw == watts on this device |
 | `0x0786` | `kTccWrite` | 0x80 \| offset (bit7 = commit) |
 | `0x0788` | `kCtwa` | mirrors cTGP increment (observed 15) - meaning not established |
-| `0x0730` | `kPlDefaultsGaming` | 0x730..0x733 PL1/PL2/PL4/D (read only reference) |
-| `0x0734` | `kPlDefaultsOffice` | 0x734..0x737 |
-| `0x0738` | `kCpuTau` |  |
 
 ## GPU power
 
@@ -49,33 +45,30 @@ Writes never go straight to the EC: they pass the **write guard** (below), which
 |---|---|---|
 | `0x0743` | `kGpuCtrl` | bit0 general, bit1 Dynamic Boost, bit2 cTGP (0x05 = cTGP on) |
 | `0x0744` | `kGpuCtgpOffset` | cTGP increment over 125 W (0..25, step 5) |
-| `0x0745` | `kGpuTpp` | DB total processing power target (observed 0) |
-| `0x0746` | `kGpuDbMax` | DB max (observed 0) |
 
 ## Fans
 
 | Address | Name | Note |
 |---|---|---|
-| `0x0751` | `kFanMode` | bit6 = fan boost (read-modify-write; bits 4/7 are EC mode bits) |
-| `0x0759` | `kFanFixedCpu` | bit7 on + percent (EXPERIMENTAL) |
+| `0x0751` | `kFanMode` | bit6 = fan boost (read only here; bits 4/7 are EC mode bits) |
+| `0x0759` | `kFanFixedCpu` | bit7 on + percent: set when another program holds the fan at a fixed speed |
 | `0x075A` | `kFanFixedGpu` |  |
 | `0x0787` | `kFanSwitchSpeed` | bit7 enable, bits0..6 x100 ms |
 | `0x07C5` | `kFanCurveEnable` | bit7 curve enable |
-| `0x07C6` | `kFanCurveLatch` | bit2 = custom-table mode flag (never touch bit6!) |
+| `0x07C6` | `kFanCurveLatch` | bit2 = custom-table mode flag (bit6 must never be touched by anything) |
 | `0x0F00` | `kFanTableCpuUp` | 16 entries each: up / down / duty |
 | `0x0F10` | `kFanTableCpuDown` |  |
 | `0x0F20` | `kFanTableCpuDuty` |  |
 | `0x0F30` | `kFanTableGpuUp` |  |
 | `0x0F40` | `kFanTableGpuDown` |  |
 | `0x0F50` | `kFanTableGpuDuty` |  |
-| `0x0F5F` | `kFanTableEnd` |  |
 
 ## EC feature bits (Uniwill driver definitions)
 
 | Address | Name | Note |
 |---|---|---|
 | `0x074E` | `kFnLock` | bit4 |
-| `0x0726` | `kAcAutoBoot` | bit3 = power on when AC is plugged; bit7 = EC power-management (PECI) loop on. Bits 0..2 are battery age-derating commands: NEVER touched (masked RMW only). |
+| `0x0726` | `kAcAutoBoot` | bit3 = power on when AC is plugged; bit7 = EC power-management (PECI) loop on. Bits 0..2 are battery age-derating commands: nothing here ever touches them. |
 | `0x0727` | `kCustomProfile` | bit6 = CUME (CPU management enable); bit7 = PL4D, PL4 raw is doubled (read only) |
 | `0x0767` | `kUsbPowerShare` | bit4 (this byte is shared with RGB mode bits 5/7!) |
 | `0x07A6` | `kBatteryMode` | mask 0x38: 0x08 high capacity, 0x18 balanced, 0x28 eco |
@@ -87,26 +80,6 @@ Writes never go straight to the EC: they pass the **write guard** (below), which
 | `0x0436` | `kBatRemainLo` | LE16 mAh |
 | `0x0438` | `kBatVoltageLo` | LE16 mV |
 | `0x04A2` | `kBatTempLo` | LE16, 0.1 K |
-
-## Lighting (EC driven part)
-
-| Address | Name | Note |
-|---|---|---|
-| `0x0749` | `kLightbarR` | 0..0x24 |
-| `0x074A` | `kLightbarG` |  |
-| `0x074B` | `kLightbarB` |  |
-| `0x078C` | `kKbdStatus` |  |
-
-## Bring-up registers
-
-| Address | Name | Note |
-|---|---|---|
-| `0x0706` | `kBiosCtrl` | 0x41 = BIOS control init complete |
-| `0x0708` | `kEcHandshake2` | 0x01 |
-| `0x0709` | `kEcHandshake1` | 0x05 (written before 0x0708) |
-| `0x0748` | `kFeatureEnable` | 0x81 |
-| `0x07C7` | `kOcpl` | 0x0C |
-| `0x0727` | `kPl4Double` | bit7 (read) |
 
 ## Never written
 
@@ -120,9 +93,8 @@ The source marks `0x0780` as the EC power-limit bypass ("dangerous"). It does no
 
 `GuardedEc` (src/common/writeguard.cpp) decorates the EC driver. It also wraps the writes of the vendored MONSTER GPU POWER engine, so there is one gate for everything.
 
-- **Allow-list with bit masks.** A register is writable only if it is on the list. A *masked* register (for example the Fn-lock byte, where only bit 4 may change) is written by read-modify-write, and the write is refused when any bit outside the mask would change.
-- **Value rules.** Out-of-range values are refused, never clamped: PL1/PL2 10–210 W, PL4 raw 5–250, TCC `0x80 | 0..35`, GPU control only `0x01/0x05/0x07`, cTGP increment 0–25 W in 5 W steps, fixed fan duty `0` or `0x80 | 1..100`, battery mode `0x08/0x18/0x28`, fan-table temperatures 0–105 (or `0xFF` padding) and duties 0–200.
-- **Bring-up registers** (`0x0706`, `0x0708`, `0x0709`, `0x0748`, `0x07C7`, and `0x0741 = 0x05`) are writable only inside an EC bring-up and only with their documented value. A bring-up runs only while the OEM service is stopped: automatically before a power-limit write when the EC's power-management loop is not active and you have taken over from the OEM service, or through the explicit bring-up command, which also needs *Allow experimental writes*.
-- **Kill switch.** *Read-only mode* refuses every EC write.
-- **Rollback.** A write that did not stick is undone; the rollback is itself checked against the register's mask.
-- **Fan watchdog.** While a custom or fixed fan setting is active, the fixed duty is released and fan boost is switched on when the CPU is at 97 °C or more, or the GPU at 92 °C or more, in two consecutive one-second checks, whatever the setting says. The two temperatures are read every second even when the window is hidden.
+- **A two-entry allow-list.** Only `0x0743` (and only its low three bits) and `0x0744` can be written; every other address, including everything the vendor's service changes, is refused before it reaches the hardware.
+- **Value rules.** Out-of-range values are refused, never clamped: `0x0743` may only become `0x01` or `0x05`, and the cTGP increment in `0x0744` is 0-25 W in 5 W steps. A masked register is written by read-modify-write, and the write is refused when any bit outside the mask would change.
+- **Kill switch.** *Read-only mode* (Service page) refuses every EC write, and it also stops everything that would be sent to the vendor's service.
+- **Rollback.** A cTGP change that did not stick is undone; the rollback is itself checked by the guard.
+- **Counters.** The Service page shows how many writes were made and how many were refused, so a refused write is never silent.

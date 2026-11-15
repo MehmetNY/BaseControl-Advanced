@@ -1,93 +1,80 @@
 # Safety
 
-Control Center Advanced can change things your laptop's firmware normally keeps to itself: CPU and GPU power limits, fan behaviour, charging profile. A wrong value can make the machine unstable, hot, or - in the worst case - damage it. This page says what the program does to keep that unlikely, what it does *not* protect you from, and how to get back to a clean state.
+Control Center Advanced can change things your laptop's firmware normally keeps to itself: the CPU power limits of the Custom mode, GPU clock offsets, the extended GPU power (cTGP), fan tables, the charge profile. A wrong value can make the machine unstable, hot, or - in the worst case - damage it. This page says what the program does to keep that unlikely, what it does *not* protect you from, and how to get back to a clean state.
 
-> **Read this first.** The program is licensed GPL-3.0 *without any warranty*. Everything in it was verified with a cross-compiler, the Wine compatibility layer, a simulator and unit tests. **No release has been tested on real hardware by anyone but the owner's own measurements that the register map is built on** (see [CAPABILITIES](CAPABILITIES.md)). Treat the first run like the first run of any overclocking tool: start with the defaults, change one thing at a time, watch the temperatures.
+> **Read this first.** The program is licensed GPL-3.0 *without any warranty*. It was verified with a cross-compiler, the Wine compatibility layer, a simulator that stands in for the laptop and for the vendor's service, and unit tests. **This version has not been run on a real laptop**; the one hardware path that has been (the GPU power engine, see [CAPABILITIES](CAPABILITIES.md)) was tested by the owner. Treat the first run like the first run of any tuning tool: start with the defaults, change one thing at a time, watch the temperatures, and keep the vendor's own Control Center installed so you can undo anything there.
 
 ## What it will never do
 
-- It never flashes or edits the BIOS, the embedded controller's firmware or any NVRAM variable.
-- It never writes the registers on the *never-written* list ([REGISTERS](REGISTERS.md#never-written)), among them the EC power-limit bypass `0x0780`. The list wins over the allow-list, so even a future bug in an allow-list entry cannot reach them.
-- It never picks a charger rating for you and never claims that the CPU and GPU share one power budget that it has "unlocked".
-- It does not ship, install or modify a kernel driver. The EC is reached through the OEM Control Center's own `ACPIDriver` device; CPU registers go through [PawnIO](https://pawnio.eu) *if you install it yourself* ([SETUP](SETUP.md)).
-- It does not connect to the internet (the executable imports no networking library, and the release check fails if one appears). The only web links are buttons on the *About* page and the setup hint of the advanced CPU panel: they hand an `https://` address (this repository, its issue form, the projects it credits) to your default browser when you click, and the program itself makes no request.
+- It never flashes or edits the BIOS, the embedded controller's firmware, the flash chip or any UEFI/NVRAM variable.
+- It never writes the registers on the *never-written* list ([REGISTERS](REGISTERS.md#never-written)), among them the EC power-limit bypass `0x0780`. The list wins over the allow-list, so even a future mistake in the allow-list cannot reach them.
+- It never selects a charger rating for you and never claims that the CPU and GPU share one power budget that it has "unlocked". It does not touch the registers that identify the charger.
+- It does not install, ship or modify a driver or a service of its own. There is no kernel component, no PawnIO, no access to the processor's model-specific registers and no access to the keyboard controller. The privileged work is done by the vendor's own service and driver, which are already on a laptop that runs the vendor's Control Center ([ARCHITECTURE](ARCHITECTURE.md)).
+- It never connects to another computer. Its only network connection is the loopback connection to the vendor's service on this computer (`127.0.0.1`, port 13688); the code refuses any other address, and the release check fails if that guard is missing. The links on the *About* page hand an `https://` address to your default browser when you click; the program itself makes no request.
+- It never edits the vendor's ready-made modes (Office, Gaming, Turbo; see step 5 below), and several keys of the vendor's protocol are deliberately not on the message allow-list at all ([PROTOCOL](PROTOCOL.md)).
 
-## The layers
+## How a change travels
 
-Every change you make passes all of these, in this order. The first one that says no ends the request, and the window shows *why* in plain words.
+Every change you make passes these steps in this order. The first one that says no ends the request, and the window says *why* in plain words.
 
-| # | Layer | What it does |
+| # | Step | What it does |
 |---|---|---|
-| 1 | **Typed settings only** | A request names a setting from the [table](SETTINGS.md), never an address. The wire protocol has no field for one. |
-| 2 | **Range check** | The value must be inside the setting's range and step. Out-of-range values are refused, not clamped. |
-| 3 | **Read-only switch** | *Safety and service → Read-only mode* blocks every hardware write (Windows-only settings such as display brightness are not hardware writes). |
-| 4 | **Evidence gate** | Each setting is *Verified*, *Family*, *Experimental* or *Os*. Experimental ones are locked until you turn on *Allow experimental writes*; *Family* ones are open only on the exactly identified Tulpar T5 GM5TG7Y and locked on any other model. |
-| 5 | **Model gate** | On a laptop the program does not recognise (neither the exact SMBIOS match nor the same EC project id), every hardware write is refused until you turn on *Allow writes on an unrecognised model*. |
-| 6 | **Capability probe** | Mappings that are only documented for the chassis family are checked at start-up (does the register answer, is the value plausible). When a probe fails the control stays disabled and says what failed. |
-| 7 | **Consent** | The risky steps ask once; see the table below. |
-| 8 | **Thermal gate** | Raising a CPU power limit is refused while the CPU is at 92 °C or hotter (both the EC path and the direct-register path). Lowering is always allowed. |
-| 9 | **Write guard** | Every EC write - the program's own and the vendored GPU engine's - goes through an allow-list with bit masks and value rules. Details in [REGISTERS](REGISTERS.md#the-write-guard). |
-| 10 | **Read-back and rollback** | After a write the value is read back. If the firmware did not keep it, the previous value is restored and the result says *reverted*. Groups (PL1/PL2/PL4) are written together, verified together and undone together. |
+| 1 | **Draft, then Confirm** | A slider or drop-down that changes the laptop edits a *draft*; nothing is sent until you press its own *Confirm* button. Values that are only program preferences (overlay position, theme) apply at once because they do not touch the laptop. |
+| 2 | **Typed setting** | A request names a setting from the [table](SETTINGS.md), never an address, a topic or a raw message. |
+| 3 | **Range check** | The value must be inside the setting's range and step. For the power limits and clock offsets the range is the **minimum and maximum the vendor's service reports** for the active profile; PL1 ≤ PL2 ≤ PL4 is enforced. Out-of-range values are refused, not clamped. |
+| 4 | **Read-only switch** | *Service → Write protection → Read-only* refuses every EC write and every message to the vendor's service (Windows-only settings such as display brightness are not hardware writes). |
+| 5 | **Ready-made modes are never edited** | The profile values (PL1, PL2, PL4, CPU temperature offset, GPU clock offsets, GPU temperature target) are sent **only while the Custom mode is active**. While Office, Gaming or Turbo is active, or while the service has not said which mode is active, the sliders show the live values, stay locked, and nothing is sent. The page offers *Switch to Custom mode*. |
+| 6 | **Message allow-list** | Only the keys on the allow-list in `src/oem/proto.cpp` can become a message. Several keys of the vendor's protocol are deliberately absent ([PROTOCOL](PROTOCOL.md)). |
+| 7 | **The vendor's service applies it** | The message goes to the service as the vendor's own window would send it. |
+| 8 | **Echo and read-back** | The program waits for the service to report the new value and then reads the embedded controller. A service that says "done" while the EC did not change is reported as **failed**, with the difference, not as success. |
 
-## What asks for your confirmation
+The GPU power (cTGP) is the one setting that does not go through the vendor's service. It uses the verified engine that was built for this laptop first ([MONSTER GPU POWER](https://github.com/MehmetNY/Monster-XMG-Gpu-Power-Control)), with its own gates:
 
-When you confirm one of these once, the program remembers it so it does not ask again for the same kind of change. *Safety and service → Confirmations* shows what is allowed and has a *Reset confirmations* button.
-
-Every confirmation dialog is answered by **clicking** its named button (*I understand, apply*, *Delete*, ...). Esc cancels; **Enter does nothing**, so a stray key press can never be the "yes". Likewise every slider that changes a hardware or Windows setting, and the drop-downs for refresh rate, cooling mode and boost mode, edit a *draft* that only their own *Confirm* button applies. (The position, margins and opacity of the in-game overlay are program preferences with no effect on the laptop; they apply at once so that you can see them.)
-
-| Confirmation | Asked when |
+| Gate | Meaning |
 |---|---|
-| CPU power above the OEM maximum | PL1 or PL2 above 120 W, or PL4 above 200 W, and the new value is higher than what is set now (keeping or lowering an already-high value asks nothing). |
-| Direct CPU register writes | The first time you write a power limit, time window, current limit, undervolt, prefetcher or similar value straight to the processor (the *Advanced CPU* panel of *Custom profiles*). |
-| Fixed fan speed | Switching to a fixed fan duty. It also needs *Allow experimental writes*. |
-| GPU power above the OEM maximum | A GPU power target above the OEM's 140 W maximum (145 W, 150 W). |
-| Unverified GPU power steps | The 130 W and 135 W steps, which follow from the register layout but have not been observed on the live unit. |
-| GPU power on an unlisted model | The SMBIOS board tag of the exact model is missing and you tell the program the laptop really is the supported one. |
+| **Identity** | The exact model must be recognised (SMBIOS and EC project id). On anything else the control stays off and says why. |
+| **Read before write** | The registers are read first; a value that is already set is reported as *already active* and not written. |
+| **Allow-list** | Only `0x0743` (its low three bits, `0x01` or `0x05`) and `0x0744` (0 to 25 W in 5 W steps) can be written; everything else is refused by the write guard ([REGISTERS](REGISTERS.md#the-write-guard)). |
+| **Consent** | Asked once, and remembered until you press *Reset confirmations*: more than the vendor's 140 W maximum (145 W, 150 W); the 130 W and 135 W steps, which follow from the register layout but were not observed on the live unit; an unlisted model. |
+| **Thermal gate** | Raising above 140 W is refused while the GPU is at 80 °C or hotter, **or while its temperature cannot be read**. Lowering is always allowed. |
+| **Confirmation by the driver** | After the write the graphics driver's power limit is read; a change that was not kept is undone, and the undo is itself checked. |
+| **Cross-process lock** | When the standalone MONSTER GPU POWER program or its start-up task is applying a value at the same moment, this program waits for it (5 s) instead of writing at the same time. |
+
+Every confirmation dialog is answered by **clicking** its named button. Esc cancels; **Enter does nothing**, so a stray key press can never be the "yes".
 
 ## Hard limits
 
-These are enforced in the controller *and* again in the write guard:
+- Power limits and clock offsets: the vendor service's own range for the profile, nothing wider.
+- GPU power target: 125 to 150 W in 5 W steps; 330 W is never selected, whatever the charger label says.
+- Fan tables: 16 points, the duty values and temperatures must rise and the table is checked before it is sent; the service must have said which table is active first.
+- Keyboard colours must be `#rrggbb`; every light block is always sent, so one block never changes another.
+- Only the addresses of the two cTGP registers can be written to the EC at all.
 
-- CPU power through the EC: PL1 and PL2 from 10 to 200 W, PL4 from 20 to 250 W (the guard allows PL1/PL2 up to 210 W as a last line of defence), PL2 not below PL1, PL4 not below PL2. A PL4 value must be a multiple of 2 W when the firmware stores it doubled.
-- CPU temperature limit: 70 to 100 °C.
-- GPU power target: 125 to 150 W in 5 W steps.
-- Fixed fan speed: 20 to 100 %.
-- A processor register that the firmware has locked (`MSR 0x610` lock bit) is not written.
+## The vendor's service and this program
 
-## The fan watchdog
-
-A fixed fan duty switches off the EC's own thermal fan control, and a custom curve is only as good as the points you chose. While one of them is active, the service checks the temperatures every second - **also while the window is hidden in the tray** - and when the CPU is at 97 °C or more, or the GPU at 92 °C or more, in two consecutive checks, it releases the fixed duty and turns on fan boost. The *Fan watchdog* line on the Safety page shows when it has acted and why. Its reaction time is covered by a unit test for both a shown and a hidden window.
-
-When the service is stopped on purpose (*Stop the service*, uninstalling, shutting Windows down) a fixed fan duty is handed back to the firmware on the way out. If the service is killed abruptly, the duty stays until the service manager restarts it a few seconds later (5, 15, then 60 s), which is why the restart policy is set; while no service is running, **nothing watches the temperatures**.
-
-## The OEM service
-
-The OEM Control Center's background service (GCUBridge) can write to the same registers and undo your changes. The Safety page shows whether it is installed and running, and offers *Take over from the OEM service*: it stops the service and sets it to Disabled so it cannot start again with Windows. This is reversible from the same page (*Give the OEM service back*), *Remove the service* does it automatically, and `ControlCenterAdvanced.exe --restore-oem` does it from a command prompt. While the OEM service is running, the program refuses to bring the EC's power-management loop up itself.
-
-## The service and the window
-
-- The window needs no administrator rights. The service (LocalSystem) does the privileged work.
-- The service only ever runs a binary from a protected folder: installing from a portable copy first copies the program below `Program Files\Control Center Advanced`, so a normal user cannot swap the file the service runs.
-- The pipe between them accepts local clients only, is protected against squatting and rate-limited, and has an *Only administrators can change settings* option for shared computers (to turn that off again you have to start Control Center Advanced as administrator).
-- Everything that crosses the pipe is a typed request; a malformed or oversized one is dropped.
+- The vendor's service (`GCUService`) stays the owner of the stored profile values. This program asks it, as its own window does, and checks the result; it does not keep a copy that it would apply later (except the one setting *Keep my settings applied*, below).
+- The vendor's service can change a value again later (after a display wake, a charger change, a profile switch). *Keep my settings applied* re-applies only the GPU power that you set; the other values are whatever the service holds. The page shows live values, so a change made by another program (the vendor's window, a script) appears at once.
+- The program never writes the vendor's profile file unless you switch on *Also write the OEM profile file* (Custom mode, off by default). A backup of the original is made first, you are asked when the file holds a value this program did not write, and a write that fails is undone.
+- If the vendor's service is not running, the pages that depend on it say so and are locked; *Service → Start the vendor's services* starts it when it is installed but stopped.
 
 ## What the program cannot protect you from
 
-- **A bad value that every layer accepts.** The limits above are generous on purpose. 200 W for the CPU is inside them and your cooling may not handle it. The thermal gate and the watchdog react to temperature, not to the capacity of your VRM, battery or charger.
-- **The firmware changing its mind.** Some values are reset by the firmware after sleep, a charger change or a display wake. *Keep my settings applied* puts back what you set, but there is a delay and the program cannot see everything the firmware does.
-- **Another program writing to the same hardware.** The OEM Control Center and tools like ThrottleStop can overwrite values or fight with the program.
-- **Wrong assumptions in the register map.** The map was assembled from the owner's measurements, the OEM program's behaviour and independent open-source work on the same EC family. On a different model it can be wrong. This is why unrecognised models are locked by default.
-- **Bugs that no test has met.** There are 144 unit tests and a scripted run through every page; none of them is evidence about a real laptop.
+- **A value that every step accepts.** The ranges are the service's own. A power limit inside them can still be more than your cooling, your battery or your charger can sustain. The thermal gate of the GPU power reacts to temperature, not to the capacity of your charger.
+- **The service changing its mind.** Some values are reset by the firmware or the service after sleep, a charger change or a display wake (see above).
+- **Another program writing to the same hardware.** The vendor's Control Center, other tuning tools or scripts can overwrite values or fight with this program.
+- **Wrong assumptions about the vendor's protocol.** The message layout was read from the vendor's files without running them; several details were not observed on a real laptop ([PROTOCOL → open points](PROTOCOL.md#open-points)). The echo and EC read-back checks exist to expose a wrong guess as a *failed* change, not as a wrong value on the hardware.
+- **Bugs that no test has met.** There are 154 unit tests and a scripted run through every page against a simulated laptop and a simulated service; none of them is evidence about a real one.
 - **Hardware failure.** Running hardware beyond the manufacturer's specification can shorten its life. That is your decision.
 
 ## Getting back to a clean state
 
-1. *Safety and service → Read-only mode* stops all hardware writes immediately.
-2. On the *Fan* page, *Auto* hands the fans back to the firmware. Applying a built-in profile on *Performance profiles* replaces the values you set by hand with the profile's.
-3. *Remove the service* (or `ControlCenterAdvanced.exe --uninstall-service` as administrator) stops Control Center Advanced's service and gives the OEM service back.
-4. A restart of the laptop is the last resort: values the firmware does not keep across a restart are gone, values Control Center Advanced re-applies at start-up are re-applied only while its service is installed and *Apply my settings when the service starts* is on.
-5. The uninstaller removes the program and, when you agree, its saved settings. The OEM Control Center is untouched.
+1. *Service → Write protection → Read-only* stops all hardware writes and all messages to the vendor's service immediately.
+2. On *Performance modes*, choose one of the vendor's ready-made modes: they use their own stored values. On *Custom mode*, *Vendor defaults → Restore defaults* asks the service to put its default values back into the Custom mode (it asks first; it is only offered while the Custom mode is active).
+3. On *Fan settings*, set the cooling mode to *Auto* and switch *Turbo fan* off; *Vendor's curves* asks the service for its default fan table.
+4. The GPU power returns to the vendor's default (125 W) from its slider on *Custom mode*, or from the vendor's own window.
+5. A restart of the laptop is the last resort: values the firmware does not keep across a restart are gone, and this program re-applies only the GPU power, and only while *Keep my settings applied* / *Apply on start* is on.
+6. The uninstaller removes the program, its start-up task and, when you agree, its saved settings. The vendor's Control Center is untouched.
 
 ## Reporting a problem
 
-If a write did something you did not expect, please open an issue with the *Diagnostics* card from the Safety page (it lists the number of writes, refused writes, the last error and the log tail). A change that touches the write guard, the never-written list or the evidence tiers needs a unit test and a note in the pull request that says what was measured and on which model.
+If a change did something you did not expect, please open an issue with *Copy diagnostics* from the *Service* page (it lists the link state, the number of writes and refused writes, the last error and the log tail; it contains no personal data). A change that touches the write guard, the never-written list, the message allow-list or the ready-made-mode rule needs a unit test and a note in the pull request that says what was measured and on which model.

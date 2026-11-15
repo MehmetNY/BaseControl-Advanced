@@ -18,14 +18,16 @@ The same list is shown in the program on Device info > About.
 
 * MONSTER GPU POWER (source folder src/mgp): the author's own GPU power project, GPL-3.0.
   https://github.com/MehmetNY/Monster-XMG-Gpu-Power-Control
-  Its engine drives the GPU power (cTGP) control and the OEM profile synchronisation.
+  Its engine drives the GPU power (cTGP) control and, when you switch it on, the OEM profile file
+  synchronisation.
 
 * The C and C++ runtime. The executable is linked statically against the MinGW-w64 runtime and the GNU
   C++ runtime libraries (libgcc, libstdc++), which are distributed under their own licences, including
   the GCC Runtime Library Exception.
 
-* Parts of Windows (GDI+, Setup API, HID, WLAN, power profiles, Service Control Manager, ...) are used
-  through their documented interfaces. They are not part of this program and are not redistributed.
+* Parts of Windows (GDI+, Winsock for the loopback connection, Setup API, WLAN, power profiles, Service
+  Control Manager, Task Scheduler, ...) are used through their documented interfaces. They are not part of
+  this program and are not redistributed.
 
 
 2. What it learned from (nothing below is included)
@@ -75,14 +77,20 @@ Where a project states no licence, nothing was copied from it.
 3. What is deliberately not included
 ------------------------------------
 
-* The OEM Control Center (version 4.9.47.11 was the reference for the feature list): no OEM code, driver,
-  image, string table, certificate or file is included, and none of the OEM's server addresses,
-  credentials, keys or identifiers is in the program. Control Center Advanced reaches the embedded controller through
-  the OEM's own ACPIDriver device when it is installed on the laptop; it neither ships nor modifies it.
+* The OEM Control Center (version 4.9.47.11 was the reference for the feature list and for the way its
+  window talks to its service): no OEM code, driver, image, string table, certificate or file is included,
+  and none of the OEM's Internet server addresses, signing keys or account credentials is in the program.
+  What the program does contain is what it needs to talk to the OEM service on the same computer: the
+  loopback address, the topic names and message structure of that local interface (facts about an
+  interface, read from the OEM's own program files on the owner's machine and written down in
+  docs/PROTOCOL.md), and the client name pattern that the OEM's own window uses to introduce itself to the
+  loopback-only broker (src/oem/proto.cpp). The program reaches the embedded controller through the OEM's
+  own ACPIDriver device when it is installed on the laptop; it neither ships nor modifies it, and it
+  neither ships, stops nor replaces the OEM's services.
 
-* PawnIO (https://github.com/namazso/PawnIO; driver GPL-2.0, modules LGPL-2.1-or-later): the signed driver
-  that gives the advanced CPU panel access to processor registers. It is not included; you install it
-  yourself (docs/SETUP.md).
+* PawnIO and any other driver for reading processor registers. An earlier beta of this program could use
+  PawnIO (https://github.com/namazso/PawnIO) for an advanced CPU panel; this version has no such panel and
+  no driver of any kind.
 
 
 4. Names
@@ -96,6 +104,6 @@ owners and are used only to say which hardware and system the program works with
 5. Tools used to make the project
 ---------------------------------
 
-The executable is cross-compiled with MinGW-w64 GCC; the installer is built with NSIS; the screenshots
-and banner in the README were rendered with the Inter typeface (SIL Open Font License 1.1), which is not
-distributed with the program.
+The executable is cross-compiled with MinGW-w64 GCC; the installer is built with NSIS; the screenshots,
+banners and installer pictures were rendered with the Inter typeface (SIL Open Font License 1.1), which is
+not distributed with the program.

@@ -2,96 +2,94 @@
 
 ## What you need
 
-| | |
-|---|---|
-| **Windows** | Windows 10 or 11, 64-bit. |
-| **A supported laptop** | The *Monster Tulpar T5 V21.7* (SMBIOS board `GM5TG7Y`) is the one unit the register map was measured on, and the only one Control Center Advanced treats as *exactly identified*. Laptops with the same embedded-controller project id (the same chassis family: XMG Neo 15 M21 `GM5TG7W`, Eluktronics MAX-15, the Mechrevo relatives) are recognised as *family*: most features are then locked until you allow experimental writes, and nobody has tested them. The GPU power target is never offered on a *family* laptop: it needs the exact identity (manufacturer, model and BIOS string of the Tulpar T5 V21.7). Anything else is *unrecognised* and gets no hardware writes unless you explicitly allow them. |
-| **The OEM Control Center, installed once** | Control Center Advanced reaches the embedded controller through the `ACPIDriver` device that the OEM's package installs. Control Center Advanced does not ship, copy or modify that driver. You do not have to *use* the OEM program afterwards - and while its service runs, it can undo your settings (see [take over](#taking-over-from-the-oem-service)). |
-| **PawnIO + a signed module** (optional) | Only for the *Advanced CPU* panel. See [below](#optional-advanced-cpu-registers-pawnio). |
+- A 64-bit Windows 10 or 11 on a Monster Tulpar T5 V21.7 (XMG Neo 15 M21, Tongfang GM5TG7). Other laptops of the same family are recognised as *Family* or *Unknown* and get fewer controls; the GPU power engine is off on everything but the exact unit.
+- **The vendor's Control Center installed** (the one that came with the laptop; version 4.9.47.11 of the Monster build was studied). Its background services (`GCUBridge`, `GCUService`) and its ACPI driver do the privileged work: Control Center Advanced asks them, the way the vendor's own window does, and reads the embedded controller through the driver. Control Center Advanced does not contain, copy or replace any of it. You do not have to open the vendor's window; the services only have to be running.
+- Administrator rights. The program asks for them when it starts (the usual Windows prompt) because reading the embedded controller needs them.
+
+Control Center Advanced installs **no driver and no Windows service of its own**, needs no .NET, no web view and no third-party program, and talks to nothing but the vendor's service on the same computer (`127.0.0.1`).
 
 ## Install
 
-### Installer (recommended)
+### With the installer (recommended)
 
-Run `Control-Center-Advanced-<version>-Setup.exe` from the [releases page](https://github.com/MehmetNY/Control-Center-Advanced/releases). Windows will ask for administrator rights and, because the file is not code-signed yet, SmartScreen may show a warning (*More info → Run anyway*). Compare the checksum with `SHA256SUMS.txt` from the release first if you want to be careful:
+Run `Control-Center-Advanced-<version>-Setup.exe` and accept the administrator prompt. The installer is **unsigned**, so Windows SmartScreen shows "Windows protected your PC": choose *More info → Run anyway* if you trust the source. Check the file against `SHA256SUMS.txt` on the release page first.
 
-```powershell
-Get-FileHash .\Control-Center-Advanced-1.0.0-beta-Setup.exe -Algorithm SHA256
-```
+| Component | What it does |
+|---|---|
+| **Control Center Advanced** (required) | Copies the program, the licence and the notices to `C:\Program Files\Control Center Advanced`. It refuses any folder outside Program Files: the program runs with administrator rights, so its file must not be replaceable by a normal user. |
+| Start Menu shortcut | Default on. |
+| Desktop shortcut | Default off. |
+| Start with Windows | Default off. Creates a scheduled task that starts the program hidden in the tray when you sign in. See below. |
 
-The installer offers four components:
+It also stops a running copy first and removes the background service of the first beta (`ControlCenterAdvanced`), if there is one. It does not touch the vendor's Control Center and changes no setting of the laptop.
 
-- **Control Center Advanced** (required): the program, licence and notices, installed to `C:\Program Files\Control Center Advanced`.
-- **Background service** (recommended): installs and starts the `Control Center Advanced` Windows service. It lets the window run without administrator rights, applies your settings at start-up and keeps the fan watchdog running. Without it you have to start the program as administrator each time.
-- **Start Menu shortcut**.
-- **Desktop shortcut** (off by default).
-
-Silent install: `Setup.exe /S`. Add `/NOSERVICE` to skip the service, and `/D=C:\path` as the very last argument for another folder. When that folder is not a protected one, the service installer copies the program below Program Files itself, because the service must never run a file that a normal user can replace.
+Silent install, for scripts: `Setup.exe /S`, optionally `/AUTOSTART` (also creates the sign-in task) and, as the last argument, `/D=C:\Program Files\Some folder` for another folder below Program Files.
 
 ### Portable
 
-`Control-Center-Advanced-<version>-portable.exe` is the same program without an installer. Run it anywhere. On the *Safety and service* page, *Install and start the service* copies it to `C:\Program Files\Control Center Advanced` first and installs the service from that copy, never from where you started it. Or skip the service: when the window cannot reach the service it offers *Run elevated without the service* (`--local` mode). One elevated process then does everything, and closing the window ends hardware control.
+`Control-Center-Advanced-<version>-portable.exe` (or the same file in the `.zip`) runs from any folder, with no installation. Everything the installer does beyond copying the file is optional. One limit: **"Start with Windows" is only offered for the copy in Program Files**, because a sign-in task that starts a program with administrator rights and no prompt must not point at a folder a normal user can write to. A portable copy shows a message that says so; start it by hand or use the installer.
 
-## First run
+## First start
 
-1. Open **Overview**. *Embedded controller* should say *Connected*. If it says *Not reachable*, the `ACPIDriver` device is missing: install the OEM Control Center package once, restart, and try again.
-2. Open **Safety and service** and read the cards once. *Write protection* shows what is allowed; *Confirmations* is empty; *OEM Control Center* shows whether the OEM service is running.
-3. If you only want to look around, switch *Read-only mode* on. Every reading keeps working, every hardware write is refused.
-4. Change one thing at a time on **Custom profiles**. A slider shows the live value; moving it changes a draft only. Press **Confirm** to send it. The first risky step opens a confirmation (see [SAFETY](SAFETY.md)).
-5. Watch the temperatures on **Overview** and **Components and status** while you test.
+1. Open Control Center Advanced and accept the administrator prompt. The top bar chip says **Service connected** (green) when the link to the vendor's service works. The *Overview* shows the power status, the active performance mode and what the hardware reports.
+2. If the chip says **Service offline**, open *Service*:
+   - *Vendor's Control Center → Not installed*: install the vendor's Control Center. Without it only what the embedded controller shows can be read, and the GPU power can be set.
+   - *Installed, services Stopped*: press **Start the vendor's services**. It is the same as opening the vendor's window.
+   - *Running but refused*: press **Reconnect**; the program tries the client names the service knows. If it still refuses, press **Copy diagnostics** and open an issue.
+3. The values in the ready-made modes (Office, Gaming, Turbo) are the vendor's and are shown live but locked. To set your own limits, switch to the **Custom mode** on *Performance → Performance modes*, then use *Performance → Custom mode*.
+4. Raising the GPU power (cTGP) above 140 W asks for confirmation and is checked and, if the hardware does not keep it, undone. See [SAFETY](SAFETY.md).
 
-## Taking over from the OEM service
+### Start with Windows
 
-The OEM Control Center's background service (GCUBridge) can write to the same registers and silently undo your changes. On **Safety and service → OEM Control Center**, *Take over from the OEM service* stops it and sets it to *Disabled*. The OEM program stops working meanwhile. *Give the OEM service back* undoes this at any time, removing Control Center Advanced's service does it automatically, and from a command prompt:
+*Preferences → Application behaviour → Start with Windows* (or the installer component) creates the scheduled task `ControlCenterAdvanced_Autostart`: it runs the installed program with `--tray` at sign-in, with the highest rights of your account and no prompt. With *Keep my settings applied* on, the program then re-applies your GPU power setting after a restart. Turn the switch off, or uninstall, and the task is removed.
 
-```bat
-"C:\Program Files\Control Center Advanced\ControlCenterAdvanced.exe" --restore-oem
-```
+## Upgrading from the first beta (v1.0.0-beta)
 
-If the EC's power-management loop is not active (it is normally switched on by the OEM service), power-limit writes are refused with a message telling you to take over. Once you have taken over and the OEM service is stopped, Control Center Advanced brings the loop up itself before the first write.
+The beta was a different design: it ran a service of its own. Installing this version over it:
 
-## Optional: Advanced CPU registers (PawnIO)
-
-The *Advanced CPU* panel of **Custom profiles** (package PL1/PL2 with time windows, PSys limits, current limit, undervolt offsets, prefetchers, BD PROCHOT) reads and writes processor registers. Control Center Advanced does not contain a driver for that and does not bundle one. It uses [PawnIO](https://pawnio.eu), a signed driver whose signed *modules* enforce an allow-list of registers in the kernel and which refuses unsigned modules:
-
-1. Install PawnIO with its official setup from [pawnio.eu](https://pawnio.eu).
-2. Download the signed `IntelMSR.bin` module from the [PawnIO.Modules releases](https://github.com/namazso/PawnIO.Modules/releases).
-3. Put the file in `C:\ProgramData\ControlCenterAdvanced\modules\` (create the `modules` folder; only administrators can write there). Control Center Advanced also looks next to the program (`modules\IntelMSR.bin`, `IntelMSR.bin`) and in the PawnIO installation folder.
-4. On **Safety and service**, stop and start the service (or restart Windows), then open **Custom profiles → Advanced CPU...**.
-
-If something is missing, the panel says what (for example *PawnIO is not installed*, *IntelMSR.bin not found*, *PawnIO refused the module*) and the rest of the program is unaffected. The processor registers are *Experimental* tier, ask for a confirmation the first time, and a register the firmware has locked is never written. Undervolting is closed by most 11th-generation BIOSes; if yours is, the panel shows the offsets as unavailable.
-
-Control Center Advanced never asks you to turn off a Windows security feature. If Windows blocks the driver, the panel says so.
-
-## Where things are
-
-| What | Where |
-|---|---|
-| Program and uninstaller | `C:\Program Files\Control Center Advanced` |
-| Settings the service applies (`config.kv`, `desired.kv`, `profiles.kv`, `oem_takeover.kv`) | `C:\ProgramData\ControlCenterAdvanced` (writable by SYSTEM and administrators only) |
-| Service log | `C:\ProgramData\ControlCenterAdvanced\logs\service.log` |
-| Window preferences (`ui.kv`) | `%LOCALAPPDATA%\ControlCenterAdvanced` |
-| PawnIO module | `C:\ProgramData\ControlCenterAdvanced\modules\IntelMSR.bin` |
-
-All of them are plain text; nothing is encrypted and nothing is sent anywhere.
+- removes the beta's service and its sign-in entry;
+- keeps your settings folder (`C:\ProgramData\ControlCenterAdvanced`); entries it no longer understands are ignored, and the beta's saved profiles are not used;
+- if you had used the beta's *Take over the vendor's service*, the vendor's services may still be disabled. Open *Service → Vendor's Control Center → Start the vendor's services*; it re-enables them as they were (automatic start by default).
 
 ## Command line
 
-`ControlCenterAdvanced.exe --help` prints this list.
-
 | Command | What it does |
 |---|---|
-| *(no arguments)* | The window, talking to the service. |
-| `--tray` | Start hidden in the notification area. |
-| `--local` | Window and hardware access in one elevated process, without the service. |
-| `--lang en` / `--lang tr` | Interface language for this run. |
-| `--install-service`, `--uninstall-service`, `--start-service`, `--stop-service` | Manage the service (administrator). `--uninstall-service` also gives the OEM service back. |
-| `--restore-oem` | Re-enable and start the OEM service (administrator). |
-| `--probe` | Print what Control Center Advanced reads from this machine and exit. Redirect it (`--probe > probe.txt`) to attach it to a bug report. |
-| `--service-console` | Run the service logic in a console window (for debugging). |
-| `--sim [--sim-model exact\|family\|unknown]` | The window on a simulated laptop. Touches no hardware. |
+| `ControlCenterAdvanced.exe` | Opens the window (UAC prompt). One window per user session; a second start brings the first to the front. |
+| `--tray` (also `/minimized`) | Starts hidden in the tray. |
+| `--lang en` or `--lang tr` | Interface language for this run. |
+| `--probe` | Prints the hardware report (model, features, the link, the values read) and exits. |
+| `--autostart on` / `off` | Creates or removes the sign-in task and exits: exit code 0 done, 1 it did not work (the reason is printed), 2 wrong use. |
+| `--sim` [`--sim-model exact`\|`family`\|`unknown`] [`--sim-version X.Y.Z`] | The window on a pretend laptop and a pretend service, labelled SIMULATION. Nothing real is touched. |
+| `--shot <page> <out.png> [--size WxH] [--scale S] [--font F] [--drafts]` | Draws one page of the simulator to a PNG (used for the screenshots in this repository). |
+| `--script <file>` | Runs a scripted interface test on the simulator (see [DEVELOPMENT](DEVELOPMENT.md)). |
 | `--version`, `--help` | |
+
+## Where things are kept
+
+| Path | What |
+|---|---|
+| `C:\ProgramData\ControlCenterAdvanced\config.kv` | Switches and confirmations (read-only mode, keep settings applied, consents, ...). Readable by every user, writable by administrators and SYSTEM only. |
+| `C:\ProgramData\ControlCenterAdvanced\desired.kv` | The GPU power you chose, to apply it again after sleep or a restart. |
+| `C:\ProgramData\ControlCenterAdvanced\logs\local.log` | The log (rotated at 512 KiB, two files). No serial numbers, no user name. |
+| `C:\ProgramData\ControlCenterAdvanced\oem_takeover.kv` | Only if the first beta disabled the vendor's services: how to put them back. |
+| `%LOCALAPPDATA%\ControlCenterAdvanced\ui.kv` | The window's own preferences: language, accent colour, tray options, key mappings, overlay, application profiles. |
+
+If you switch on *Also write the OEM profile file* on the Custom mode page, the program also writes the vendor's own profile file, after keeping a backup of the original next to it. Nothing is ever sent over the network; the only connection the program opens is the one to the vendor's service on `127.0.0.1`.
 
 ## Uninstall
 
-*Settings → Apps → Control Center Advanced*, or `Uninstall.exe` in the program folder. The uninstaller removes the service (and gives the OEM service back), the program, the shortcuts and the start-with-Windows entry, and asks whether to delete your saved settings and logs too (the default is to keep them). The OEM Control Center and PawnIO are left alone.
+*Settings → Apps → Control Center Advanced → Uninstall* (or `Uninstall.exe` in the program folder; `/S` for silent). It stops the program, removes the sign-in task, the files and the shortcuts, and asks whether to delete your settings and logs too (it keeps them if you say no, or when run silently). The vendor's Control Center is left exactly as it is. A portable copy is uninstalled by deleting the file and, if you created the settings folders above, deleting those.
+
+## Trouble
+
+| What you see | What to do |
+|---|---|
+| SmartScreen warns about the file | It is unsigned. Compare the SHA-256 with `SHA256SUMS.txt`, then *More info → Run anyway*. |
+| Antivirus blocks or quarantines it | The program reads the embedded controller through the vendor's driver and starts at sign-in with administrator rights, which some products flag. The source and the build are in this repository ([DEVELOPMENT](DEVELOPMENT.md)); report false positives to the product's maker. |
+| *Service offline* or *Service refused* | See *First start* above, then *Copy diagnostics* from the Service page. |
+| Sliders are locked | The ready-made modes keep the vendor's values: use the Custom mode. Also check that *Read-only mode* (Service → Write protection) is off. |
+| A change was refused with a message | The message says why (a range, a confirmation, the thermal gate, a service that did not confirm). Nothing was changed. |
+| The window cannot be found | It is in the tray (the program keeps running when the window is closed; change that in Preferences). Starting the program again brings it to the front. |
+
+Open an [issue](https://github.com/MehmetNY/Control-Center-Advanced/issues/new/choose) with the *Copy diagnostics* text from the Service page for anything else.

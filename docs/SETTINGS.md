@@ -2,131 +2,88 @@
 
 # Settings
 
-Everything Control Center Advanced can change is declared once, in `src/common/settings_reg.cpp`: a type, a range, an evidence tier and the capability that must be present. The controller refuses everything that is not in the table - there are no raw addresses and no free-form writes. A request is checked in this order: read-only switch, evidence gate, model gate, range, capability, consent, write, read-back (with rollback when the value did not stick).
+Everything Control Center Advanced can change is declared once, in `src/common/settings_reg.cpp`: a type, a range, an evidence tier and the capability that must be present. The controller refuses everything that is not in the table - there are no raw addresses and no free-form writes. A request is checked in this order: the key and its range, the capability, the read-only switch, the consent for a risky value, the rule that profile values are only written while the Custom mode is active, the write, and finally the read-back (a GPU power change that did not stick is undone).
+
+The ranges in the table are the outer limits the program will ever send. For the values of the Custom mode the vendor's service states the real limits of the active profile, and those are enforced as well.
 
 **Evidence tiers**
 
 - **Verified** - measured on a Tulpar T5 GM5TG7Y by its owner
-- **Family** - documented for the same chassis family by independent sources; probed at start-up and disabled when the probe fails
-- **Experimental** - plausible but unproven, or it bypasses a firmware protection; locked until *Allow experimental writes* is on
+- **Service** - done by the vendor's own Control Center service, the way its window does it; Control Center Advanced reads the result back (from the embedded controller where it can be read, otherwise from the service's own report)
 - **Os** - a plain Windows interface, no firmware involved
 
-`Capability` is the probe result the setting needs; when it is not `ok` the control stays disabled and says why. *Experimental gate* means the setting is refused until **Safety and service → Allow experimental writes** is on; on the exactly identified Tulpar T5 the *Family* settings are not gated.
+`Capability` is the probe result the setting needs; when it is not `ok` the control stays disabled and says why (`offline` means the vendor's service cannot be reached, `pending` that it has not reported yet).
 
-## CPU power through the EC (OEM "Custom Profile" semantics)
+## Values of the Custom mode (the vendor's service; sent only while that mode is active)
 
-| Setting | What it does | Range | Evidence | Capability | Experimental gate |
-|---|---|---|---|---|---|
-| `ec.pl1` | CPU sustained power limit (PL1), written to the embedded controller the way the OEM Control Center's custom profile does | 10 – 200 W | Family | `pl.ec` | yes |
-| `ec.pl2` | CPU short-burst power limit (PL2) | 10 – 200 W | Family | `pl.ec` | yes |
-| `ec.pl4` | CPU peak power limit (PL4) | 20 – 250 W | Family | `pl.ec` | yes |
-| `ec.tcc` | CPU temperature limit; the controller stores it as an offset below the maximum | 70 – 100 C | Family | `tcc` | yes |
+| Setting | What it does | Range | Evidence | Capability |
+|---|---|---|---|---|
+| `perf.pl1` | CPU sustained power limit (PL1) of the Custom mode, set through the vendor's service and checked in the embedded controller | 5 – 250 W | Service | `perf.pl` |
+| `perf.pl2` | CPU short-burst power limit (PL2) of the Custom mode | 5 – 250 W | Service | `perf.pl` |
+| `perf.pl4` | CPU peak power limit (PL4) of the Custom mode | 10 – 500 W | Service | `perf.pl` |
+| `perf.tcc` | CPU thermal offset (TCC): how many degrees below its maximum temperature the CPU starts to slow down | 0 – 63 C | Service | `perf.tcc` |
+| `perf.tcc.on` | Whether the thermal offset above is used | on / off | Service | `perf.tcc` |
+| `perf.gpu.core` | GPU core clock offset of the Custom mode (applied by the NVIDIA driver, read back from it) | -1000 – 1000 MHz | Service | `perf.gpu` |
+| `perf.gpu.mem` | GPU memory clock offset of the Custom mode | -2000 – 3000 MHz | Service | `perf.gpu` |
+| `perf.gpu.temp` | GPU temperature target of the Custom mode | 60 – 100 C | Service | `perf.gpu.temp` |
 
-## GPU
+## GPU power beyond the vendor's profiles (this program's own engine)
 
-| Setting | What it does | Range | Evidence | Capability | Experimental gate |
-|---|---|---|---|---|---|
-| `gpu.ctgp` | GPU dynamic power target (cTGP) above the 125 W base, through the MONSTER GPU POWER engine (live + the OEM profile file) | 125 – 150 W (step 5) | Verified | `gpu.ctgp` | no |
-| `gpu.db` | NVIDIA Dynamic Boost switch (the register meaning is not verified on this model; the control stays disabled) | on / off | Experimental | `gpu.db` | yes |
-| `nv.offset.core` | GPU core clock offset through the NVIDIA driver | -500 – 500 MHz (step 5) | Experimental | `gpu.offsets` | yes |
-| `nv.offset.mem` | GPU memory clock offset through the NVIDIA driver | -1000 – 1500 MHz (step 10) | Experimental | `gpu.offsets` | yes |
+| Setting | What it does | Range | Evidence | Capability |
+|---|---|---|---|---|
+| `gpu.ctgp` | GPU dynamic power target (cTGP) above the 125 W base, written by this program's own engine (live, optionally also the OEM profile file) | 125 – 150 W (step 5) | Verified | `gpu.ctgp` |
 
 ## Fans
 
-| Setting | What it does | Range | Evidence | Capability | Experimental gate |
-|---|---|---|---|---|---|
-| `fan.mode` | Fan mode: the firmware's automatic mode, boost, a custom curve, or a fixed speed | auto, boost, custom, fixed | Family | `fan.ctl` | yes |
-| `fan.cpu.curve` | Custom CPU fan curve (up to 10 points) | text | Family | `fan.curve` | yes |
-| `fan.gpu.curve` | Custom GPU fan curve (up to 10 points) | text | Family | `fan.curve` | yes |
-| `fan.fixed.cpu` | Fixed CPU fan speed (the fan watchdog still forces full speed when it gets too hot) | 20 – 100 % | Experimental | `fan.fixed` | yes |
-| `fan.fixed.gpu` | Fixed GPU fan speed (same watchdog) | 20 – 100 % | Experimental | `fan.fixed` | yes |
-| `fan.ramp` | How quickly the fans change speed | 1 – 127 | Experimental | `fan.ramp` | yes |
+| Setting | What it does | Range | Evidence | Capability |
+|---|---|---|---|---|
+| `fan.mode` | Fan mode: the laptop's automatic mode, Turbo fan (both fans at full speed), or your own curves | auto, boost, custom | Service | `fan.ctl` |
+| `fan.cpu.curve` | CPU fan curve: temperature to fan speed, up to 10 points, handed to the vendor's service | text | Service | `fan.curve` |
+| `fan.gpu.curve` | GPU fan curve (same) | text | Service | `fan.curve` |
 
 ## Battery / preferences
 
-| Setting | What it does | Range | Evidence | Capability | Experimental gate |
-|---|---|---|---|---|---|
-| `batt.mode` | Charging profile: full capacity, balanced or eco (the charge levels themselves are decided by the firmware) | highcap, balanced, eco | Family | `batt.mode` | yes |
-| `pref.fnlock` | Fn lock (function keys without Fn) | on / off | Family | `fnlock` | yes |
-| `pref.acboot` | Power on when the charger is connected | on / off | Family | `acboot` | yes |
-| `pref.usbpower` | Keep USB ports powered while the laptop is off | on / off | Family | `usbpower` | yes |
+| Setting | What it does | Range | Evidence | Capability |
+|---|---|---|---|---|
+| `batt.mode` | Charging profile: full capacity, balanced or eco (the charge levels themselves are decided by the firmware) | highcap, balanced, eco | Service | `batt.mode` |
+| `pref.fnlock` | Fn lock (function keys without Fn) | on / off | Service | `fnlock` |
+| `pref.acboot` | Power on when the charger is connected | on / off | Service | `acboot` |
+| `pref.usbpower` | Keep USB ports powered while the laptop is off | on / off | Service | `usbpower` |
 
-## Windows CPU policy (driverless)
+## Keyboard lighting (the vendor's service; effect numbers are the vendor's own RGBKB_Effect ids)
 
-| Setting | What it does | Range | Evidence | Capability | Experimental gate |
-|---|---|---|---|---|---|
-| `os.boost` | Windows processor performance boost mode | disabled, enabled, aggressive, efficient, efficient_aggressive, aggressive_guaranteed, efficient_aggressive_guaranteed | Os | `os.cpu` | no |
-| `os.epp` | Windows energy/performance preference (0 = performance, 100 = efficiency) | 0 – 100 % | Os | `os.cpu` | no |
-| `os.min` | Windows minimum processor state | 0 – 100 % | Os | `os.cpu` | no |
-| `os.max` | Windows maximum processor state | 5 – 100 % | Os | `os.cpu` | no |
-| `os.park` | Windows minimum share of unparked cores | 0 – 100 % | Os | `os.cpu` | no |
-
-## CPU advanced (MSR via PawnIO)
-
-| Setting | What it does | Range | Evidence | Capability | Experimental gate |
-|---|---|---|---|---|---|
-| `msr.pl1` | CPU package PL1 through the processor register (MSR 0x610); needs the PawnIO driver | 5 – 250 W | Experimental | `msr.pkg` | yes |
-| `msr.pl2` | CPU package PL2 (MSR 0x610) | 5 – 250 W | Experimental | `msr.pkg` | yes |
-| `msr.tau1` | PL1 time window | 1 – 128 s | Experimental | `msr.pkg` | yes |
-| `msr.tau2` | PL2 time window | 1 – 10000 ms | Experimental | `msr.pkg` | yes |
-| `msr.pl1.en` | PL1 enable bit | on / off | Experimental | `msr.pkg` | yes |
-| `msr.pl2.en` | PL2 enable bit | on / off | Experimental | `msr.pkg` | yes |
-| `msr.clamp` | Allow the package to go below the operating-system requested frequency to honour the limit | on / off | Experimental | `msr.pkg` | yes |
-| `msr.psys.pl1` | Platform (whole-system) power limit 1 (MSR 0x65C) | 20 – 400 W | Experimental | `msr.psys` | yes |
-| `msr.psys.pl2` | Platform power limit 2 (MSR 0x65C) | 20 – 400 W | Experimental | `msr.psys` | yes |
-| `msr.psys.pl1.en` | Platform PL1 enable bit | on / off | Experimental | `msr.psys` | yes |
-| `msr.psys.pl2.en` | Platform PL2 enable bit | on / off | Experimental | `msr.psys` | yes |
-| `msr.bdp` | Bi-directional PROCHOT (MSR 0x1FC) | on / off | Experimental | `msr.bdp` | yes |
-| `msr.icc` | Maximum current (IccMax, MSR 0x601) | 10 – 250 A | Experimental | `msr.icc` | yes |
-| `msr.volt.core` | CPU core undervolt offset (voltage mailbox; most 11th-generation BIOSes close it) | -250 – 0 mV | Experimental | `msr.volt` | yes |
-| `msr.volt.cache` | Cache/ring undervolt offset | -250 – 0 mV | Experimental | `msr.volt` | yes |
-| `msr.volt.sa` | System agent undervolt offset | -250 – 0 mV | Experimental | `msr.volt` | yes |
-| `msr.pf.l2` | L2 hardware prefetcher (MSR 0x1A4) | on / off | Experimental | `msr.pf` | yes |
-| `msr.pf.l2adj` | L2 adjacent-line prefetcher | on / off | Experimental | `msr.pf` | yes |
-| `msr.pf.dcu` | L1 data prefetcher | on / off | Experimental | `msr.pf` | yes |
-| `msr.pf.dcuip` | L1 instruction-pointer prefetcher | on / off | Experimental | `msr.pf` | yes |
-
-## Lighting (ITE HID)
-
-| Setting | What it does | Range | Evidence | Capability | Experimental gate |
-|---|---|---|---|---|---|
-| `light.kbd.power` | Keyboard light on or off | on / off | Family | `light.kbd` | yes |
-| `light.kbd.color` | Keyboard colour | text | Family | `light.kbd` | yes |
-| `light.kbd.bright` | Keyboard brightness level | 1 – 4 | Family | `light.kbd` | yes |
-| `light.kbd.effect` | Keyboard effect | static, breathing, cycle, temp, pulse | Family | `light.kbd` | yes |
-| `light.kbd.speed` | Keyboard effect speed | 1 – 10 | Family | `light.kbd` | yes |
-| `light.bar.power` | Light bar on or off (this model has no light bar) | on / off | Family | `light.bar` | yes |
-| `light.bar.color` | Light bar colour | text | Family | `light.bar` | yes |
-| `light.bar.bright` | Light bar brightness | 1 – 4 | Family | `light.bar` | yes |
-| `light.logo.power` | Logo light on or off | on / off | Family | `light.logo` | yes |
-| `light.logo.color` | Logo light colour | text | Family | `light.logo` | yes |
-| `light.logo.bright` | Logo light brightness | 1 – 4 | Family | `light.logo` | yes |
-| `light.idle` | Switch the keyboard light off after this many idle seconds (0 = never); a Windows-side rule | 0 – 600 s (step 5) | Os | `light.kbd` | no |
-| `light.battdim` | Dim the keyboard light on battery | on / off | Os | `light.kbd` | no |
-| `light.battlevel` | Brightness level used on battery | 1 – 4 | Os | `light.kbd` | no |
-| `light.sleepoff` | Switch the keyboard light off when the display turns off or the laptop sleeps | on / off | Os | `light.kbd` | no |
+| Setting | What it does | Range | Evidence | Capability |
+|---|---|---|---|---|
+| `light.kbd.power` | Keyboard light on or off | on / off | Service | `light.kbd` |
+| `light.kbd.effect` | Keyboard effect (the vendor's own effect numbers) | static, breathing, wave, reactive, rainbow, ripple, raindrop, neon, marquee, stack, impact, spark, aurora, music, user, gaming, flash, mix | Service | `light.kbd` |
+| `light.kbd.bright` | Keyboard brightness level | 0 – 4 | Service | `light.kbd` |
+| `light.kbd.speed` | Keyboard effect speed | 0 – 4 | Service | `light.kbd` |
+| `light.kbd.dir` | Direction of the keyboard effect | none, left-right, right-left, down-up, up-down, press, sync | Service | `light.kbd` |
+| `light.kbd.color` | One colour for every keyboard block | text | Service | `light.kbd` |
+| `light.kbd.colors` | One colour per keyboard block, comma separated | text | Service | `light.kbd` |
+| `light.kbd.timer` | Idle timer of the keyboard light: seconds without a key press before the service switches it off (0 = never) | 0 – 3600 s | Service | `light.kbd.timer` |
 
 ## Display (Windows API)
 
-| Setting | What it does | Range | Evidence | Capability | Experimental gate |
-|---|---|---|---|---|---|
-| `disp.bright` | Built-in display brightness | 0 – 100 % | Os | `disp.bright` | no |
-| `disp.refresh` | Built-in display refresh rate | 30 – 480 Hz | Os | `disp.refresh` | no |
-| `disp.c.bright` | Colour calibration: brightness | 0 – 100 | Os | `disp.color` | no |
-| `disp.c.contrast` | Colour calibration: contrast | 0 – 100 | Os | `disp.color` | no |
-| `disp.c.gamma` | Colour calibration: gamma (value / 100) | 50 – 260 | Os | `disp.color` | no |
-| `disp.c.kelvin` | Colour calibration: colour temperature | 3000 – 9000 K (step 50) | Os | `disp.color` | no |
-| `disp.c.r` | Colour calibration: red gain | 50 – 100 % | Os | `disp.color` | no |
-| `disp.c.g` | Colour calibration: green gain | 50 – 100 % | Os | `disp.color` | no |
-| `disp.c.b` | Colour calibration: blue gain | 50 – 100 % | Os | `disp.color` | no |
-| `disp.c.sat` | Colour saturation (100 = unchanged) | 0 – 200 % | Os | `disp.sat` | no |
-| `disp.mode` | Display colour preset | standard, vibrant, cinema, internet, photo, video, lowblue | Os | `disp.color` | no |
+| Setting | What it does | Range | Evidence | Capability |
+|---|---|---|---|---|
+| `disp.bright` | Built-in display brightness | 0 – 100 % | Os | `disp.bright` |
+| `disp.refresh` | Built-in display refresh rate | 30 – 480 Hz | Os | `disp.refresh` |
+| `disp.c.bright` | Colour calibration: brightness | 0 – 100 | Os | `disp.color` |
+| `disp.c.contrast` | Colour calibration: contrast | 0 – 100 | Os | `disp.color` |
+| `disp.c.gamma` | Colour calibration: gamma (value / 100) | 50 – 260 | Os | `disp.color` |
+| `disp.c.kelvin` | Colour calibration: colour temperature | 3000 – 9000 K (step 50) | Os | `disp.color` |
+| `disp.c.r` | Colour calibration: red gain | 50 – 100 % | Os | `disp.color` |
+| `disp.c.g` | Colour calibration: green gain | 50 – 100 % | Os | `disp.color` |
+| `disp.c.b` | Colour calibration: blue gain | 50 – 100 % | Os | `disp.color` |
+| `disp.c.sat` | Colour saturation (100 = unchanged) | 0 – 200 % | Os | `disp.sat` |
+| `disp.mode` | Display colour preset | standard, vibrant, cinema, internet, photo, video, lowblue | Os | `disp.color` |
 
 ## Device switches
 
-| Setting | What it does | Range | Evidence | Capability | Experimental gate |
-|---|---|---|---|---|---|
-| `dev.wifi` | Wi-Fi radio on or off | on / off | Os | `dev.wifi` | no |
-| `dev.bt` | Bluetooth radio on or off | on / off | Os | `dev.bt` | no |
-| `dev.cam` | Built-in camera on or off | on / off | Os | `dev.cam` | no |
-| `dev.touchpad` | Touchpad on or off | on / off | Os | `dev.touchpad` | no |
+| Setting | What it does | Range | Evidence | Capability |
+|---|---|---|---|---|
+| `dev.wifi` | Wi-Fi radio on or off | on / off | Os | `dev.wifi` |
+| `dev.bt` | Bluetooth radio on or off | on / off | Os | `dev.bt` |
+| `dev.cam` | Built-in camera on or off | on / off | Os | `dev.cam` |
+| `dev.touchpad` | Touchpad on or off | on / off | Os | `dev.touchpad` |

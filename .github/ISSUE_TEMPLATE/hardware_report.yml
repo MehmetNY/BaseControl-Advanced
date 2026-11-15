@@ -7,12 +7,12 @@ body:
       value: |
         Almost everything in Control Center Advanced has only been tried against a simulator ([what has never been run](https://github.com/MehmetNY/Control-Center-Advanced/blob/main/docs/CAPABILITIES.md#what-has-never-been-run)). Whatever you found, working or not, helps.
 
-        Please change one thing at a time, watch the temperatures, and keep the read-only switch (Safety and service) in mind. Other models of the same laptop family may behave differently; the program locks hardware writes on models it does not recognise, and a report is how that can be improved safely.
+        Please change one thing at a time, watch the temperatures, and keep the read-only switch (Service > Write protection) in mind. Other models of the same laptop family may behave differently; the program offers fewer controls on models it does not recognise, and a report is how that can be improved safely.
   - type: input
     id: version
     attributes:
       label: Control Center Advanced version
-      placeholder: "1.0.0-beta"
+      placeholder: "2.0.0"
     validations:
       required: true
   - type: input
@@ -35,15 +35,17 @@ body:
       label: What did you try?
       options:
         - label: Starting the program and reading the Overview page (live values)
-        - label: Installing and starting the service
-        - label: CPU power limits through the embedded controller (PL1 / PL2 / PL4)
-        - label: GPU power target
-        - label: Fan modes (auto, boost, custom curve, fixed speed)
-        - label: Advanced CPU panel (needs PawnIO)
-        - label: Keyboard light
+        - label: The link to the vendor's service (the chip says Service connected)
+        - label: Switching the performance mode
+        - label: Custom mode - CPU power limits (PL1 / PL2 / PL4) and CPU temperature offset
+        - label: Custom mode - GPU clock offsets and temperature target
+        - label: GPU power target (cTGP, up to 150 W)
+        - label: Fan settings (Turbo fan, own curve, the vendor's curves)
+        - label: Keyboard light (colours of the light blocks, effects, brightness, idle timer)
         - label: Battery charge profile
         - label: Display (brightness, refresh rate, colour)
         - label: Key remapping / overlay / tray
+        - label: Start with Windows
         - label: Installer / uninstaller
   - type: textarea
     id: result
@@ -56,7 +58,7 @@ body:
     id: diagnostics
     attributes:
       label: Diagnostics
-      description: "Safety and service > Diagnostics > Copy diagnostics, then paste it here. It contains no serial numbers and no user name, but please read it and remove anything you would rather not share."
+      description: "Service > Diagnostics > Copy diagnostics, then paste it here. It contains no serial numbers and no user name, but please read it and remove anything you would rather not share."
       render: text
     validations:
       required: true

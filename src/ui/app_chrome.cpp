@@ -1,4 +1,4 @@
-// Window chrome: navigation rail, top bar, page header with tabs, the "not connected" page and the frame loop.
+// Window chrome: navigation rail, top bar, page header with tabs and the frame loop.
 #include <algorithm>
 #include <cmath>
 
@@ -23,19 +23,19 @@ const Meta kMeta[] = {
     {Page::Overview, N_("Device"), N_("Overview"), N_("Live status of your laptop at a glance.")},
     {Page::Prefs, N_("General settings"), N_("Preferences"), N_("How Control Center Advanced starts and looks, plus keyboard and power-on options.")},
     {Page::Devices, N_("General settings"), N_("Device manager"), N_("Switch the built-in radios and devices on or off.")},
-    {Page::GpuInfo, N_("General settings"), N_("GPU settings"), N_("GPU power target, clock offsets and the graphics mode.")},
+    {Page::GpuInfo, N_("General settings"), N_("GPU settings"), N_("The graphics card at a glance, with its live power, clocks and temperature.")},
     {Page::Osd, N_("General settings"), N_("In-game OSD"), N_("Choose what is shown on top of your games.")},
     {Page::Keys, N_("General settings"), N_("Key remapping"), N_("Assign functions to keys and review the saved mappings.")},
-    {Page::Profiles, N_("Performance"), N_("Performance profiles"), N_("One-click profiles that set power, fans and the Windows CPU policy together.")},
-    {Page::Fan, N_("Performance"), N_("Fan settings"), N_("Fan mode, temperature curves and ramp speed.")},
-    {Page::Custom, N_("Performance"), N_("Custom profiles"), N_("Set power limits, GPU targets and CPU policy yourself. Nothing is sent until you press Confirm.")},
-    {Page::Apps, N_("Performance"), N_("Application profiles"), N_("Switch profiles automatically when a program starts.")},
-    {Page::Lighting, N_("Lighting"), N_("Lighting"), N_("Keyboard backlight colour, effects and idle behaviour.")},
+    {Page::Profiles, N_("Performance"), N_("Performance modes"), N_("The four performance modes of the original Control Center, and the fan boost.")},
+    {Page::Fan, N_("Performance"), N_("Fan settings"), N_("Fan mode and temperature curves.")},
+    {Page::Custom, N_("Performance"), N_("Custom mode"), N_("Set power limits and GPU targets yourself. Nothing is sent until you press Confirm.")},
+    {Page::Apps, N_("Performance"), N_("Application profiles"), N_("Switch the performance mode automatically when a program starts.")},
+    {Page::Lighting, N_("Lighting"), N_("Lighting"), N_("Keyboard backlight: effect, colours, brightness and speed.")},
     {Page::Battery, N_("Battery"), N_("Battery"), N_("Charging profile and battery health.")},
     {Page::Display, N_("Display"), N_("Display settings"), N_("Brightness, refresh rate, colour and colour modes.")},
     {Page::DeviceInfo, N_("Device info"), N_("Components and status"), N_("Hardware components with live readings.")},
     {Page::About, N_("Device info"), N_("About"), N_("Version, licences and credits.")},
-    {Page::Safety, N_("System"), N_("Safety and service"), N_("Safety switches, the OEM service and the Control Center Advanced service.")},
+    {Page::Service, N_("System"), N_("Service"), N_("The link to the vendor's Control Center service, the safety switch and the diagnostics.")},
 };
 
 const Meta& MetaOf(Page p) {
@@ -138,16 +138,16 @@ void App::DrawRail(const Rect& r) {
   y = by - 48;
   const Rect row(r.x + 12, y, r.w - 24, 42);
   bool hov = false;
-  const bool click = ui_.Click("nav#safety", row, true, &hov, nullptr);
-  const bool active = page_ == Page::Safety;
-  const float a = ui_.Anim("nav#a-safety", active ? 1.0f : (hov ? 0.5f : 0.0f), 14);
+  const bool click = ui_.Click("nav#service", row, true, &hov, nullptr);
+  const bool active = page_ == Page::Service;
+  const float a = ui_.Anim("nav#a-service", active ? 1.0f : (hov ? 0.5f : 0.0f), 14);
   if (a > 0.01f) g.FillRound(row, 11, active ? Mix(th.rail, WithAlpha(th.accent, 255), 0.13f * a) : WithAlpha(th.hover, static_cast<int>(180 * a)));
   if (active) g.StrokeRound(row, 11, WithAlpha(th.accent, 70), 1);
   const uint32_t col = active ? th.accent : Mix(th.muted, th.text, a * 0.6f);
-  g.Icon(IconId::Shield, Rect(row.x + (narrow ? (row.w - 20) / 2 : 14), row.cy() - 10, 20, 20), col, 1.7f);
-  if (!narrow) g.Text(Rect(row.x + 46, row.y, row.w - 60, row.h), T("Safety and service"), FontId::Body, active ? th.text : Mix(th.muted, th.text, a * 0.6f));
-  else ui_.Tip(row, T("Safety and service"));
-  if (click) Go(Page::Safety);
+  g.Icon(IconId::Service, Rect(row.x + (narrow ? (row.w - 20) / 2 : 14), row.cy() - 10, 20, 20), col, 1.7f);
+  if (!narrow) g.Text(Rect(row.x + 46, row.y, row.w - 60, row.h), T("Service"), FontId::Body, active ? th.text : Mix(th.muted, th.text, a * 0.6f));
+  else ui_.Tip(row, T("Service"));
+  if (click) Go(Page::Service);
 }
 
 // ------------------------------------------------------------------------------------------------ top bar
@@ -196,6 +196,7 @@ void App::DrawTopBar(const Rect& r) {
   std::string modeText;
   uint32_t modeCol = th.green;
   std::string modeTip;
+  const std::string link = S("oem.link.state");
   if (!backend_ || !backend_->Connected()) {
     modeText = T("Offline");
     modeCol = th.red;
@@ -204,14 +205,22 @@ void App::DrawTopBar(const Rect& r) {
     modeText = T("SIMULATION");
     modeCol = th.amber;
     modeTip = T("A simulated laptop. No hardware is touched.");
-  } else if (mode_ == "local") {
-    modeText = T("Local (admin)");
-    modeCol = th.blue;
-    modeTip = T("Running elevated without the service. Closing the window stops hardware control.");
-  } else {
-    modeText = T("Service");
+  } else if (link == "connected") {
+    modeText = T("Service connected");
     modeCol = th.green;
-    modeTip = T("Connected to the Control Center Advanced service.");
+    modeTip = T("Connected to the vendor's Control Center service. Profile settings are changed through it.");
+  } else if (link == "connecting") {
+    modeText = T("Connecting...");
+    modeCol = th.amber;
+    modeTip = T("Looking for the vendor's Control Center service on this computer.");
+  } else if (link == "refused") {
+    modeText = T("Service refused");
+    modeCol = th.red;
+    modeTip = T("The vendor's service did not accept this program. See the Service page.");
+  } else {
+    modeText = T("Service offline");
+    modeCol = th.red;
+    modeTip = T("The vendor's Control Center service is not reachable, so profile settings cannot be changed. See the Service page.");
   }
   chip(modeText, modeCol, true, modeTip);
   if (connected()) {
@@ -227,22 +236,13 @@ void App::DrawTopBar(const Rect& r) {
 }
 
 // ------------------------------------------------------------------------------------------------ page + header
-namespace {
-constexpr float kDockW = 470;
-}
-
 void App::DrawPage(const Rect& view0) {
   Gfx& g = ui_.gfx;
   const Theme& th = ui_.th;
   const Meta& m = MetaOf(page_);
   const Group* grp = GroupOf(page_);
 
-  // A page may ask for a docked side panel (today: the advanced CPU registers on "Custom profiles"). It needs room; on a
-  // narrow window the page draws the same cards inline instead.
-  const bool wantDock = page_ == Page::Custom && Flag("custom.adv");
-  docked_ = wantDock && view0.w >= 980;
-  Rect view = view0;
-  if (docked_) view.w -= kDockW;
+  const Rect view = view0;
 
   const std::string scrollId = std::string("page#") + PageKey(page_);
   ui_.BeginScroll(scrollId, view);
@@ -299,112 +299,11 @@ void App::DrawPage(const Rect& view0) {
     case Page::Battery: h = PageBattery(*this, pr); break;
     case Page::Display: h = PageDisplay(*this, pr); break;
     case Page::DeviceInfo: h = PageDeviceInfo(*this, pr); break;
-    case Page::Safety: h = PageSafety(*this, pr); break;
+    case Page::Service: h = PageService(*this, pr); break;
     case Page::About: h = PageAbout(*this, pr); break;
     default: break;
   }
   ui_.EndScroll(y + h + 48);
-  if (docked_) DrawDock(Rect(view0.r() - kDockW, view0.y, kDockW, view0.h));
-}
-
-void App::DrawDock(const Rect& r) {
-  Gfx& g = ui_.gfx;
-  const Theme& th = ui_.th;
-  g.Fill(r, th.rail);
-  g.Line({r.x + 0.5f, r.y}, {r.x + 0.5f, r.b()}, th.line, 1);
-  const float hh = 76;
-  g.FillRound(Rect(r.x + 22, r.y + 20, 36, 36), 11, WithAlpha(th.accent, 30));
-  g.Icon(IconId::Cpu, Rect(r.x + 29, r.y + 27, 22, 22), th.accent, 1.8f);
-  g.Text(Rect(r.x + 70, r.y + 17, r.w - 140, 22), T("Advanced CPU"), FontId::H3, th.text);
-  g.Text(Rect(r.x + 70, r.y + 40, r.w - 140, 18), T("ThrottleStop-style registers"), FontId::Small, th.muted);
-  const Rect close(r.r() - 56, r.y + 20, 36, 36);
-  if (ui_.IconButton("dock#close", close, IconId::Cross, true)) Flag("custom.adv") = false;
-  ui_.Tip(close, T("Close the advanced panel"));
-  g.Line({r.x, r.y + hh - 0.5f}, {r.r(), r.y + hh - 0.5f}, th.line, 1);
-
-  const Rect view(r.x, r.y + hh, r.w, r.h - hh);
-  ui_.BeginScroll("dock#custom", view);
-  ui_.Offset(22, 0);
-  const float w = view.w - 22 - 28;
-  ui_.Offset(0, 20);
-  const float h = PageCustomDock(*this, Rect(0, 0, w, view.h));
-  ui_.EndScroll(20 + h + 40);
-}
-
-// ------------------------------------------------------------------------------------------------ not connected
-void App::DrawOffline(const Rect& view) {
-  Gfx& g = ui_.gfx;
-  const Theme& th = ui_.th;
-  static double lastQ = -10;
-  static svc::State state = svc::State::Unknown;
-  if (ui_.now - lastQ > 1.5) {
-    lastQ = ui_.now;
-    state = svc::Query();
-  }
-  ui_.RequestFrame();
-
-  const float w = std::min(640.0f, view.w - 60);
-  const Rect box(view.x + (view.w - w) / 2, view.y + std::max(30.0f, (view.h - 430) / 2), w, 0);
-  float h = 0;
-  const std::string status = BackendStatus();
-  std::string head, body;
-  std::string primaryLabel;
-  std::wstring primaryArgs;
-  std::string primaryDone;
-  switch (state) {
-    case svc::State::NotInstalled:
-      head = T("The Control Center Advanced service is not installed");
-      body = T("Control Center Advanced talks to the laptop's embedded controller, the CPU registers and the GPU through a small Windows service, so this window never needs administrator rights. Install it once and it starts with Windows.");
-      primaryLabel = T("Install and start the service");
-      primaryArgs = L"--install-service";
-      primaryDone = T("Service installed and started");
-      break;
-    case svc::State::Stopped:
-      head = T("The Control Center Advanced service is stopped");
-      body = T("The service is installed but not running. Start it to control power, fans, GPU and lighting.");
-      primaryLabel = T("Start the service");
-      primaryArgs = L"--start-service";
-      primaryDone = T("Service started");
-      break;
-    case svc::State::Starting:
-      head = T("The Control Center Advanced service is starting");
-      body = T("Waiting for the service to finish its hardware probe...");
-      break;
-    default:
-      head = T("Connecting to the Control Center Advanced service...");
-      body = status.empty() ? T("Waiting for the service pipe.") : status;
-      break;
-  }
-  const float bodyH = g.Wrapped(Rect(0, 0, w - 64, 2000), body, FontId::Body, 0, false);
-  h = 40 + 50 + 12 + bodyH + 26 + (primaryLabel.empty() ? 0 : 56) + 74 + 40;
-  Rect card(box.x, box.y, w, h);
-  ui_.Panel(card);
-  g.FillRound(Rect(card.x + 32, card.y + 32, 46, 46), 13, WithAlpha(th.accent, 28));
-  g.Icon(IconId::Service, Rect(card.x + 42, card.y + 42, 26, 26), th.accent, 1.8f);
-  g.Text(Rect(card.x + 94, card.y + 30, w - 126, 30), head, FontId::H3, th.text);
-  g.Text(Rect(card.x + 94, card.y + 58, w - 126, 20), status.empty() ? T("Not connected") : g.Fit(status, FontId::Small, w - 126), FontId::Small, th.faint);
-  float y = card.y + 100;
-  y += g.Wrapped(Rect(card.x + 32, y, w - 64, 2000), body, FontId::Body, th.muted, true) + 22;
-  if (!primaryLabel.empty()) {
-    if (ui_.Button("offline#primary", Rect(card.x + 32, y, std::min(w - 64, 330.0f), 40), primaryLabel, Btn::Primary, IconId::Shield, d_->elevProc == nullptr))
-      RunElevated(primaryArgs, primaryDone);
-    y += 56;
-  }
-  g.Line({card.x + 32, y}, {card.r() - 32, y}, th.line, 1);
-  y += 18;
-  g.Text(Rect(card.x + 32, y, w - 64, 18), T("Other ways to run"), FontId::Label, th.faint);
-  y += 26;
-  const float bw = (w - 64 - 12) / 2;
-  if (ui_.Button("offline#local", Rect(card.x + 32, y, bw, 38), T("Run elevated without the service"), Btn::Normal, IconId::Bolt, true)) {
-    ShellExecuteW(d_->hwnd, L"runas", hw::SelfPath().c_str(), L"--local", nullptr, SW_SHOWNORMAL);
-    Quit();
-  }
-  if (ui_.Button("offline#sim", Rect(card.x + 44 + bw, y, bw, 38), T("Try the simulator"), Btn::Normal, IconId::Eye, true)) {
-    ShellExecuteW(d_->hwnd, L"open", hw::SelfPath().c_str(), L"--sim", nullptr, SW_SHOWNORMAL);
-    Quit();
-  }
-  ui_.Tip(Rect(card.x + 32, y, bw, 38), T("One elevated process does everything. Closing the window ends hardware control."));
-  ui_.Tip(Rect(card.x + 44 + bw, y, bw, 38), T("A simulated laptop with a real-time model. Nothing touches your hardware."));
 }
 
 // ------------------------------------------------------------------------------------------------ frame
@@ -423,8 +322,6 @@ void App::Frame(Gdiplus::Graphics* gr, float scale, const Rect& win) {
     ui_.Spinner(Rect(content.cx() - 14, content.cy() - 30, 28, 28));
     g.Text(Rect(content.x, content.cy() + 6, content.w, 24), T("Starting..."), FontId::Body, ui_.th.muted, Align::Center);
     ui_.RequestFrame();
-  } else if (!backend_->Connected()) {
-    DrawOffline(content);
   } else {
     DrawPage(content);
   }

@@ -284,21 +284,29 @@ float PageOverview(App& a, const Rect& r) {
       const float cur1 = s1->empty() ? 0 : s1->back(), cur2 = s2->empty() ? 0 : s2->back();
       const std::string l1 = std::string(tab == 3 ? T("CPU fan") : "CPU") + "  " + Num(cur1) + " " + UnitText(unit);
       const std::string l2 = std::string(tab == 3 ? T("GPU fan") : "GPU") + "  " + Num(cur2) + " " + UnitText(unit);
-      const float w1 = g.TextW(l1, FontId::Small) + 4, w2 = g.TextW(l2, FontId::Small) + 4;
+      std::vector<const std::deque<float>*> series = {s1, s2};
+      std::vector<uint32_t> cols = {th.accent, th.blue};
+      std::vector<std::string> legends = {l1, l2};
+      if (tab == 1 && !a.Has("cpu.pkg.w")) {   // the processor's power needs a driver this program does not use: only the graphics card is drawn
+        series.erase(series.begin());
+        cols.erase(cols.begin());
+        legends.erase(legends.begin());
+      }
       float lx = lg.x + 34;
-      g.Line({lx - 34 + 2, lg.cy()}, {lx - 34 + 20, lg.cy()}, th.accent, 2.6f);
-      g.Text(Rect(lx - 6, lg.y, w1, lg.h), l1, FontId::Small, th.text);
-      lx += w1 + 40;
-      g.Line({lx - 34 + 2, lg.cy()}, {lx - 34 + 20, lg.cy()}, th.blue, 2.6f);
-      g.Text(Rect(lx - 6, lg.y, w2, lg.h), l2, FontId::Small, th.text);
-      LineChart(ui, Rect(cr.x, cr.y, cr.w, cr.h - 18), {s1, s2}, {th.accent, th.blue}, ymin, ymax, "");
+      for (size_t i = 0; i < legends.size(); i++) {
+        const float lw = g.TextW(legends[i], FontId::Small) + 4;
+        g.Line({lx - 34 + 2, lg.cy()}, {lx - 34 + 20, lg.cy()}, cols[i], 2.6f);
+        g.Text(Rect(lx - 6, lg.y, lw, lg.h), legends[i], FontId::Small, th.text);
+        lx += lw + 40;
+      }
+      LineChart(ui, Rect(cr.x, cr.y, cr.w, cr.h - 18), series, cols, ymin, ymax, "");
       TimeAxis(ui, Rect(cr.x + 34, cr.y + 6, cr.w - 40, cr.h - 34), 120);
     }
     // ---- settings that are active right now
     {
       Card k(c, m, T("Active settings"), T("Click a line to change it"), IconId::Sliders, 7 * 40);
-      std::string prof = a.S("profile.active");
-      LinkRow(k, "prof", T("Performance profile"), prof.empty() ? T("Custom values") : ProfileLabel(prof), Page::Profiles);
+      const std::string prof = a.S("profile.active");
+      LinkRow(k, "prof", T("Performance mode"), prof.empty() ? Dash() : ProfileLabel(prof), Page::Profiles);
       LinkRow(k, "pl", T("CPU power limits"), a.Has("ec.pl1") ? Num(a.N("ec.pl1")) + " / " + Num(a.N("ec.pl2")) + " / " + Num(a.N("ec.pl4")) + " W" : Dash(), Page::Custom);
       LinkRow(k, "ctgp", T("GPU power (cTGP)"), a.Has("gpu.ctgp") ? With(a.N("gpu.ctgp"), 0, "W") : Dash(), Page::Custom);
       LinkRow(k, "fan", T("Cooling"), a.Has("fan.mode") ? EnumNice(a.S("fan.mode")) : Dash(), Page::Fan);
@@ -327,16 +335,17 @@ float PageOverview(App& a, const Rect& r) {
         x += w + 10;
       }
       const float flowH = names.empty() ? 0 : yy + 38;
-      Card k(c, m, T("Quick profile"), T("Applies power, fan and CPU policy together"), IconId::Bolt, flowH + 4);
+      Card k(c, m, T("Quick mode"), T("Switches the vendor's performance mode"), IconId::Bolt, flowH + 4);
+      const bool canSwitch = a.CapOk("fan.ctl") && !a.Pending("cmd:profile.apply");
       for (const Item& it : items) {
         const Rect rc(k.x0 + it.r.x, k.y + it.r.y, it.r.w, it.r.h);
         const bool isActive = it.name == active;
         const std::string shown = ProfileLabel(it.name);
         const std::string nm = it.name;
-        if (ui.Button("qp#" + it.name, rc, shown, isActive ? Btn::Primary : Btn::Normal, isActive ? IconId::Check : IconId::None, !a.Pending("cmd:profile.apply"))) {
+        if (ui.Button("qp#" + it.name, rc, shown, isActive ? Btn::Primary : Btn::Normal, isActive ? IconId::Check : IconId::None, canSwitch)) {
           KV args;
           args.Set("name", nm);
-          a.Cmd("profile.apply", args, Tf("Profile %s applied", shown.c_str()));
+          a.Cmd("profile.apply", args, Tf("Mode %s applied", shown.c_str()));
         }
       }
     }
@@ -347,29 +356,24 @@ float PageOverview(App& a, const Rect& r) {
       rows.push_back({ecOk ? th.green : th.red, T("Embedded controller"), ecOk ? T("Connected") : T("Not reachable")});
       if (ecOk) {
         const bool act = a.B("ec.active");
-        rows.push_back({act ? th.green : th.amber, T("Power-management loop"), act ? T("Running") : T("Off: limits are stored but not enforced until it is switched on")});
+        rows.push_back({act ? th.green : th.amber, T("Power-management loop"),
+                        act ? T("Running") : T("Off: stored limits are not enforced until the vendor's service switches it on")});
       }
-      const bool anyThr = a.B("cpu.st.thermal") || a.B("cpu.st.prochot") || a.B("cpu.st.power") || a.B("cpu.st.current") || a.N("cpu.throttle.pct") > 2.0;
-      std::string why;
-      if (a.B("cpu.st.thermal")) why += T("temperature") + ", ";
-      if (a.B("cpu.st.prochot")) why += "PROCHOT, ";
-      if (a.B("cpu.st.power")) why += T("power limit") + ", ";
-      if (a.B("cpu.st.current")) why += T("current limit") + ", ";
-      if (!why.empty()) why = why.substr(0, why.size() - 2);
-      rows.push_back({anyThr ? th.amber : th.green, T("CPU"), anyThr ? T("Limited by") + ": " + (why.empty() ? Tf("%.0f %% of the time", a.N("cpu.throttle.pct")) : why) : T("Running free")});
+      const std::string ls = a.S("oem.link.state", "none");
+      if (ls == "connected") rows.push_back({th.green, T("Vendor's service"), T("Connected")});
+      else if (ls == "connecting") rows.push_back({th.amber, T("Vendor's service"), T("Connecting...")});
+      else if (ls == "refused") rows.push_back({th.red, T("Vendor's service"), T("Refused by the service")});
+      else if (ls == "offline") rows.push_back({th.red, T("Vendor's service"), T("Not reachable (see Service)")});
       const bool gThr = a.B("gpu.thr.power") || a.B("gpu.thr.thermal") || a.B("gpu.thr.hwslow");
       std::string gwhy;
       if (a.B("gpu.thr.power")) gwhy += T("power") + ", ";
       if (a.B("gpu.thr.thermal")) gwhy += T("temperature") + ", ";
       if (a.B("gpu.thr.hwslow")) gwhy += T("hardware slowdown") + ", ";
       if (!gwhy.empty()) gwhy = gwhy.substr(0, gwhy.size() - 2);
-      rows.push_back({gThr ? th.amber : th.green, T("GPU"), gThr ? T("Limited by") + ": " + gwhy : T("Running free")});
-      const bool guardOk = a.S("fan.guard", "ok") == "ok";
-      rows.push_back({guardOk ? th.green : th.red, T("Fan watchdog"), guardOk ? T("Watching temperatures") : (a.S("fan.guard.why").empty() ? T("Forcing maximum fans") : a.S("fan.guard.why"))});
-      if (a.B("oem.running")) rows.push_back({th.blue, T("OEM Control Center service"), T("Running next to Control Center Advanced")});
+      if (a.Has("gpu.throttle") || gThr) rows.push_back({gThr ? th.amber : th.green, T("GPU"), gThr ? T("Limited by") + ": " + gwhy : T("Running free")});
       if (!a.S("last.error").empty()) rows.push_back({th.red, T("Last error"), a.S("last.error")});
       const float hh = 30.0f * static_cast<float>(rows.size());
-      Card k(c, m, T("Health"), T("What is limiting the laptop right now"), IconId::Shield, hh);
+      Card k(c, m, T("Health"), T("What is reachable and what limits the GPU"), IconId::Shield, hh);
       for (const Health& r2 : rows) {
         const Rect rr = k.Row(30);
         g.Dot({rr.x + 5, rr.cy()}, 4, r2.col);

@@ -50,6 +50,7 @@ struct SliderCfg {
   bool chain = false;             // page handles Confirm itself (not used by the standard rows)
   std::string tag;                // label next to the reading instead of "LIVE" (e.g. "STORED" for a value the hardware is not using yet)
   int fallback = INT_MIN;         // reading to assume when the snapshot has none (a stored default)
+  std::string lockWhy;            // non-empty: the value cannot be changed right now (this is the reason); the reading stays live, nothing can be drafted
 };
 
 class Card {
@@ -75,7 +76,8 @@ class Card {
   int Segment(const std::string& id, const std::string& label, const std::string& desc, const std::vector<std::string>& items, int cur, bool enabled = true);
   // Settings-bound rows (use the registry for range / capability / evidence and the snapshot for the live value):
   // warnOff / warnOn: when non-empty, switching the setting to that state first asks "Are you sure?" with this text.
-  void BoolRow(const std::string& key, const std::string& label, const std::string& desc, const std::string& warnOff = "", const std::string& warnOn = "");
+  void BoolRow(const std::string& key, const std::string& label, const std::string& desc, const std::string& warnOff = "", const std::string& warnOn = "",
+               const std::string& lockWhy = "");   // lockWhy non-empty: shown but cannot be switched (the reason is the tooltip)
   void EnumRow(const std::string& key, const std::string& label, const std::string& desc, const std::vector<std::string>& shown);
   void Slider(const SliderCfg& cfg);
   // Enum setting with a draft + Confirm button (same semantics as Slider; used where a value must not be sent on a click).

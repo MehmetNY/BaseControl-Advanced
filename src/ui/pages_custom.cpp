@@ -1,6 +1,6 @@
-// "Custom profiles": every value that shapes power and performance, each with a LIVE reading and a Confirm button,
-// a pending-changes bar, saved profiles, and the advanced (ThrottleStop-style) CPU register panel, which is docked to the
-// right of the page (or drawn inline on a narrow window).
+// "Custom mode": the values that shape power and performance, each with a LIVE reading that follows changes made by other programs, and its
+// own Confirm button - nothing is sent to the laptop until you press it. The CPU and GPU values go through the vendor's service (as its
+// own window does); the GPU power target (cTGP) is this program's own, separately verified engine.
 #include <algorithm>
 #include <cmath>
 
@@ -14,18 +14,15 @@ namespace ui {
 namespace {
 
 // Every slider on this page that takes part in "Confirm all".
-const char* const kKeys[] = {"ec.pl1",        "ec.pl2",       "ec.pl4",         "ec.tcc",        "gpu.ctgp",      "nv.offset.core", "nv.offset.mem",
-                             "os.min",        "os.max",       "os.epp",         "os.park",       "msr.pl1",       "msr.pl2",        "msr.tau1",
-                             "msr.tau2",      "msr.psys.pl1", "msr.psys.pl2",   "msr.icc",       "msr.volt.core", "msr.volt.cache", "msr.volt.sa"};
+const char* const kKeys[] = {"perf.pl1", "perf.pl2", "perf.pl4", "perf.tcc", "perf.gpu.core", "perf.gpu.mem", "perf.gpu.temp", "gpu.ctgp"};
 // A limit that goes up is applied from the outermost gate inwards, one that goes down from the innermost outwards, so that
 // PL1 <= PL2 <= PL4 holds after every single step.
-const char* const kRaiseOrder[] = {"ec.pl4", "ec.pl2", "ec.pl1", "msr.psys.pl2", "msr.psys.pl1", "msr.pl2", "msr.pl1", "os.max", "os.min"};
-const char* const kLowerOrder[] = {"ec.pl1", "ec.pl2", "ec.pl4", "msr.pl1", "msr.pl2", "msr.psys.pl1", "msr.psys.pl2", "os.min", "os.max"};
+const char* const kRaiseOrder[] = {"perf.pl4", "perf.pl2", "perf.pl1"};
+const char* const kLowerOrder[] = {"perf.pl1", "perf.pl2", "perf.pl4"};
 
 struct Pend {
   std::string key, value, title;
   int v = 0, live = 0;
-  bool isEnum = false;
 };
 
 int LiveInt(const App& a, const std::string& k) { return static_cast<int>(std::lround(a.N(k))); }
@@ -34,36 +31,24 @@ std::string TitleOf(const std::string& key) {
   static const struct {
     const char* k;
     const char* t;
-  } kT[] = {{"ec.pl1", N_("PL1")},
-            {"ec.pl2", N_("PL2")},
-            {"ec.pl4", N_("PL4")},
-            {"ec.tcc", N_("Thermal throttle point")},
-            {"gpu.ctgp", N_("GPU power (cTGP)")},
-            {"nv.offset.core", N_("GPU core offset")},
-            {"nv.offset.mem", N_("GPU memory offset")},
-            {"os.min", N_("Minimum processor state")},
-            {"os.max", N_("Maximum processor state")},
-            {"os.epp", N_("Energy preference")},
-            {"os.park", N_("Core parking")},
-            {"os.boost", N_("Boost mode")},
-            {"msr.pl1", N_("CPU PL1")},
-            {"msr.pl2", N_("CPU PL2")},
-            {"msr.tau1", N_("PL1 time window")},
-            {"msr.tau2", N_("PL2 time window")},
-            {"msr.psys.pl1", N_("Platform PL1")},
-            {"msr.psys.pl2", N_("Platform PL2")},
-            {"msr.icc", N_("Current limit (IccMax)")},
-            {"msr.volt.core", N_("Core voltage offset")},
-            {"msr.volt.cache", N_("Cache voltage offset")},
-            {"msr.volt.sa", N_("System agent voltage offset")}};
+  } kT[] = {{"perf.pl1", N_("PL1")},
+            {"perf.pl2", N_("PL2")},
+            {"perf.pl4", N_("PL4")},
+            {"perf.tcc", N_("Thermal offset (TCC)")},
+            {"perf.gpu.core", N_("GPU core offset")},
+            {"perf.gpu.mem", N_("GPU memory offset")},
+            {"perf.gpu.temp", N_("GPU temperature target")},
+            {"gpu.ctgp", N_("GPU power (cTGP)")}};
   for (auto& e : kT)
     if (key == e.k) return T(e.t);
   return key;
 }
 
-std::vector<Pend> Collect(App& a) {
+// readyMade: one of the vendor's ready-made modes is active, so the values the service keeps for it cannot be changed and no draft counts.
+std::vector<Pend> Collect(App& a, bool readyMade) {
   std::vector<Pend> out;
   for (const char* k : kKeys) {
+    if (readyMade && std::string(k) != "gpu.ctgp") continue;
     auto it = a.drafts().find(k);
     if (it == a.drafts().end() || !it->second.active || !a.Has(k)) continue;
     const int live = LiveInt(a, k);
@@ -74,17 +59,6 @@ std::vector<Pend> Collect(App& a) {
     p.live = live;
     p.value = std::to_string(p.v);
     p.title = TitleOf(k);
-    out.push_back(p);
-  }
-  const SettingDef* bd = FindSetting("os.boost");
-  const int bi = a.Int("ed#os.boost", -1);
-  if (bd && a.Has("os.boost") && bi >= 0 && bi < EnumCount(*bd) && EnumIndex(*bd, a.S("os.boost")) != bi) {
-    Pend p;
-    p.key = "os.boost";
-    p.isEnum = true;
-    p.v = bi;
-    p.value = EnumName(*bd, bi);
-    p.title = TitleOf("os.boost");
     out.push_back(p);
   }
   return out;
@@ -110,18 +84,11 @@ bool AnyPend(const std::vector<Pend>& v, std::initializer_list<const char*> ks) 
 
 // What stops the whole set from being applied (empty = fine). Uses the values as they will be AFTER the change.
 std::string ValidateAll(App& a, const std::vector<Pend>& v) {
-  if (AnyPend(v, {"ec.pl1", "ec.pl2", "ec.pl4"})) {
-    const int p1 = Eff(a, v, "ec.pl1"), p2 = Eff(a, v, "ec.pl2"), p4 = Eff(a, v, "ec.pl4");
+  if (AnyPend(v, {"perf.pl1", "perf.pl2", "perf.pl4"})) {
+    const int p1 = Eff(a, v, "perf.pl1"), p2 = Eff(a, v, "perf.pl2"), p4 = Eff(a, v, "perf.pl4");
     if (p1 > p2) return Tf("PL1 (%d W) cannot be above PL2 (%d W).", p1, p2);
     if (p2 > p4) return Tf("PL2 (%d W) cannot be above PL4 (%d W).", p2, p4);
-    if (a.I("ec.pl4.scale", 1) == 2 && p4 % 2) return T("PL4 must be a multiple of 2 W on this firmware.");
   }
-  if (AnyPend(v, {"msr.pl1", "msr.pl2"}) && Eff(a, v, "msr.pl1") > Eff(a, v, "msr.pl2"))
-    return Tf("CPU PL1 (%d W) cannot be above PL2 (%d W).", Eff(a, v, "msr.pl1"), Eff(a, v, "msr.pl2"));
-  if (AnyPend(v, {"msr.psys.pl1", "msr.psys.pl2"}) && Eff(a, v, "msr.psys.pl1") > Eff(a, v, "msr.psys.pl2"))
-    return Tf("Platform PL1 (%d W) cannot be above PL2 (%d W).", Eff(a, v, "msr.psys.pl1"), Eff(a, v, "msr.psys.pl2"));
-  if (AnyPend(v, {"os.min", "os.max"}) && Eff(a, v, "os.min") > Eff(a, v, "os.max"))
-    return Tf("Minimum processor state (%d%%) cannot be above the maximum (%d%%).", Eff(a, v, "os.min"), Eff(a, v, "os.max"));
   return "";
 }
 
@@ -161,11 +128,12 @@ void ConfirmAll(App& a, const std::vector<Pend>& v) {
   a.Chain(reqs, labels);
 }
 
-SliderCfg Cfg(const char* key, const std::string& title, const std::string& desc) {
+SliderCfg Cfg(const char* key, const std::string& title, const std::string& desc, const std::string& lockWhy = "") {
   SliderCfg c;
   c.key = key;
   c.title = title;
   c.desc = desc;
+  c.lockWhy = lockWhy;
   return c;
 }
 
@@ -173,190 +141,51 @@ float SliderRows(int n) { return static_cast<float>(n) * kRowSlider; }
 
 std::string Dash() { return "\xE2\x80\x94"; }
 
-// ---------------------------------------------------------------------------------------------------------------
-// The advanced CPU cards. `m` is the dock's single column or the page's own masonry (narrow window).
-void AdvancedCards(Ctx& c, Masonry& m) {
-  App& a = c.app;
-  const Theme& th = c.ui.th;
-  Gfx& g = c.ui.gfx;
-  (void)g;
-
-  if (!a.CapOk("msr")) {
-    const std::string why = a.CapWhy("msr").empty() ? T("The register driver is not available.") : a.CapWhy("msr");
-    const std::string body = T("The advanced panel writes CPU registers through the PawnIO driver with its IntelMSR module. Control Center Advanced does not ship them. Follow docs/SETUP.md to install both once, then restart the service.");
-    const float nh = NoteHeight(c, m, why) + NoteHeight(c, m, body);
-    Card k(c, m, T("Advanced CPU registers unavailable"), T("Direct register access is switched off"), IconId::Lock, nh + kRowButtons);
-    k.Note(why, th.amber);
-    k.Note(body);
-    if (k.Button("cu#setup", T("Open the setup guide"), Btn::Normal, IconId::External)) a.OpenUrl("https://github.com/MehmetNY/Control-Center-Advanced/blob/main/docs/SETUP.md");
-    return;
-  }
-
-  // ---- package power limits ------------------------------------------------------------------------------------
-  {
-    const std::string cmp = T("The EC limits and the CPU's own registers are two separate gates, and the lower one wins. Compare them here.");
-    const float nh = NoteHeight(c, m, cmp);
-    Card k(c, m, T("Package power limits"), T("CPU register 0x610 (the CPU's own PL1 / PL2)"), IconId::Bolt, nh + 3 * kRowInfo + 9 + SliderRows(4) + 3 * kRowToggleLean);
-    k.Note(cmp);
-    const bool ecAll = a.Has("ec.pl1") && a.Has("ec.pl2");
-    const bool msrAll = a.Has("msr.pl1") && a.Has("msr.pl2");
-    k.Info(T("EC limits (PL1 / PL2 / PL4)"), a.Has("ec.pl1") ? Num(a.N("ec.pl1")) + " / " + Num(a.N("ec.pl2")) + " / " + Num(a.N("ec.pl4")) + " W" : Dash());
-    k.Info(T("CPU registers (PL1 / PL2)"), msrAll ? Num(a.N("msr.pl1")) + " / " + Num(a.N("msr.pl2")) + " W" : Dash());
-    k.Info(T("Effective now (lower wins)"),
-           ecAll && msrAll ? Num(std::min(a.N("ec.pl1"), a.N("msr.pl1"))) + " / " + Num(std::min(a.N("ec.pl2"), a.N("msr.pl2"))) + " W" : Dash(), th.accent,
-           T("What the CPU is actually held to: the smaller of the EC value and the register value."));
-    k.Divider();
-    SliderCfg p1 = Cfg("msr.pl1", T("CPU PL1"), T("Sustained limit written straight to the CPU."));
-    p1.softMax = 120;
-    p1.validate = [&a](int v) { return v > LiveInt(a, "msr.pl2") ? Tf("PL1 cannot be above PL2 (now %d W). Confirm PL2 first, or use Confirm all.", LiveInt(a, "msr.pl2")) : std::string(); };
-    k.Slider(p1);
-    SliderCfg p2 = Cfg("msr.pl2", T("CPU PL2"), T("Short boost limit written straight to the CPU."));
-    p2.softMax = 120;
-    p2.validate = [&a](int v) { return v < LiveInt(a, "msr.pl1") ? Tf("PL2 cannot be below PL1 (now %d W). Confirm PL1 first, or use Confirm all.", LiveInt(a, "msr.pl1")) : std::string(); };
-    k.Slider(p2);
-    k.Slider(Cfg("msr.tau1", T("PL1 time window"), T("How long the CPU may average above PL1, in seconds.")));
-    SliderCfg t2 = Cfg("msr.tau2", T("PL2 time window"), T("How long the PL2 boost may last, in milliseconds."));
-    t2.vmax = 100;   // the hardware default is about 2.4 ms; a linear track up to 10 s would be unusable
-    k.Slider(t2);
-    k.BoolRow("msr.pl1.en", T("PL1 limit enabled"), "");
-    k.BoolRow("msr.pl2.en", T("PL2 limit enabled"), "");
-    k.BoolRow("msr.clamp", T("Allow going below the OS-requested speed"), "");
-  }
-
-  // ---- platform (PSys) limit -----------------------------------------------------------------------------------
-  {
-    const std::string note = T("The platform limit bounds the whole machine as the CPU's PSys meter sees it. If it is lower than what CPU and GPU want together, both are slowed down at the same time. A firmware that locks it makes the row read-only.");
-    const float nh = NoteHeight(c, m, note);
-    Card k(c, m, T("Platform power (PSys)"), T("CPU register 0x65C: one budget for CPU and GPU together"), IconId::Plug, nh + SliderRows(2) + 2 * kRowToggleLean + kRowInfo);
-    k.Note(note);
-    SliderCfg p1 = Cfg("msr.psys.pl1", T("Platform PL1"), T("Sustained limit for the whole platform."));
-    p1.softMax = 230;
-    p1.validate = [&a](int v) { return v > LiveInt(a, "msr.psys.pl2") ? Tf("Platform PL1 cannot be above PL2 (now %d W). Confirm PL2 first, or use Confirm all.", LiveInt(a, "msr.psys.pl2")) : std::string(); };
-    k.Slider(p1);
-    SliderCfg p2 = Cfg("msr.psys.pl2", T("Platform PL2"), T("Short-term platform limit."));
-    p2.softMax = 300;
-    p2.validate = [&a](int v) { return v < LiveInt(a, "msr.psys.pl1") ? Tf("Platform PL2 cannot be below PL1 (now %d W). Confirm PL1 first, or use Confirm all.", LiveInt(a, "msr.psys.pl1")) : std::string(); };
-    k.Slider(p2);
-    k.BoolRow("msr.psys.pl1.en", T("Platform PL1 enabled"), "");
-    k.BoolRow("msr.psys.pl2.en", T("Platform PL2 enabled"), "");
-    const bool lk = a.B("msr.psys.lock");
-    k.Info(T("Locked until reboot"), a.Has("msr.psys.lock") ? (lk ? T("Yes") : T("No")) : Dash(), lk ? th.amber : 0);
-  }
-
-  // ---- current + voltage ---------------------------------------------------------------------------------------
-  {
-    Card k(c, m, T("Current and voltage"), T("Current limit and voltage offsets (undervolt only)"), IconId::Thermo, SliderRows(4));
-    SliderCfg ic = Cfg("msr.icc", T("Current limit (IccMax)"), T("Largest current the voltage regulator may deliver to the CPU."));
-    ic.softMax = 140;
-    k.Slider(ic);
-    k.Slider(Cfg("msr.volt.core", T("Core voltage offset"), T("Negative values lower the core voltage. The BIOS may ignore it.")));
-    k.Slider(Cfg("msr.volt.cache", T("Cache voltage offset"), T("Ring / cache voltage offset (usually tied to the core value).")));
-    k.Slider(Cfg("msr.volt.sa", T("System agent voltage offset"), T("Memory controller voltage offset.")));
-  }
-
-  // ---- protection + prefetchers --------------------------------------------------------------------------------
-  {
-    Card k(c, m, T("Protection and prefetchers"), T("Throttle request line and hardware prefetch switches"), IconId::Shield, kRowToggle + 9 + 30 + 4 * kRowToggleLean);
-    k.BoolRow("msr.bdp", T("Let other chips throttle the CPU (BD PROCHOT)"),
-              T("Turn off to stop the EC or VRM from forcing the CPU down. Protection is lower."),
-              T("Without this line the embedded controller and the power stage can no longer slow the CPU down when they get too hot or are overloaded. The CPU still protects itself, but other parts may not be. Turn it off only while you watch the temperatures."),
-              "");
-    k.Divider();
-    k.SubHead(T("Hardware prefetchers"));
-    k.BoolRow("msr.pf.l2", T("L2 hardware prefetcher"), "");
-    k.BoolRow("msr.pf.l2adj", T("L2 adjacent line prefetcher"), "");
-    k.BoolRow("msr.pf.dcu", T("DCU streamer prefetcher"), "");
-    k.BoolRow("msr.pf.dcuip", T("DCU IP prefetcher"), "");
-  }
-
-  // ---- facts ---------------------------------------------------------------------------------------------------
-  {
-    Card k(c, m, T("CPU facts"), T("Read-only values from the CPU registers"), IconId::Info, 9 * kRowInfo);
-    k.Info(T("Rated power (TDP)"), a.Has("msr.tdp") ? With(a.N("msr.tdp"), 0, "W") : Dash());
-    k.Info(T("Allowed power range"), a.Has("msr.minw") ? Num(a.N("msr.minw")) + " - " + Num(a.N("msr.maxw")) + " W" : Dash());
-    k.Info(T("Maximum junction temperature"), a.Has("msr.tjmax") ? With(a.N("msr.tjmax"), 0, "\xC2\xB0""C") : Dash());
-    k.Info(T("Thermal offset (TCC)"), a.Has("msr.tcc") ? With(a.N("msr.tcc"), 0, "\xC2\xB0""C") : Dash());
-    k.Info(T("Base ratio"), a.Has("cpu.base.ratio") ? "x" + Num(a.N("cpu.base.ratio")) : Dash());
-    k.Info(T("Turbo ratios (1 to 8 cores)"), a.S("msr.turbo").empty() ? Dash() : a.S("msr.turbo"));
-    std::string locks;
-    bool anyLock = false;
-    auto lock = [&](const char* key, const std::string& name) {
-      if (!a.Has(key)) return;
-      const bool l = a.B(key);
-      anyLock |= l;
-      locks += (locks.empty() ? "" : "  ") + name + (l ? " \xE2\x9C\x97" : " \xE2\x9C\x93");
-    };
-    lock("msr.lock", T("package"));
-    lock("msr.icc.lock", T("current"));
-    lock("msr.psys.lock", T("platform"));
-    k.Info(T("Locked until reboot"), locks.empty() ? Dash() : locks, anyLock ? th.amber : th.green,
-           T("A locked register ignores writes until the computer restarts. The check mark means writable."));
-    auto reasons = [&](const char* thermal, const char* prochot, const char* power, const char* extra) {
-      std::string out;
-      if (a.B(thermal)) out += T("thermal") + "  ";
-      if (a.B(prochot)) out += "PROCHOT  ";
-      if (a.B(power)) out += T("power limit") + "  ";
-      if (extra && a.B(extra)) out += T("current limit") + "  ";
-      return out.empty() ? T("none") : Trim(out);
-    };
-    const std::string now = reasons("cpu.st.thermal", "cpu.st.prochot", "cpu.st.power", "cpu.st.current");
-    k.Info(T("Throttling right now"), now, now == T("none") ? th.green : th.amber);
-    const std::string log = reasons("cpu.log.thermal", "cpu.log.prochot", "cpu.log.power", nullptr);
-    k.Info(T("Throttled since last clear"), log, log == T("none") ? th.green : th.amber, T("The CPU keeps a record of why it was slowed down since the last reset of the register."));
-  }
-}
-
 }  // namespace
-
-float PageCustomDock(App& a, const Rect& r) {
-  Ctx c(a, r.w);
-  Masonry m(r.w, 380, 1);
-  AdvancedCards(c, m);
-  return m.Bottom();
-}
 
 float PageCustom(App& a, const Rect& r) {
   Ctx c(a, r.w);
-  Masonry m(r.w, 450, 3);
+  Masonry m(r.w, 450, 2);
   Gfx& g = c.ui.gfx;
   const Theme& th = c.ui.th;
-  const bool adv = a.Flag("custom.adv");
-  const std::vector<Pend> pend = Collect(a);
+  // The vendor's ready-made modes keep their own stored values and the original window only edits the Custom mode, so while one of them is active the
+  // rows below only SHOW the live values; the GPU power target (this program's own engine) works in every mode.
+  const bool linkUp = a.CapOk("oem");
+  const long long mode = a.I("perf.mode", -1);
+  const bool readyMade = linkUp && mode >= 0 && mode != 3;
+  const std::string lockWhy = readyMade ? T("The vendor's ready-made modes keep their own values. Switch to the Custom mode to change them.") : std::string();
+  const std::vector<Pend> pend = Collect(a, readyMade);
   const std::string verr = ValidateAll(a, pend);
 
   // =================================================================== pending changes bar
   {
-    const bool compact = r.w < 800;
+    const bool compact = r.w < 700;
     const bool any = !pend.empty();
     const float rowH = compact ? 58.0f : 46.0f;
     Card k(c, m, "", "", IconId::None, compact ? rowH + 8.0f + 38.0f : rowH, true);
     const Rect row = k.Row(rowH);
-    g.FillRound(Rect(row.x, row.y + 3, 40, 40), 12, WithAlpha(any ? th.amber : th.green, 30));
+    g.FillRound(Rect(row.x, row.y + 3, 40, 40), 12, WithAlpha(any ? th.amber : th.green, 36));
     g.Icon(any ? IconId::Sliders : IconId::Check, Rect(row.x + 9, row.y + 12, 22, 22), any ? th.amber : th.green, 1.8f);
 
-    const float bw3 = 132, bw2 = 118, bw1 = adv ? 176.0f : 168.0f;
-    const float btnsW = bw1 + bw2 + bw3 + 24;
-    Rect b1, b2, b3;
+    const float bw3 = 132, bw2 = 118;
+    Rect b2, b3;
     float textR = row.r();
     if (!compact) {
       b3 = Rect(row.r() - bw3, row.y + 4, bw3, 38);
       b2 = Rect(b3.x - 12 - bw2, row.y + 4, bw2, 38);
-      b1 = Rect(b2.x - 12 - bw1, row.y + 4, bw1, 38);
-      textR = b1.x - 16;
+      textR = b2.x - 16;
     } else {
       const Rect brow = k.Row(46);
       const float by = brow.y + 8;
       b3 = Rect(brow.r() - bw3, by, bw3, 38);
       b2 = Rect(b3.x - 12 - bw2, by, bw2, 38);
-      b1 = Rect(b2.x - 12 - bw1, by, bw1, 38);
-      (void)btnsW;
     }
     const float tx = row.x + 54, tw = std::max(80.0f, textR - tx);
     std::string head;
     if (any) head = pend.size() == 1 ? T("1 change is waiting for your confirmation") : Tf("%d changes are waiting for your confirmation", static_cast<int>(pend.size()));
     else head = T("Showing live values. Nothing is waiting.");
-    std::string sub = any ? T("Nothing has been sent to the hardware yet. Use each Confirm button, or Confirm all.")
-                          : T("Move a slider, then press its Confirm button. Values follow changes made by other programs.");
+    std::string sub = any ? T("Nothing has been sent to the laptop yet. Use each Confirm button, or Confirm all.")
+                          : T("Move a slider, then press its Confirm button. The values follow changes made by other programs.");
     uint32_t sc = th.muted;
     if (any && !verr.empty()) {
       sub = verr;
@@ -367,120 +196,83 @@ float PageCustom(App& a, const Rect& r) {
     g.WrappedClamped(Rect(tx, row.y + 26, tw, 36), sub, FontId::Small, sc, compact ? 2 : 1, 2.0f, &cut);
     if (cut) c.ui.Tip(Rect(tx, row.y + 24, tw, 36), sub);
 
-    if (c.ui.Button("cu#adv", b1, adv ? T("Hide advanced CPU") : T("Advanced CPU..."), adv ? Btn::Primary : Btn::Normal, adv ? IconId::ChevronR : IconId::Cpu, true))
-      a.Flag("custom.adv") = !adv;
-    c.ui.Tip(b1, T("ThrottleStop-style registers: package and platform power limits, time windows, current limit, voltage offsets, prefetchers, BD PROCHOT."));
-    if (c.ui.Button("cu#discard", b2, T("Discard all"), Btn::Ghost, IconId::Undo, any)) {
-      a.ClearDrafts();
-      a.Int("ed#os.boost", -1) = -1;
-    }
+    if (c.ui.Button("cu#discard", b2, T("Discard all"), Btn::Ghost, IconId::Undo, any)) a.ClearDrafts();
     if (c.ui.Button("cu#confirmall", b3, T("Confirm all"), Btn::Primary, IconId::Check, any && verr.empty())) ConfirmAll(a, pend);
     c.ui.Tip(b3, T("Applies every pending change in a safe order (limits that go up from the outside in, limits that go down from the inside out) and stops at the first problem."));
   }
 
-  // =================================================================== advanced cards inline (narrow window)
-  if (adv && !a.docked()) AdvancedCards(c, m);
-
-  // =================================================================== saved profiles
+  // =================================================================== which mode these values belong to
   {
-    std::vector<std::string> names;
-    const std::string list = a.S("profile.list");
-    if (!list.empty()) names = Split(list, ',');
-    const std::string active = a.S("profile.active");
-    auto builtin = [&](const std::string& n) { return IsBuiltinProfile(n); };
-    const float inner = m.InnerW(true);
-    float x = 0, y = 0;
-    struct Item {
-      std::string name;
-      Rect r;
-      bool del;
-    };
-    std::vector<Item> items;
-    for (const std::string& n : names) {
-      const bool custom = !builtin(n);
-      const float w = std::min(inner, g.TextW(ProfileLabel(n), FontId::Label) + 40 + (custom ? 38 : 0));
-      if (x > 0 && x + w > inner) {
-        x = 0;
-        y += 46;
+    if (!linkUp || readyMade) {
+      const std::string text = !linkUp ? T("The vendor's service is not reachable, so changes cannot be sent. The values shown come from the embedded controller where it can be read. See the Service page.")
+                                       : Tf("The active mode is %s. The vendor's ready-made modes keep their own values, so they cannot be changed here. Switch to the Custom mode first.",
+                                            ProfileLabel(a.S("profile.active")).c_str());
+      const float nh = NoteHeight(c, m, text, true);
+      Card k(c, m, "", "", IconId::None, nh + 6 + kRowButtons, true);
+      k.Note(text, th.amber);
+      k.Gap(6);
+      if (!linkUp) {
+        if (k.Button("cu#toservice", T("Open the Service page"), Btn::Normal, IconId::Service, true)) a.Go(Page::Service);
+      } else {
+        if (k.Button("cu#tocustom", T("Switch to Custom mode"), Btn::Primary, IconId::Sliders, !a.Pending("cmd:profile.apply"))) {
+          KV args;
+          args.Set("name", "Customized");
+          a.Cmd("profile.apply", args, Tf("Mode %s applied", ProfileLabel("Customized").c_str()));
+        }
       }
-      items.push_back({n, Rect(x, y, w, 38), custom});
-      x += w + 10;
-    }
-    const float flowH = names.empty() ? 0 : y + 38 + 12;
-    Card k(c, m, T("Profiles"), T("Apply a saved set of values, or save the current live values under a new name."), IconId::Profiles, flowH + kRowButtons + 6, true);
-    for (const Item& it : items) {
-      const Rect rc(k.x0 + it.r.x, k.y + it.r.y, it.r.w, it.r.h);
-      const bool isActive = it.name == active;
-      const Rect main(rc.x, rc.y, rc.w - (it.del ? 38 : 0), rc.h);
-      const std::string shown = ProfileLabel(it.name);
-      const std::string nm = it.name;
-      if (c.ui.Button("pf#" + it.name, main, shown, isActive ? Btn::Primary : Btn::Normal, isActive ? IconId::Check : IconId::None, !a.Pending("cmd:profile.apply"))) {
-        KV args;
-        args.Set("name", nm);
-        a.Cmd("profile.apply", args, Tf("Profile %s applied", shown.c_str()));
-      }
-      if (it.del && c.ui.IconButton("pd#" + it.name, Rect(rc.r() - 36, rc.y, 36, rc.h), IconId::Trash, true, th.red)) {
-        ModalSpec ms;
-        ms.title = T("Delete this profile?");
-        ms.body = Tf("The saved profile \"%s\" will be removed. Your current hardware settings are not changed.", nm.c_str());
-        ms.icon = IconId::Trash;
-        ms.iconColor = th.red;
-        ms.buttons = {{T("Cancel"), Btn::Ghost, 0}, {T("Delete"), Btn::Danger, 1}};
-        App* ap = &a;
-        c.ui.ModalOpen(ms, [ap, nm](int id) {
-          if (id == 1) {
-            KV args;
-            args.Set("name", nm);
-            ap->Cmd("profile.delete", args, Tf("Profile %s deleted", nm.c_str()));
-          }
-        });
-      }
-    }
-    k.Gap(flowH);
-    std::string& nm = a.Str("custom.newname");
-    const bool valid = !Trim(nm).empty();
-    if (k.InputRow("pname", &nm, T("Name for the new profile"), T("Save current values"), valid && !a.Pending("cmd:profile.save"), 24)) {
-      KV args;
-      args.Set("name", Trim(nm));
-      a.Cmd("profile.save", args, Tf("Profile %s saved", Trim(nm).c_str()));
-      nm.clear();
     }
   }
 
-  // =================================================================== CPU power limits (embedded controller)
+  // =================================================================== CPU power limits
   {
-    const std::string oemNote = T("OEM maximum profile on this laptop: PL1 120 W, PL2 120 W, PL4 200 W. Anything above needs your confirmation.");
-    const float nh = NoteHeight(c, m, oemNote);
-    Card k(c, m, T("CPU power limits"), T("Embedded controller (EC): the limits the laptop firmware enforces"), IconId::Cpu, SliderRows(4) + 9 + nh);
-    SliderCfg s1 = Cfg("ec.pl1", T("PL1 - sustained power"), T("Long-term CPU package power. Sets how hot the laptop runs under a lasting load."));
-    s1.softMax = 120;
+    const std::string note = T("The embedded controller enforces these limits. The range of each slider is the one the vendor's service reports for the active mode.");
+    const float nh = NoteHeight(c, m, note);
+    Card k(c, m, T("CPU power limits"), T("Sustained, boost and peak power of the processor"), IconId::Cpu, SliderRows(3) + 9 + nh);
+    SliderCfg s1 = Cfg("perf.pl1", T("PL1 - sustained power"), T("Long-term CPU package power. Sets how hot the laptop runs under a lasting load."), lockWhy);
     s1.validate = [&a](int v) {
-      const int pl2 = LiveInt(a, "ec.pl2");
+      const int pl2 = LiveInt(a, "perf.pl2");
       return v > pl2 ? Tf("PL1 cannot be above PL2 (now %d W). Confirm PL2 first, or use Confirm all.", pl2) : std::string();
     };
     k.Slider(s1);
-    SliderCfg s2 = Cfg("ec.pl2", T("PL2 - boost power"), T("Short-term boost limit used for the first seconds of a load."));
-    s2.softMax = 120;
+    SliderCfg s2 = Cfg("perf.pl2", T("PL2 - boost power"), T("Short-term boost limit used for the first seconds of a load."), lockWhy);
     s2.validate = [&a](int v) {
-      if (v < LiveInt(a, "ec.pl1")) return Tf("PL2 cannot be below PL1 (now %d W). Confirm PL1 first, or use Confirm all.", LiveInt(a, "ec.pl1"));
-      if (v > LiveInt(a, "ec.pl4")) return Tf("PL2 cannot be above PL4 (now %d W). Confirm PL4 first, or use Confirm all.", LiveInt(a, "ec.pl4"));
+      if (v < LiveInt(a, "perf.pl1")) return Tf("PL2 cannot be below PL1 (now %d W). Confirm PL1 first, or use Confirm all.", LiveInt(a, "perf.pl1"));
+      if (v > LiveInt(a, "perf.pl4")) return Tf("PL2 cannot be above PL4 (now %d W). Confirm PL4 first, or use Confirm all.", LiveInt(a, "perf.pl4"));
       return std::string();
     };
     k.Slider(s2);
-    SliderCfg s4 = Cfg("ec.pl4", T("PL4 - peak power"), T("The highest instantaneous power the EC lets the CPU draw."));
-    s4.softMax = 200;
-    s4.validate = [&a](int v) {
-      if (v < LiveInt(a, "ec.pl2")) return Tf("PL4 cannot be below PL2 (now %d W).", LiveInt(a, "ec.pl2"));
-      if (a.I("ec.pl4.scale", 1) == 2 && v % 2) return T("PL4 must be a multiple of 2 W on this firmware.");
-      return std::string();
-    };
+    SliderCfg s4 = Cfg("perf.pl4", T("PL4 - peak power"), T("The highest instantaneous power the CPU may draw."), lockWhy);
+    s4.validate = [&a](int v) { return v < LiveInt(a, "perf.pl2") ? Tf("PL4 cannot be below PL2 (now %d W).", LiveInt(a, "perf.pl2")) : std::string(); };
     k.Slider(s4);
-    k.Slider(Cfg("ec.tcc", T("Thermal throttle point"), T("Temperature at which the CPU starts slowing down. 100 \xC2\xB0""C is the Intel default.")));
     k.Divider();
-    k.Note(oemNote);
+    k.Note(note);
   }
 
-  // =================================================================== GPU power (cTGP) + MONSTER GPU POWER integration
+  // =================================================================== CPU temperature offset
+  {
+    const std::string note = T("The CPU starts slowing down this many degrees earlier than it normally would. Switch it off to use the CPU's own limit.");
+    const float nh = NoteHeight(c, m, note);
+    Card k(c, m, T("CPU temperature"), T("Thermal offset (TCC) of the processor"), IconId::Thermo, kRowToggle + 9 + SliderRows(1) + 9 + nh);
+    k.BoolRow("perf.tcc.on", T("Use a thermal offset"), T("Lets the offset below apply."), "", "", lockWhy);
+    k.Divider();
+    k.Slider(Cfg("perf.tcc", T("Thermal offset"), T("Degrees below the CPU's maximum temperature at which throttling starts."), lockWhy));
+    k.Divider();
+    k.Note(note);
+  }
+
+  // =================================================================== GPU: offsets and temperature target (vendor service)
+  {
+    const std::string note = T("The values are stored in the Custom mode by the vendor's service and applied by the NVIDIA driver. Raise offsets slowly and test for stability.");
+    const float nh = NoteHeight(c, m, note);
+    Card k(c, m, T("GPU clocks and temperature"), T("Clock offsets and temperature target of the RTX GPU"), IconId::Chip, SliderRows(3) + 9 + nh);
+    k.Slider(Cfg("perf.gpu.core", T("Core clock offset"), T("Added to the graphics clock. Too high a value causes crashes."), lockWhy));
+    k.Slider(Cfg("perf.gpu.mem", T("Memory clock offset"), T("Added to the video memory clock. Too high a value causes artifacts."), lockWhy));
+    k.Slider(Cfg("perf.gpu.temp", T("Temperature target"), T("The GPU slows itself down to stay at this temperature."), lockWhy));
+    k.Divider();
+    k.Note(note);
+  }
+
+  // =================================================================== GPU power (cTGP): this program's own engine
   {
     const bool oemSyncOk = a.CapOk("oem.sync");
     Card k(c, m, T("GPU power"), T("Dynamic power target (cTGP) of the RTX GPU"), IconId::Gpu, kRowSlider + 9 + 3 * kRowInfo + 2 * kRowToggle);
@@ -513,34 +305,27 @@ float PageCustom(App& a, const Rect& r) {
     }
   }
 
-  // =================================================================== GPU clock offsets
+  // =================================================================== the vendor's defaults for this mode
   {
-    const std::string note = T("Offsets go to the NVIDIA driver and are lost when it reloads or the PC restarts, unless Keep is on.");
+    const std::string note = T("Asks the vendor's service to put its default values back into the Custom mode: the power limits, the thermal offset, the GPU clocks and the temperature target. The GPU power above is not part of it.");
     const float nh = NoteHeight(c, m, note);
-    Card k(c, m, T("GPU clocks"), T("NVIDIA driver clock offsets"), IconId::Chip, SliderRows(2) + 9 + nh);
-    SliderCfg s1 = Cfg("nv.offset.core", T("Core clock offset"), T("Added to the graphics clock. Raise it slowly and test for stability."));
-    s1.softMax = 150;
-    k.Slider(s1);
-    SliderCfg s2 = Cfg("nv.offset.mem", T("Memory clock offset"), T("Added to the video memory clock. Too high a value causes artifacts or crashes."));
-    s2.softMax = 500;
-    k.Slider(s2);
-    k.Divider();
+    Card k(c, m, T("Vendor defaults"), T("Start over with the values the vendor ships"), IconId::Undo, nh + 6 + kRowButtons);
     k.Note(note);
-  }
-
-  // =================================================================== Windows CPU policy
-  {
-    Card k(c, m, T("Windows CPU policy"), T("Power plan values of the active plan. No firmware involved."), IconId::Performance, SliderRows(5));
-    SliderCfg smin = Cfg("os.min", T("Minimum processor state"), T("Lowest CPU speed Windows will use. Keep it low for efficiency."));
-    smin.validate = [&a](int v) { return v > LiveInt(a, "os.max") ? Tf("Cannot be above the maximum (now %d%%). Confirm the maximum first, or use Confirm all.", LiveInt(a, "os.max")) : std::string(); };
-    k.Slider(smin);
-    SliderCfg smax = Cfg("os.max", T("Maximum processor state"), T("Highest CPU speed Windows will use. 100% means no cap."));
-    smax.validate = [&a](int v) { return v < LiveInt(a, "os.min") ? Tf("Cannot be below the minimum (now %d%%). Confirm the minimum first, or use Confirm all.", LiveInt(a, "os.min")) : std::string(); };
-    k.Slider(smax);
-    k.Slider(Cfg("os.epp", T("Energy preference"), T("0 favours speed, 100 favours efficiency (Energy Performance Preference).")));
-    k.Slider(Cfg("os.park", T("Core parking"), T("Share of cores Windows keeps awake. 100% disables parking.")));
-    k.EnumConfirm("os.boost", T("Boost mode"), T("How eagerly Windows lets the CPU use turbo frequencies."),
-                  {T("Disabled"), T("Enabled"), T("Aggressive"), T("Efficient"), T("Efficient aggressive"), T("Aggressive at guaranteed"), T("Efficient aggressive at guaranteed")});
+    k.Gap(6);
+    const bool can = linkUp && mode == 3 && !a.B("cfg.readonly") && !a.Pending("cmd:perf.restore");
+    if (k.Button("cu#restore", T("Restore defaults"), Btn::Normal, IconId::Undo, can)) {
+      ModalSpec ms;
+      ms.title = T("Restore the vendor's defaults?");
+      ms.body = T("The vendor's service puts its own default values back into the Custom mode (power limits, thermal offset, GPU clocks and temperature target). What you set there is replaced. The GPU power (cTGP) is not changed.");
+      ms.icon = IconId::Undo;
+      ms.buttons = {{T("Cancel"), Btn::Ghost, 0}, {T("Restore"), Btn::Primary, 1}};
+      App* ap = &a;
+      c.ui.ModalOpen(ms, [ap](int id) {
+        if (id != 1) return;
+        ap->ClearDrafts();
+        ap->Cmd("perf.restore", KV(), T("The vendor's default values were asked for"));
+      });
+    }
   }
   return m.Bottom();
 }

@@ -55,18 +55,18 @@ struct ScHandle {
 
 }  // namespace
 
-OemServices::OemServices(const std::string& stateDir) : stateFile_(stateDir.empty() ? "" : fs::Join(stateDir, "oem_takeover.kv")) {
+OemProbeWin::OemProbeWin(const std::string& stateDir) : stateFile_(stateDir.empty() ? "" : fs::Join(stateDir, "oem_takeover.kv")) {
   knownNames_ = {"GCUBridge", "GCUService"};  // evidence: GCUBridge is registered on the reference device
 }
 
-std::wstring OemServices::OemRoot() const { return ProgramFiles() + L"\\OEM\\Control Center\\"; }
+std::wstring OemProbeWin::OemRoot() const { return ProgramFiles() + L"\\OEM\\Control Center\\"; }
 
-bool OemServices::IsOemImage(const std::wstring& path) const {
+bool OemProbeWin::IsOemImage(const std::wstring& path) const {
   const std::wstring l = LowerW(path), root = LowerW(OemRoot());
   return l.size() > root.size() && l.compare(0, root.size(), root) == 0 && l.find(L"..") == std::wstring::npos;
 }
 
-std::wstring OemServices::ServiceImagePath(SC_HANDLE svc) const {
+std::wstring OemProbeWin::ServiceImagePath(SC_HANDLE svc) const {
   DWORD need = 0;
   QueryServiceConfigW(svc, nullptr, 0, &need);
   if (need == 0 || need > (1u << 16)) return L"";
@@ -76,7 +76,7 @@ std::wstring OemServices::ServiceImagePath(SC_HANDLE svc) const {
   return StripImage(cfg->lpBinaryPathName);
 }
 
-std::vector<OemServices::Svc> OemServices::Discover(bool full) {
+std::vector<OemProbeWin::Svc> OemProbeWin::Discover(bool full) {
   std::vector<Svc> out;
   ScHandle scm(OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT | SC_MANAGER_ENUMERATE_SERVICE));
   if (!scm) return out;
@@ -123,12 +123,12 @@ std::vector<OemServices::Svc> OemServices::Discover(bool full) {
   return out;
 }
 
-std::wstring OemServices::FindGcuServiceExe() const {
+std::wstring OemProbeWin::FindGcuServiceExe() const {
   const std::wstring p = OemRoot() + L"UniwillService\\MyControlCenter\\GCUService.exe";
   return FileExists(p) ? p : L"";
 }
 
-bool OemServices::ProcessRunning(std::vector<DWORD>* pids) {
+bool OemProbeWin::ProcessRunning() {
   bool any = false;
   HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
   if (snap == INVALID_HANDLE_VALUE) return false;
@@ -144,17 +144,14 @@ bool OemServices::ProcessRunning(std::vector<DWORD>* pids) {
       DWORD len = MAX_PATH * 2;
       const bool ok = QueryFullProcessImageNameW(p, 0, path, &len) != 0;
       CloseHandle(p);
-      if (ok && IsOemImage(path)) {  // a same-named binary elsewhere is NOT the OEM service
-        any = true;
-        if (pids) pids->push_back(pe.th32ProcessID);
-      }
+      if (ok && IsOemImage(path)) any = true;   // a same-named binary elsewhere is NOT the OEM service
     } while (Process32NextW(snap, &pe));
   }
   CloseHandle(snap);
   return any;
 }
 
-OemSvcState OemServices::Probe() {
+OemSvcState OemProbeWin::Probe() {
   const ULONGLONG now = GetTickCount64();
   if (cacheAt_ && now - cacheAt_ < 2000) return cache_;
   OemSvcState st;
@@ -164,7 +161,7 @@ OemSvcState OemServices::Probe() {
     st.services.push_back(s.name);
     if (s.state != SERVICE_STOPPED) svcRunning = true;
   }
-  const bool procRunning = ProcessRunning(nullptr);
+  const bool procRunning = ProcessRunning();
   const std::wstring exe = FindGcuServiceExe();
   st.installed = !svcs.empty() || !exe.empty() || procRunning;
   st.running = svcRunning || procRunning;
@@ -174,70 +171,7 @@ OemSvcState OemServices::Probe() {
   return st;
 }
 
-bool OemServices::StopAndDisable(std::string* why) {
-  cacheAt_ = 0;
-  std::vector<Svc> svcs = Discover(true);
-  KV rec;
-  if (!stateFile_.empty()) {
-    std::string t;
-    if (fs::ReadAll(stateFile_, &t, 1u << 16)) rec = KV::Parse(t);
-  }
-  ScHandle scm(OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT));
-  if (!scm) {
-    if (why) *why = "cannot open the service manager: " + Win32Text(GetLastError());
-    return false;
-  }
-  bool ok = true;
-  // GCUBridge first (it is the front); the rest in discovery order
-  std::stable_sort(svcs.begin(), svcs.end(), [](const Svc& a, const Svc& b) { return a.name == "GCUBridge" && b.name != "GCUBridge"; });
-  for (const Svc& s : svcs) {
-    ScHandle svc(OpenServiceW(scm, s.wname.c_str(), SERVICE_QUERY_STATUS | SERVICE_QUERY_CONFIG | SERVICE_CHANGE_CONFIG | SERVICE_STOP));
-    if (!svc) {
-      if (why) *why = "cannot open " + s.name + ": " + Win32Text(GetLastError());
-      ok = false;
-      continue;
-    }
-    if (!rec.Has("svc." + s.name) && s.startType != SERVICE_DISABLED) rec.SetI("svc." + s.name, static_cast<long long>(s.startType));
-    if (!ChangeServiceConfigW(svc, SERVICE_NO_CHANGE, SERVICE_DISABLED, SERVICE_NO_CHANGE, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr)) {
-      if (why) *why = "cannot disable " + s.name + ": " + Win32Text(GetLastError());
-      ok = false;
-      continue;
-    }
-    if (!stateFile_.empty()) fs::WriteAtomic(stateFile_, rec.Serialize());  // remember BEFORE stopping
-    SERVICE_STATUS st;
-    if (!ControlService(svc, SERVICE_CONTROL_STOP, &st)) {
-      const DWORD e = GetLastError();
-      if (e != ERROR_SERVICE_NOT_ACTIVE) {
-        if (why) *why = "cannot stop " + s.name + ": " + Win32Text(e);
-        ok = false;
-        continue;
-      }
-    }
-    if (!WaitState(svc, SERVICE_STOPPED, 15000)) {
-      if (why) *why = s.name + " did not stop in time";
-      ok = false;
-    }
-  }
-  // the worker process may outlive its service
-  std::vector<DWORD> pids;
-  if (ProcessRunning(&pids)) {
-    for (DWORD pid : pids) {
-      HANDLE p = OpenProcess(PROCESS_TERMINATE | SYNCHRONIZE, FALSE, pid);
-      if (!p) continue;
-      TerminateProcess(p, 0);
-      WaitForSingleObject(p, 3000);
-      CloseHandle(p);
-    }
-    if (ProcessRunning(nullptr)) {
-      if (why) *why = "an OEM process is still running";
-      ok = false;
-    }
-  }
-  cacheAt_ = 0;
-  return ok;
-}
-
-bool OemServices::EnableAndStart(std::string* why) {
+bool OemProbeWin::StartServices(std::string* why) {
   cacheAt_ = 0;
   std::vector<Svc> svcs = Discover(true);
   KV rec;

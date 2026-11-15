@@ -109,7 +109,7 @@ float PageOsd(App& a, const Rect& r) {
       a.SetPref("osd.size", std::to_string(ps));
       a.ApplySession();
     }
-    static const uint32_t kCols[] = {0xFFD9F0C4, 0xFFF1EEE8, 0xFFA7E3F0, 0xFFF2D38A, 0xFFF2A56B, 0xFFF0A6C0, 0xFFC9B8F0, 0xFFF29A9A};
+    static const uint32_t kCols[] = {0xFF8CF06A, 0xFFFFFFFF, 0xFF4FD8FF, 0xFFFFD23F, 0xFFFF8A3D, 0xFFFF5FA2, 0xFFB08CFF, 0xFFFF6B6B};
     std::vector<uint32_t> cols(kCols, kCols + 8);
     int curC = -1;
     for (size_t i = 0; i < cols.size(); i++)

@@ -44,10 +44,11 @@ inline uint32_t WithAlpha(uint32_t c, int a) { return (c & 0x00FFFFFFu) | (stati
 uint32_t Mix(uint32_t a, uint32_t b, float t);  // linear blend, alpha included
 
 // Warm dark palette (see docs/DESIGN.md). Light surfaces are never pure black or pure white.
+// Dark, slightly blue surfaces with saturated status colours. The accent is the user's choice (Settings > Appearance); `accent` here is the default.
 struct Theme {
-  uint32_t base = 0xFF141515, rail = 0xFF191A19, panel = 0xFF1D1E1D, inset = 0xFF171817, elev = 0xFF252624, hover = 0xFF2B2D2A;
-  uint32_t line = 0xFF343532, text = 0xFFF1EEE8, muted = 0xFFABA9A1, faint = 0xFF74736D;
-  uint32_t accent = 0xFFE2A387, amber = 0xFFD8BA83, green = 0xFFADBD9A, blue = 0xFFA0B5C0, red = 0xFFD98A84;
+  uint32_t base = 0xFF0D1015, rail = 0xFF12161D, panel = 0xFF171C25, inset = 0xFF10141B, elev = 0xFF1F2631, hover = 0xFF29323F;
+  uint32_t line = 0xFF2B3544, text = 0xFFF5F8FC, muted = 0xFFA3AFC2, faint = 0xFF6C7A90;
+  uint32_t accent = 0xFFFF7A2F, amber = 0xFFFFC53D, green = 0xFF3DDC84, blue = 0xFF3BA7FF, red = 0xFFFF5470;
   float radius = 13;
 };
 

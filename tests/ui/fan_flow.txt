@@ -1,19 +1,20 @@
-# Fan settings: dragging a curve point only makes a draft; the hardware changes on Apply / Save only; boost and the mode follow the same rules.
+# Fan settings: dragging a curve point only makes a draft; the curves reach the laptop only on Apply / Save; boost and the cooling mode follow the same rules.
 # Run: ControlCenterAdvanced.exe --sim --script tests/ui/fan_flow.txt --size 1360x1500
 say == 1. the page starts in Auto with nothing drafted ==
 page fan
+wait 600
 expect fan.mode auto
-let storedBefore snap:cfg.fan.cpu
 let ecBefore snap:fan.cpu.curve
+let gpuBefore snap:fan.gpu.curve
 dump fan.cpu.curve
 expectui fan.d.cpu
 expectui fan.d.gpu
+shot /tmp/shots/f0_start.png
 
 say == 2. dragging a handle only makes a draft ==
 dragby fh#3 0 -50
 expectui fan.d.cpu *
 expect fan.cpu.curve $ecBefore
-expect cfg.fan.cpu $storedBefore
 expect fan.mode auto
 shot /tmp/shots/f1_draft.png
 
@@ -21,22 +22,22 @@ say == 3. discard drops the draft ==
 clickid fan.discard
 expectui fan.d.cpu
 
-say == 4. Save curves stores the draft but leaves the fans alone ==
+say == 4. Save curves hands the draft to the service but keeps the fan mode ==
 dragby fh#3 0 -50
 let draft ui:fan.d.cpu
 clickid fan.save
-wait 800
+wait 2500
 expectui fan.d.cpu
-expect cfg.fan.cpu $draft
-expect cfg.fan.cpu !$storedBefore
+expect fan.cpu.curve $draft
+expect fan.cpu.curve !$ecBefore
+expect fan.gpu.curve $gpuBefore
 expect fan.mode auto
-expect fan.cpu.curve $ecBefore
 
-say == 5. Apply and use them writes the curves and switches to Custom ==
+say == 5. Apply and use them writes the curves and switches to Custom curve ==
 dragby fh#5 0 -30
 let draft2 ui:fan.d.cpu
 clickid fan.applyuse
-wait 1200
+wait 2500
 expect fan.mode custom
 expect fan.cpu.curve $draft2
 expectui fan.d.cpu
@@ -59,31 +60,67 @@ dragby fh#2 0 -40
 let both ui:fan.d.cpu
 expectui fan.d.gpu $both
 clickid fan.apply
-wait 1200
+wait 3000
 expect fan.cpu.curve $both
 expect fan.gpu.curve $both
 clickid pr#fan.link
 expectpref fan.link 0
+shot /tmp/shots/f3_linked.png
 
-say == 8. boost is an immediate switch that remembers the previous mode ==
+say == 8. Turbo fan is an immediate switch that remembers the previous mode ==
 clickid tg#fan.boost
-wait 700
+wait 1000
 expect fan.mode boost
+expect fan.boost 1
 clickid tg#fan.boost
-wait 700
+wait 1000
 expect fan.mode custom
+expect fan.boost 0
 
 say == 9. the cooling mode needs Confirm ==
 clickid cmb#fan.mode
 clickid opt#0
 expect fan.mode custom
 clickid ok#fan.mode
-wait 700
+wait 1500
 expect fan.mode auto
+shot /tmp/shots/f4_auto.png
 
-say == 10. fixed-speed sliders only draft until Confirm ==
-dragid sl#fan.fixed.cpu 0.8
-expectdraft fan.fixed.cpu 1
-expect fan.fixed.cpu 0
+say == 10. without the vendor's service nothing can be edited or switched ==
+external oem.running 0
+wait 3000
+expect cap.fan.curve !ok
+expect cap.fan.ctl !ok
+dragby fh#3 0 -50
+expectui fan.d.cpu
+clickid tg#fan.boost
+wait 600
 expect fan.mode auto
-shot /tmp/shots/f3_fixed_draft.png
+shot /tmp/shots/f5_offline.png
+external oem.running 1
+wait 4000
+expect oem.link.state connected
+
+say == 11. the vendor's curves: it asks first, Cancel changes nothing, Restore puts the vendor's table back ==
+page fan
+wait 600
+expect fan.cpu.curve !$ecBefore
+clickid fan.vendor
+wait 500
+expectmodal 1
+shot /tmp/shots/f6_vendor_ask.png
+clickid modal#0
+wait 400
+expectmodal 0
+expect fan.cpu.curve !$ecBefore
+clickid fan.vendor
+wait 500
+expectmodal 1
+clickid modal#1
+wait 3500
+expectmodal 0
+expect fan.cpu.curve $ecBefore
+expect fan.gpu.curve $gpuBefore
+expect fan.mode auto
+expectui fan.d.cpu
+shot /tmp/shots/f7_vendor_restored.png

@@ -23,7 +23,7 @@ std::vector<Credit> Credits() {
   const std::string readOnly = T("Read as a reference only.");
   return {
       {"OEM Control Center " + std::string(kOemReference), T("Not included"), "",
-       T("The feature list Control Center Advanced is compared against. No OEM code, driver or file is included or copied."), 2},
+       T("The vendor's own program. Control Center Advanced talks to its background service the way the vendor's window does, and was written after studying how that works. No OEM code, driver or file is included or copied."), 2},
       {"MONSTER GPU POWER", "GPL-3.0", "https://github.com/MehmetNY/Monster-XMG-Gpu-Power-Control",
        T("The author's own GPU power project. Its engine drives the GPU power (cTGP) control and the OEM profile sync."), 0},
       {"RevoHelper", "MIT", "https://github.com/AstralMemory/RevoHelper",
@@ -41,8 +41,6 @@ std::vector<Credit> Credits() {
        T("Profiles, fan curves and settings of a mature control center for the same laptop family."), 0},
       {"HydroControl", "MIT", "https://github.com/Gumwars/HydroControl",
        T("A Linux control center for a sibling laptop: its notes on the shared embedded controller and on guarding writes."), 0},
-      {"PawnIO", "GPL-2.0 / LGPL-2.1", "https://github.com/namazso/PawnIO",
-       T("The signed driver that gives the advanced CPU panel access to processor registers. Not included: you install it yourself."), 0},
   };
 }
 
@@ -55,29 +53,21 @@ float TileHeight(Ctx& c, float w, const Credit& cr) {
 
 void CardApp(Ctx& c, Masonry& m) {
   App& a = c.app;
-  const Theme& th = c.ui.th;
   const std::string winVer = BC_VERSION;
-  const std::string svcVer = a.S("app.version");
-  const bool mismatch = !svcVer.empty() && svcVer != winVer;   // only a service installed from another build can differ: the window and the in-process controller share one binary
-  const std::string note = T("The service was installed from another version than this window. Restart the service, or restart Windows, so both match.");
 
-  const std::vector<BtnSpec> btns = {{"ab#site", T("Project page"), Btn::Normal, IconId::External, true, T("Opens the project page on GitHub: source code, releases and the user guide.")},
+  const std::vector<BtnSpec> btns = {{"ab#site", T("Open the repository"), Btn::Primary, IconId::External, true,
+                                      T("Opens the project's repository on GitHub: source code, releases and the user guide.")},
                                      {"ab#issue", T("Report a problem"), Btn::Normal, IconId::Warn, true,
-                                      T("Opens the issue page. Use \"Copy diagnostics\" on Safety and service to add the details.")},
+                                      T("Opens the issue page. Use \"Copy diagnostics\" on the Service page to add the details.")},
                                      {"ab#copy", T("Copy version info"), Btn::Normal, IconId::Copy, true, ""}};
-  const float contentH = (mismatch ? 5 : 4) * kRowInfo + (mismatch ? NoteHeight(c, m, note) + 4 : 0.0f) + 8 + static_cast<float>(BtnRows(c, m.InnerW(), btns)) * kRowButtons;
+  const float contentH = 4 * kRowInfo + 8 + static_cast<float>(BtnRows(c, m.InnerW(), btns)) * kRowButtons;
   Card k(c, m, BC_NAME, Tf("Version %s", winVer.c_str()), IconId::Bolt, contentH);
-  k.Info(mismatch ? T("Window version") : T("Version"), winVer);
-  if (mismatch) k.Info(T("Service version"), svcVer, th.amber);
+  k.Info(T("Version"), winVer);
   k.Info(T("Compared against"), "OEM Control Center " + std::string(kOemReference), 0,
-         T("The OEM release whose feature list Control Center Advanced was compared against."));
+         T("The OEM release whose protocol and feature list Control Center Advanced was written against."));
   k.Info(T("Reference laptop"), "Tulpar T5 V21.7 (GM5TG7Y)", 0,
-         T("The laptop everything was verified on. Other models with the same embedded controller are supported at the Family level."));
+         T("The laptop everything was written for. Other models with the same embedded controller may work, but nothing here was tested on them."));
   k.Info(T("Licence"), "GNU GPL v3", 0, T("Free software: you may use, study, change and share it under the terms of the GNU General Public License, version 3."));
-  if (mismatch) {
-    k.Gap(4);
-    k.Note(note, th.amber);
-  }
   k.Gap(8);
   const int hit = BtnFlow(k, btns);
   if (hit == 0) {
@@ -86,7 +76,6 @@ void CardApp(Ctx& c, Masonry& m) {
     a.OpenUrl(std::string(BC_REPO_URL) + "/issues/new");
   } else if (hit == 2) {
     std::string t = Fmt("Control Center Advanced %s\n", winVer.c_str());
-    if (!svcVer.empty()) t += Fmt("Service: %s (%s)\n", svcVer.c_str(), a.mode().c_str());
     t += Fmt("Compared against: OEM Control Center %s\n", kOemReference);
     t += "Licence: GNU GPL v3\n";
     t += std::string(BC_REPO_URL) + "\n";
@@ -113,8 +102,8 @@ void CardGoodToKnow(Ctx& c, Masonry& m) {
   const Theme& th = c.ui.th;
   const std::vector<std::string> notes = {
       T("Control Center Advanced is an independent project. It is not made, approved or supported by Monster Notebook, XMG, Tongfang, Uniwill, Intel or NVIDIA; their names only say which hardware it works with."),
-      T("It comes with no warranty. Changing power, fan and firmware-related settings can make a laptop unstable and, in the worst case, damage it. The safety switches and the list of hard limits are on the Safety and service page."),
-      T("Settings of the service and its log are kept in %ProgramData%\\ControlCenterAdvanced. This window's own preferences are in %LocalAppData%\\ControlCenterAdvanced."),
+      T("It comes with no warranty. Changing power, fan and firmware-related settings can make a laptop unstable and, in the worst case, damage it. The write-protection switch and the list of hard limits are on the Service page."),
+      T("Settings and the log are kept in %ProgramData%\\ControlCenterAdvanced. This window's own preferences are in %LocalAppData%\\ControlCenterAdvanced."),
   };
   float h = 0;
   for (const std::string& s : notes) h += NoteHeight(c, m, s) + 6;

@@ -1,12 +1,15 @@
-// Simulated machine: a small physical model (power, temperatures, fans, battery) plus an EC memory image and a MSR file,
-// exposed through the same interfaces the real Windows backends implement. Used by the unit tests, by `ControlCenterAdvanced.exe --sim`
-// and for the README screenshots (which are always labelled SIMULATION).
+// Simulated machine: a small physical model (power, temperatures, fans, battery) plus an EC memory image, exposed through the same
+// interfaces the real Windows backends implement, and a stand-in for the vendor's Control Center service (fake_oem.h) behind a real
+// MQTT client. Used by the unit tests, by `ControlCenterAdvanced.exe --sim` and for the README screenshots (which are always labelled
+// SIMULATION).
 //
 // This is NOT evidence about real hardware: every behaviour here is an assumption written down so the controller logic can be
-// exercised (activation delay, verify/rollback paths, firmware resets, locked registers ...).
+// exercised (verify/rollback paths, firmware resets, a service that does not answer ...).
 #pragma once
 #include <array>
+#include <memory>
 #include <chrono>
+#include <functional>
 #include <map>
 #include <mutex>
 #include <string>
@@ -73,13 +76,6 @@ class Platform {
   bool ecReadFail = false;       // every EC read fails
   bool ecDropWrites = false;     // writes "succeed" but change nothing
   int ecFailWriteNumber = -1;    // the N-th write (1-based, counted from ecWrites == 0) fails
-  bool msrAvailable = true;      // PawnIO + IntelMSR usable
-  bool msrFollowsEc = true;      // EC PL1/PL2 changes are mirrored into MSR 0x610 (unknown on the real unit)
-  bool msrFirmwareOwns = false;  // firmware rewrites MSR 0x610 from the EC values continuously (writes do not stick)
-  bool msrPkgLocked = false;     // MSR 0x610 lock bit
-  bool iccLocked = false;        // MSR 0x601 lock bit
-  bool msrPsysLocked = false;    // MSR 0x65C (platform power limit) lock bit
-  bool ocMailboxOpen = true;     // voltage mailbox answers (false = BIOS closed it)
   bool nvmlAvailable = true;
   int nvLagSamples = 0;          // NVML needs N reads before it shows a new cTGP
 
@@ -92,13 +88,7 @@ class Platform {
   void SetEcProfile(bool oemOn, int ctgpOffset);   // cTGP state like the OEM service leaves it
   void DisplayCycle();                             // display off/on: firmware drops cTGP offsets above 15
   bool EcActive() const { return (ec[0x741] & 0x05) == 0x01; }
-  void MakeEcCold();                               // OEM service not running: loop inactive
-
-  // ---- MSR -----------------------------------------------------------------------------------------
-  std::map<uint32_t, uint64_t> msr;
-  bool MsrAllowed(uint32_t m, bool write) const;
-  bool MsrRead(uint32_t m, uint64_t* v);
-  bool MsrWrite(uint32_t m, uint64_t v);
+  void MakeEcCold();                               // vendor service not running: power-management loop inactive
   void ClearThrottleLogs() { logThermal = logPower = false; }
 
   // ---- derived physical state (read by adapters) -----------------------------------------------------
@@ -108,7 +98,7 @@ class Platform {
   bool powerLimited = false, thermalLimited = false, budgetLimited = false;
   bool logThermal = false, logPower = false;
   int gpuCoreOffset = 0, gpuMemOffset = 0;
-  double Pl1W() const;   // limits the CPU actually obeys (from MSR 0x610)
+  double Pl1W() const;   // limits the CPU actually obeys (from the EC while its loop runs, otherwise an assumed firmware default)
   double Pl2W() const;
   double CtgpW() const;  // GPU power limit derived from EC 0x743/0x744
   void Step();           // advance the model to clock.NowMs()
@@ -117,15 +107,9 @@ class Platform {
 
  private:
   void Sub(double h);
-  void MirrorEcToMsr(bool force);
   void UpdateRegisters();
   double bucketJ_ = 0;
-  uint64_t last_ = 0, pendingActAt_ = 0;
-  uint8_t mirroredPl1_ = 0, mirroredPl2_ = 0;
-  double eCpu_ = 0, eCore_ = 0, eIgpu_ = 0, eDram_ = 0, ePsys_ = 0, throttleS_ = 0;
-  uint64_t ocResp_ = 0;
-  int ocOffsetMv_[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-  bool ocHandle(uint64_t cmd);
+  uint64_t last_ = 0;
 };
 
 // ------------------------------------------------------------------------------------------------ adapters
@@ -153,23 +137,10 @@ struct Nv : mgp::INvidiaTelemetry {
   double limit_ = 125;
 };
 
-struct Msr : IMsr {
-  explicit Msr(Platform& p) : p_(p) {}
-  bool Open(std::string* why) override;
-  bool Read(uint32_t m, uint64_t* v) override { std::lock_guard<std::recursive_mutex> g(p_.mu); return p_.MsrRead(m, v); }
-  bool Write(uint32_t m, uint64_t v) override { std::lock_guard<std::recursive_mutex> g(p_.mu); return p_.MsrWrite(m, v); }
-  std::string Name() const override { return "simulated MSR (no hardware)"; }
- private:
-  Platform& p_;
-};
-
 struct GpuExtra : IGpuExtra {
   explicit GpuExtra(Platform& p) : p_(p) {}
   bool Init(std::string* why) override;
   bool Read(GpuInfo* out) override;
-  bool OffsetRange(int* cmin, int* cmax, int* mmin, int* mmax) override { *cmin = -500; *cmax = 500; *mmin = -1000; *mmax = 1500; return true; }
-  bool SetCoreOffset(int mhz, std::string*) override { std::lock_guard<std::recursive_mutex> g(p_.mu); p_.gpuCoreOffset = mhz; return true; }
-  bool SetMemOffset(int mhz, std::string*) override { std::lock_guard<std::recursive_mutex> g(p_.mu); p_.gpuMemOffset = mhz; return true; }
  private:
   Platform& p_;
 };
@@ -185,11 +156,7 @@ struct FpsSim : IFpsSource {
 
 struct Power : IOsPower {
   explicit Power(Platform& p) : p_(p) {}
-  CpuPolicy policy{2, 33, 5, 100, 100};
-  bool failSet = false;
   std::vector<std::string> exes;  // running processes (lower case)
-  bool GetCpuPolicy(CpuPolicy* out) override { *out = policy; return true; }
-  bool SetCpuPolicy(const CpuPolicy& p, std::string* why) override;
   SysStatus Status() override;
   std::vector<std::string> RunningExes() override { return exes; }
  private:
@@ -217,22 +184,20 @@ struct Devices : IOsDevices {
   bool Set(Dev d, bool on, std::string* why) override;
 };
 
-struct Oem : IOemControl {
-  bool installed = true, running = true, disabled = false, failStop = false;
+// Whether the vendor's services look installed and running (read-only; the program never stops them).
+struct OemProbeSim : IOemProbe {
+  bool installed = true, running = true;
+  int started = 0;   // how many times "start the vendor's services" was asked for
+  std::function<void()> onStart;   // the simulated world brings its fake service up when the services are "started"
   OemSvcState Probe() override;
-  bool StopAndDisable(std::string* why) override;
-  bool EnableAndStart(std::string* why) override;
-};
-
-struct Light : ILightHid {
-  bool kbd = true, bar = false, logo = false;
-  std::vector<std::pair<LightZone, std::array<uint8_t, 9>>> sent;
-  std::vector<LightZone> Detect(std::string* info) override;
-  bool Send(LightZone z, const uint8_t r[9]) override {
-    std::array<uint8_t, 9> a;
-    for (int i = 0; i < 9; i++) a[i] = r[i];
-    sent.push_back({z, a});
-    if (sent.size() > 20000) sent.erase(sent.begin(), sent.begin() + 5000);
+  bool StartServices(std::string* why) override {
+    if (!installed) {
+      if (why) *why = "no OEM service is installed";
+      return false;
+    }
+    ++started;
+    running = true;
+    if (onStart) onStart();
     return true;
   }
 };
@@ -285,25 +250,29 @@ class Lock : public ICrossProcessLock {
   bool failNext = false;
 };
 
+class FakeOemWorld;   // fake_oem.h
+
 struct World {
   explicit World(Model m = Model::Exact, bool realClock = false);
+  ~World();
   Clock clock;
   MemLog log;
   Platform plat;
   Ec ec;
   Nv nv;
-  Msr msr;
   GpuExtra gpu;
   Power power;
   Display display;
   Devices devices;
-  Oem oem;
-  Light light;
+  OemProbeSim oemProbe;
   Host host;
   Storage storage;
   FpsSim fps;
   Smbios smbios;
   Lock lock;
+  // The vendor's service (in memory) and the client the controller uses to reach it; the link is destroyed first.
+  std::unique_ptr<FakeOemWorld> oemWorld;
+  std::unique_ptr<oem::IOemLink> oemLink;
   Hardware hw();
 };
 

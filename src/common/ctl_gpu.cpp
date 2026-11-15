@@ -1,5 +1,6 @@
 // Controller: GPU. cTGP (125..150 W) is delegated to the vendored MONSTER GPU POWER engine (verified on GM5TG7Y:
-// identity guard, read-before-write, NVML confirmation, rollback). NVML clock offsets are an experimental extra.
+// identity guard, read-before-write, NVML confirmation, rollback); it is the only thing in this program that writes to the embedded
+// controller. The graphics driver is also asked what clock offsets are in force, so the Performance page shows what really runs.
 #include <cmath>
 
 #include "../mgp/core/persist_txn.h"
@@ -13,12 +14,6 @@ void Controller::ProbeGpu() {
   std::string why;
   bool nvml = hw_.gpu && hw_.gpu->Init(&why);
   SetCap("gpu.nvml", nvml ? "ok" : "absent", why);
-  bool offs = false;
-  if (nvml) {
-    int a, b, c, d;
-    offs = hw_.gpu->OffsetRange(&a, &b, &c, &d);
-  }
-  SetCap("gpu.offsets", offs ? "ok" : "absent", offs ? "" : N_("the NVIDIA driver does not expose clock offsets"));
   engineReady_ = false;
   if (!engine_) {
     SetCap("gpu.ctgp", "absent", N_("power engine unavailable (no EC/NVML/SMBIOS access)"));
@@ -137,7 +132,7 @@ Result Controller::SetCtgp(int watts, const KV& args) {
     lock.held = true;
   }
 
-  const bool oemRunning = hw_.oem && hw_.oem->Probe().running;
+  const bool oemRunning = hw_.oemSvc && hw_.oemSvc->Probe().running;
   if (oemRunning && hw_.oemFiles && cfg_.Bool("cfg.oemSync", false)) {
     // keep the OEM profile file in step so the OEM service does not undo the change at the next display wake/boot
     mgp::oem::OemProfileStore store(*hw_.oemFiles, *hw_.log);
@@ -183,34 +178,12 @@ Result Controller::SetCtgp(int watts, const KV& args) {
   mgp::ApplyResult r = engine_->Apply(watts, o);
   std::string m;
   Result res = MapOutcome(this, r, &m);
-  if (!res.ok) {
+  if (!res.ok && res.code != "gate.consent") {   // a consent that is still to be given is a question, not a failure
     lastError_ = res.code + ": " + m;
     L(mgp::LogLevel::Warn, "cTGP apply failed: " + lastError_);
   }
-  if (res.ok && oemRunning) res.msg = "applied live; the OEM service is running and may restore its own value (see Safety and service)";
+  if (res.ok && oemRunning) res.msg = "applied live; the vendor's service is running and may restore its own value after a profile change (it is applied again then)";
   return res;
-}
-
-Result Controller::SetNvOffset(bool core, int mhz) {
-  if (!hw_.gpu) return Fail("unsupported", "no GPU interface");
-  int cmin, cmax, mmin, mmax;
-  if (!hw_.gpu->OffsetRange(&cmin, &cmax, &mmin, &mmax)) return Fail("unsupported", "offset range unavailable");
-  if (core ? (mhz < cmin || mhz > cmax) : (mhz < mmin || mhz > mmax)) return Fail("range", Fmt(N_("offset outside the driver range %d..%d"), core ? cmin : mmin, core ? cmax : mmax));
-  GpuInfo before;
-  hw_.gpu->Read(&before);
-  std::string why;
-  bool ok = core ? hw_.gpu->SetCoreOffset(mhz, &why) : hw_.gpu->SetMemOffset(mhz, &why);
-  if (!ok) return Fail("failed.hw", "driver refused the offset: " + why);
-  GpuInfo after;
-  hw_.gpu->Read(&after);
-  int got = core ? after.coreOffsetMhz : after.memOffsetMhz;
-  if (std::abs(got - mhz) > 10) {
-    std::string w2;
-    if (core) hw_.gpu->SetCoreOffset(before.coreOffsetMhz, &w2);
-    else hw_.gpu->SetMemOffset(before.memOffsetMhz, &w2);
-    return Fail("reverted", N_("driver did not keep the offset"));
-  }
-  return Ok();
 }
 
 }  // namespace bc

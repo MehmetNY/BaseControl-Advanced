@@ -5,7 +5,9 @@
 #include <cstdio>
 #include <cstring>
 
+#include "../common/autostart_task.h"
 #include "../common/fsutil.h"
+#include "../hw/autostart_win.h"
 #include "../common/hostdata.h"
 #include "../common/util.h"
 #include "../common/version.h"
@@ -38,7 +40,7 @@ const PageName kPageNames[] = {
     {Page::Overview, "overview"}, {Page::Prefs, "prefs"},       {Page::Devices, "devices"},   {Page::GpuInfo, "gpu"},
     {Page::Osd, "osd"},           {Page::Keys, "keys"},         {Page::Profiles, "profiles"}, {Page::Fan, "fan"},
     {Page::Custom, "custom"},     {Page::Apps, "apps"},         {Page::Lighting, "lighting"}, {Page::Battery, "battery"},
-    {Page::Display, "display"},   {Page::DeviceInfo, "deviceinfo"}, {Page::Safety, "safety"}, {Page::About, "about"},
+    {Page::Display, "display"},   {Page::DeviceInfo, "deviceinfo"}, {Page::Service, "service"}, {Page::About, "about"},
 };
 }  // namespace
 
@@ -61,12 +63,8 @@ const char* PageKey(Page p) {
 App::Impl::~Impl() {
   FreeDib();
   RemoveTray();
-  if (elevProc) CloseHandle(elevProc);
-  // controllers / hardware are released by the member destructors (declared in dependency order); GDI+ goes last.
+  // the controller first (it stops its threads and the link), then the hardware it uses; GDI+ goes last.
   ctl.reset();
-  userCtl.reset();
-  pipe.reset();
-  userWorld.reset();
   world.reset();
   simWorld.reset();
   if (gdipStarted) Gdiplus::GdiplusShutdown(gdipToken);
@@ -93,8 +91,7 @@ App::App(const Options& o) : d_(new Impl), opt_(o) {
 App::~App() {
   FlushPrefs();
   backend_.reset();
-  if (d_->pipe) d_->pipe->Stop();
-  // d_ (declared first in the class, so destroyed last) tears down controllers, hardware and GDI+.
+  // d_ (declared first in the class, so destroyed last) tears down the controller, the hardware and GDI+.
 }
 
 void App::ApplyLanguage() {
@@ -103,13 +100,40 @@ void App::ApplyLanguage() {
   dirty_ = true;
 }
 
+const AccentDef* Accents(int* count) {
+  static const AccentDef kAcc[] = {
+      {"ember", 0xFFFF7A2F},    // orange: the default, close to the vendor's own colour
+      {"cyan", 0xFF22D3EE},
+      {"lime", 0xFF7BE35B},
+      {"violet", 0xFFA78BFA},
+      {"rose", 0xFFFF4D8D},
+      {"gold", 0xFFFFC53D},
+  };
+  if (count) *count = static_cast<int>(sizeof kAcc / sizeof kAcc[0]);
+  return kAcc;
+}
+
+std::string NormalAccent(const std::string& stored) {
+  std::string a = stored;
+  // names the first build stored
+  if (a == "copper") a = "ember";
+  else if (a == "sky") a = "cyan";
+  else if (a == "sage") a = "lime";
+  else if (a == "sand") a = "gold";
+  int n = 0;
+  const AccentDef* acc = Accents(&n);
+  for (int i = 0; i < n; i++)
+    if (a == acc[i].key) return a;
+  return kDefaultAccent;
+}
+
 void App::ApplyAccent() {
-  static const struct { const char* key; uint32_t col; } kAccents[] = {
-      {"copper", 0xFFE2A387}, {"sage", 0xFFADBD9A}, {"sky", 0xFFA0B5C0}, {"sand", 0xFFD8BA83}, {"violet", 0xFFBBA9DA}};
-  const std::string a = Pref("accent", "copper");
-  ui_.th.accent = kAccents[0].col;
-  for (auto& k : kAccents)
-    if (a == k.key) ui_.th.accent = k.col;
+  int n = 0;
+  const AccentDef* acc = Accents(&n);
+  const std::string a = NormalAccent(Pref("accent", kDefaultAccent));
+  ui_.th.accent = acc[0].col;
+  for (int i = 0; i < n; i++)
+    if (a == acc[i].key) ui_.th.accent = acc[i].col;
   dirty_ = true;
 }
 
@@ -125,8 +149,9 @@ void App::MakeBackend() {
     d.ctl.reset(new Controller(d.simWorld->hw(), co));
     d.ctl->Start();
     backend_.reset(new LocalBackend(*d.ctl, "sim"));
-  } else if (opt_.mode == "local") {
-    d.world.reset(new hw::WinWorld(hw::WorldKind::Local, hw::ProgramDataDir(), "local"));
+  } else {
+    // The one process does everything: it reads the hardware itself and talks to the vendor's service over the loopback link.
+    d.world.reset(new hw::WinWorld(hw::ProgramDataDir(), "local"));
     Controller::Options co;
     co.mode = "local";
     co.dataDir = hw::ProgramDataDir();
@@ -134,17 +159,6 @@ void App::MakeBackend() {
     d.ctl.reset(new Controller(d.world->hw(), co));
     d.ctl->Start();
     backend_.reset(new LocalBackend(*d.ctl, "local"));
-  } else {
-    d.pipe.reset(new PipeBackend("ui"));
-    d.pipe->Start();
-    d.userWorld.reset(new hw::WinWorld(hw::WorldKind::UiSession, LocalDataDir(), "ui"));
-    Controller::Options co;
-    co.mode = "user";
-    co.dataDir = LocalDataDir();
-    co.version = BC_VERSION;
-    d.userCtl.reset(new Controller(d.userWorld->hw(), co));
-    d.userCtl->Start();
-    backend_.reset(new CompositeBackend(*d.pipe, *d.userCtl));
   }
   mode_ = backend_->Mode();
   backend_->SetInterest(true);
@@ -179,16 +193,6 @@ void App::Tick() {
   if (backend_->Connected() && now - lastHistT_ >= every) {
     lastHistT_ = now;
     PushHistory();
-  }
-  // ---- helper process (UAC)
-  if (d_->elevProc && WaitForSingleObject(d_->elevProc, 0) == WAIT_OBJECT_0) {
-    DWORD code = 1;
-    GetExitCodeProcess(d_->elevProc, &code);
-    CloseHandle(d_->elevProc);
-    d_->elevProc = nullptr;
-    if (code == 0) ui_.Toast(d_->elevToast.empty() ? T("Done") : d_->elevToast, ToastKind::Ok);
-    else ui_.Toast(T("The administrator helper reported a problem"), ToastKind::Error, Tf("Exit code %d. See the service log under %%ProgramData%%\\ControlCenterAdvanced.", static_cast<int>(code)));
-    dirty_ = true;
   }
   AutoRefresh();
   if (prefsDirty_ && now - prefsT_ > 0.4) FlushPrefs();
@@ -249,7 +253,7 @@ void App::Go(Page p) {
 // ------------------------------------------------------------------------------------------------ requests
 uint64_t App::Submit(const Request& r, const std::string& label, std::function<void(const Result&)> done, bool quiet) {
   if (!backend_ || !backend_->Connected()) {
-    if (!quiet) ui_.Toast(T("Not connected to the Control Center Advanced service."), ToastKind::Warn, T("Open the Overview page for ways to connect."));
+    if (!quiet) ui_.Toast(T("The hardware layer is not running."), ToastKind::Warn, T("Restart Control Center Advanced."));
     Result nr;
     nr.code = "unsupported";
     nr.msg = "not connected";
@@ -339,6 +343,7 @@ std::string App::CapStateText(const std::string& cap) const {
       {"ok", N_("available")},           {"absent", N_("not present")},      {"denied", N_("access denied")},
       {"error", N_("failed to start")},  {"locked", N_("locked")},           {"implausible", N_("implausible readings")},
       {"unsupported", N_("not supported")}, {"off", N_("switched off")},     {"blocked", N_("blocked by a safety check")},
+      {"offline", N_("service not reachable")}, {"pending", N_("waiting for the service")},
   };
   const std::string s = CapState(cap);
   for (const auto& e : kStates)
@@ -348,11 +353,12 @@ std::string App::CapStateText(const std::string& cap) const {
 
 std::string App::CodeText(const std::string& code) const {
   if (code == "range") return T("The value is outside the allowed range.");
-  if (code == "gate.readonly") return T("Read-only mode is on (Safety & service).");
+  if (code == "gate.readonly") return T("Read-only mode is on (Service page).");
+  if (code == "gate.mode") return T("The vendor's ready-made modes keep their own values. Switch to the Custom mode first.");
   if (code == "gate.thermal") return T("The CPU is too hot to raise power limits right now.");
-  if (code == "gate.model") return T("This laptop model is not recognised, so hardware writes are disabled (Safety & service).");
-  if (code == "gate.oem") return T("The OEM service is in the way. Use Safety & service > Take over.");
-  if (code == "gate.admin") return T("The service only accepts changes from an administrator.");
+  if (code == "gate.oem") return T("The vendor's profile file is locked by another program right now.");
+  if (code == "needs.service") return T("The vendor's service is not reachable. Open the Service page.");
+  if (code == "failed.service") return T("The vendor's service did not confirm the change.");
   if (code == "busy") return T("Another program is changing this right now. Try again in a moment.");
   if (code == "failed.hw") return T("The hardware refused the change.");
   if (code == "failed.verify") return T("The change could not be verified by reading it back.");
@@ -387,9 +393,7 @@ void App::OnResult(const Op& op, const Result& r) {
     return;
   }
   // ---- recoverable "ask first" outcomes: the operation continues (or not) after the dialog
-  if (r.code == "gate.experimental") return AskExperimental(op);
   if (r.code == "gate.consent") return AskConsent(op, r.data.Str("consent"), r);
-  if (r.code == "needs.activation") return AskActivation(op);
   if (r.code == "needs.approval") return AskApproval(op, r);
 
   const std::string what = op.label.empty() ? op.req.key : op.label;
@@ -418,21 +422,6 @@ ConsentInfo ConsentText(const std::string& name, const std::string& value) {
     c.title = T("GPU power on a model that is not on the verified list");
     c.body = T("The GPU power engine was only verified on the Monster Tulpar T5 V21.7 (GM5TG7Y). On any other model the same embedded-controller registers are assumed to behave the same way, but that is not proven.\n\n"
                "Control Center Advanced reads every value back and restores the previous one if it does not stick.");
-  } else if (name == "ec_pl_high") {
-    c.title = T("Above the OEM maximum CPU power profile");
-    c.body = Tf("The OEM maximum profile on this laptop is PL1 120 W / PL2 120 W / PL4 200 W. You are asking for %s W.\n\n"
-                "The embedded controller accepts it, but the cooling and the 230 W adapter were not designed for sustained operation above the OEM profile. Watch the temperatures.\n\n"
-                "Control Center Advanced refuses to raise limits while the CPU is above 92 \xC2\xB0""C and restores the old values if the EC does not keep the new ones.",
-                value.c_str());
-  } else if (name == "msr_write") {
-    c.title = T("Direct CPU register writes");
-    c.body = T("The advanced CPU panel writes Intel model-specific registers (power limits, time windows, voltage offsets, prefetchers) through a signed driver module.\n\n"
-               "A bad value can make Windows unstable until you reboot. Nothing is saved to the BIOS: a reboot restores the firmware defaults, and Control Center Advanced only re-applies values you confirmed.\n\n"
-               "Continue and allow register writes?");
-  } else if (name == "fan_fixed") {
-    c.title = T("Fixed fan speed bypasses the thermal control");
-    c.body = T("With a fixed fan duty the embedded controller no longer ramps the fans by temperature. A low duty under heavy load can overheat the laptop.\n\n"
-               "Control Center Advanced's watchdog forces the fans to maximum when the CPU reaches 97 \xC2\xB0""C or the GPU 92 \xC2\xB0""C, but it only works while Control Center Advanced (or its service) is running.");
   } else {
     c.title = T("Confirmation required");
     c.body = T("This change needs your confirmation.");
@@ -460,53 +449,6 @@ void App::AskConsent(const Op& op, const std::string& name, const Result& r) {
     } else if (copy.done) {
       copy.done(r);
     }
-  });
-}
-
-void App::AskExperimental(const Op& op) {
-  const SettingDef* d = FindSetting(op.req.key);
-  ModalSpec m;
-  m.title = T("Experimental setting");
-  m.body = Tf("\"%s\" is marked %s: the mechanism is plausible but unproven on this laptop, or it bypasses a firmware protection.\n\n"
-              "Allowing experimental writes is a global switch (Safety & service). You can turn it off again at any time.",
-              (op.label.empty() ? op.req.key : op.label).c_str(), d ? EvLabel(d->ev).c_str() : T("Experimental").c_str());
-  m.icon = IconId::Warn;
-  m.iconColor = ui_.th.amber;
-  m.buttons = {{T("Cancel"), Btn::Ghost, 0}, {T("Allow and apply"), Btn::Primary, 1}};
-  const Op copy = op;
-  Result fail;
-  fail.code = "gate.experimental";
-  ui_.ModalOpen(m, [this, copy, fail](int id) {
-    if (id != 1) {
-      if (copy.done) copy.done(fail);
-      return;
-    }
-    Cfg("cfg.experimental", "1", [this, copy, fail](const Result& cr) {
-      if (cr.ok) Submit(copy.req, copy.label, copy.done);
-      else if (copy.done) copy.done(fail);
-    });
-  });
-}
-
-void App::AskActivation(const Op& op) {
-  ModalSpec m;
-  m.title = T("The embedded controller's power loop is off");
-  m.body = T("Power limits only take effect while the laptop's embedded controller runs its power-management loop. The OEM Control Center's service normally switches it on, and it is not running.\n\n"
-             "Control Center Advanced can take over from the OEM service (it stops and disables GCUBridge and can restore it later from Safety & service) and switch the loop on itself.");
-  m.icon = IconId::Bolt;
-  m.buttons = {{T("Cancel"), Btn::Ghost, 0}, {T("Take over and apply"), Btn::Primary, 1}};
-  const Op copy = op;
-  Result fail;
-  fail.code = "needs.activation";
-  ui_.ModalOpen(m, [this, copy, fail](int id) {
-    if (id != 1) {
-      if (copy.done) copy.done(fail);
-      return;
-    }
-    Cmd("oem.takeover", KV(), T("OEM service stopped; Control Center Advanced is in charge"), [this, copy, fail](const Result& cr) {
-      if (cr.ok) Submit(copy.req, copy.label, copy.done);
-      else if (copy.done) copy.done(fail);
-    });
   });
 }
 
@@ -587,51 +529,25 @@ void App::CopyText(const std::string& text) {
   ui_.Toast(T("Copied to the clipboard"), ToastKind::Ok);
 }
 
-void App::RunElevated(const std::wstring& args, const std::string& doneToast) {
-  if (d_->elevProc) return;
-  Str("elev.last") = Narrow(args);
-  if (shot_) {   // offscreen renders and scripts never ask Windows for administrator rights; the request is kept for the script to check
-    ui_.Toast(doneToast.empty() ? T("Done") : doneToast, ToastKind::Ok);
-    return;
-  }
-  SHELLEXECUTEINFOW sei = {};
-  sei.cbSize = sizeof sei;
-  sei.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC;
-  sei.lpVerb = L"runas";
-  const std::wstring self = hw::SelfPath();
-  sei.lpFile = self.c_str();
-  sei.lpParameters = args.c_str();
-  sei.nShow = SW_HIDE;
-  sei.hwnd = d_->hwnd;
-  if (!ShellExecuteExW(&sei)) {
-    if (GetLastError() != ERROR_CANCELLED) ui_.Toast(T("Could not start the administrator helper"), ToastKind::Error, hw::Win32Text(GetLastError()));
-    return;
-  }
-  d_->elevProc = sei.hProcess;
-  d_->elevToast = doneToast;
-  ui_.Toast(T("Waiting for the administrator helper..."), ToastKind::Info);
-}
-
 bool App::Autostart() const {
-  HKEY k = nullptr;
-  bool on = false;
-  if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0, KEY_READ, &k) == ERROR_SUCCESS) {
-    on = RegQueryValueExW(k, L"ControlCenterAdvanced", nullptr, nullptr, nullptr, nullptr) == ERROR_SUCCESS;
-    RegCloseKey(k);
-  }
-  return on;
+  if (mode_ == "sim") return PrefB("sim.autostart", false);   // the simulator never touches the scheduler
+  return AutostartIsActive(hw::QueryAutostart(), Narrow(hw::SelfPath()));
 }
 
-void App::SetAutostart(bool on) {
-  HKEY k = nullptr;
-  if (RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0, nullptr, 0, KEY_SET_VALUE, nullptr, &k, nullptr) != ERROR_SUCCESS) return;
-  if (on) {
-    const std::wstring v = L"\"" + hw::SelfPath() + L"\" --tray";
-    RegSetValueExW(k, L"ControlCenterAdvanced", 0, REG_SZ, reinterpret_cast<const BYTE*>(v.c_str()), static_cast<DWORD>((v.size() + 1) * sizeof(wchar_t)));
-  } else {
-    RegDeleteValueW(k, L"ControlCenterAdvanced");
+bool App::SetAutostart(bool on) {
+  if (mode_ == "sim") {
+    SetPref("sim.autostart", on ? "1" : "0");
+    return true;
   }
-  RegCloseKey(k);
+  std::string why;
+  if (on && !hw::AutostartAllowedHere(&why)) {
+    ui_.Toast(T("\"Start with Windows\" needs the installed copy"), ToastKind::Error,
+              T("The task starts this program with administrator rights and without a prompt, so it is only created for a copy in Program Files, where only administrators can change files. Install Control Center Advanced with the setup program (or copy it to Program Files) and turn this on there."));
+    return false;
+  }
+  if (hw::SetAutostart(on, &why)) return true;
+  ui_.Toast(T("Could not change \"Start with Windows\""), ToastKind::Error, why);
+  return false;
 }
 
 std::string App::ProbeReport() const {

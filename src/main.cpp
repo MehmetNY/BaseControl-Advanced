@@ -1,14 +1,11 @@
-// Control Center Advanced - one executable, several roles:
-//   (no arguments)          the window; talks to the Control Center Advanced service (or offers to set it up)
-//   --local                 the window with an in-process controller (needs administrator rights)
-//   --sim                   the window on a simulated laptop (no hardware is touched)
+// Control Center Advanced - one executable, one elevated process:
+//   (no arguments)          the window (and the controller inside it; it talks to the vendor's Control Center service)
 //   --tray                  start hidden in the notification area
-//   --service               run as the Windows service (started by the service manager)
-//   --service-console       the same service logic in a console (debugging)
-//   --install-service       (elevated) install + start the service            --uninstall-service (elevated) remove it
-//   --start-service / --stop-service / --restore-oem
+//   --sim                   the window on a simulated laptop (no hardware is touched)
 //   --probe                 print what this machine reports, then exit
-//   --shot <page> <out.png> [--size WxH] [--scale S] [--advanced] [--drafts] [--font F] [--lang en|tr]   documentation screenshots (simulated)
+//   --autostart on|off      create or remove the sign-in task ("Start with Windows"), then exit; the installer uses it
+//   --lang en|tr            interface language
+//   --shot <page> <out.png> [--size WxH] [--scale S] [--font F] [--lang en|tr]   documentation screenshots (simulated)
 //   --script <file>         scripted UI test on the simulator
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -24,13 +21,11 @@
 #include <vector>
 
 #include "common/controller.h"
-#include "common/fsutil.h"
 #include "common/util.h"
 #include "common/version.h"
-#include "hw/oem_services.h"
+#include "hw/autostart_win.h"
 #include "hw/win_world.h"
 #include "hw/winutil.h"
-#include "svc/service.h"
 #include "ui/app.h"
 
 namespace {
@@ -61,75 +56,57 @@ void AttachParentConsole() {
   if (!haveErr) freopen_s(&f, "CONOUT$", "w", stderr);
 }
 
-void Log(const std::string& line) {
-  const std::string dir = bc::hw::ProgramDataDir();
-  bc::fs::Append(bc::fs::Join(dir, "setup.log"), line + "\n");
-  std::printf("%s\n", line.c_str());
-}
-
 int Help() {
   AttachParentConsole();
   std::printf(
       "Control Center Advanced %s\n\n"
-      "  ControlCenterAdvanced.exe                 open the window (service mode)\n"
-      "  --local                         window + in-process controller (administrator)\n"
-      "  --sim [--sim-model exact|family|unknown] [--sim-version X.Y.Z]   window on a simulated laptop\n"
+      "  ControlCenterAdvanced.exe                 open the window (administrator rights are needed for the hardware)\n"
       "  --tray                          start hidden in the tray\n"
+      "  --sim [--sim-model exact|family|unknown] [--sim-version X.Y.Z]   window on a simulated laptop\n"
       "  --lang en|tr                    interface language\n"
-      "  --service-console               run the service in this console\n"
-      "  --install-service               install and start the service (administrator)\n"
-      "  --uninstall-service             remove the service (administrator)\n"
-      "  --start-service | --stop-service | --restore-oem\n"
       "  --probe                         print the hardware report and exit\n"
-      "  --shot <page> <out.png> [--size WxH] [--scale S] [--advanced] [--drafts] [--font F]\n"
+      "  --autostart on|off              create or remove the sign-in task (Start with Windows) and exit\n"
+      "  --shot <page> <out.png> [--size WxH] [--scale S] [--font F]\n"
       "  --script <file>                 scripted UI test on the simulator\n",
       BC_VERSION);
   return 0;
 }
 
+// "Start with Windows" without opening the window: what the installer and the uninstaller call. Exit code 0 = done, 1 = it did not work, 2 = usage.
+int AutostartCommand(const std::string& what) {
+  AttachParentConsole();
+  if (what != "on" && what != "off") {
+    std::printf("usage: ControlCenterAdvanced.exe --autostart on|off\n");
+    return 2;
+  }
+  std::string why;
+  if (!bc::hw::SetAutostart(what == "on", &why)) {
+    std::printf("Start with Windows could not be turned %s: %s\n", what.c_str(), why.c_str());
+    return 1;
+  }
+  std::printf("Start with Windows is %s.\n", what.c_str());
+  return 0;
+}
+
 int Probe() {
   AttachParentConsole();
-  bc::hw::WinWorld world(bc::hw::WorldKind::Local, bc::hw::ProgramDataDir(), "probe");
+  bc::hw::WinWorld world(bc::hw::ProgramDataDir(), "probe");
   bc::Controller::Options co;
   co.mode = "local";
   co.dataDir = "";
   co.version = BC_VERSION;
   bc::Controller ctl(world.hw(), co);
   ctl.Start();
-  Sleep(2500);
-  const bc::KV s = ctl.Snapshot();
+  // the link to the vendor's service needs a moment: wait until it has reported, at most a few seconds
+  bc::KV s = ctl.Snapshot();
+  for (int i = 0; i < 24 && !(s.Bool("oem.up") && s.Has("perf.mode")); i++) {
+    Sleep(250);
+    s = ctl.Snapshot();
+  }
   std::printf("Control Center Advanced %s probe (elevated: %s)\n", BC_VERSION, bc::hw::IsElevated() ? "yes" : "no");
   for (const auto& p : s.All()) std::printf("%s=%s\n", p.first.c_str(), p.second.c_str());
   ctl.Stop();
   return 0;
-}
-
-int ServiceVerb(const std::string& verb) {
-  std::string why;
-  if (!bc::hw::IsElevated()) {
-    Log("this action needs administrator rights");
-    return 5;
-  }
-  bool ok = false;
-  if (verb == "--install-service") {
-    ok = bc::svc::Install(&why);
-    if (ok) ok = bc::svc::StartNow(&why);
-  } else if (verb == "--uninstall-service") {
-    bc::hw::OemServices oem(bc::hw::ProgramDataDir());
-    std::string w2;
-    oem.EnableAndStart(&w2);   // give the OEM Control Center its services back (no-op when nothing was taken over)
-    bc::svc::StopNow(&w2);
-    ok = bc::svc::Uninstall(&why);
-  } else if (verb == "--start-service") {
-    ok = bc::svc::StartNow(&why);
-  } else if (verb == "--stop-service") {
-    ok = bc::svc::StopNow(&why);
-  } else if (verb == "--restore-oem") {
-    bc::hw::OemServices oem(bc::hw::ProgramDataDir());
-    ok = oem.EnableAndStart(&why);
-  }
-  Log(verb + (ok ? ": ok" : ": failed - " + why));
-  return ok ? 0 : 1;
 }
 
 }  // namespace
@@ -146,18 +123,13 @@ int WINAPI WinMain(HINSTANCE hi, HINSTANCE, LPSTR, int show) {
       std::printf("%s\n", BC_VERSION);
       return 0;
     }
-    if (s == "--service") return bc::svc::RunAsService();
-    if (s == "--service-console") {
-      AttachParentConsole();
-      return bc::svc::RunInConsole();
-    }
-    if (s == "--install-service" || s == "--uninstall-service" || s == "--start-service" || s == "--stop-service" || s == "--restore-oem") return ServiceVerb(s);
     if (s == "--probe") return Probe();
-    if (s == "--local") o.mode = "local";
+    if (s == "--autostart") return AutostartCommand(i + 1 < a.size() ? a[i + 1] : "");
+    if (s == "--local") o.mode = "local";   // the default; accepted so older shortcuts keep working
     else if (s == "--sim") o.mode = "sim";
     else if (s == "--sim-model" && i + 1 < a.size()) o.simModel = a[++i];
     else if (s == "--sim-version" && i + 1 < a.size()) o.simVersion = a[++i];
-    else if (s == "--tray") o.tray = true;
+    else if (s == "--tray" || s == "/minimized") o.tray = true;   // "/minimized" is what the autostart task of the Monster GPU Power app used
     else if (s == "--lang" && i + 1 < a.size()) o.lang = a[++i];
     else if (s == "--shot" && i + 2 < a.size()) {
       o.shotPage = a[++i];
@@ -172,7 +144,6 @@ int WINAPI WinMain(HINSTANCE hi, HINSTANCE, LPSTR, int show) {
       }
     } else if (s == "--scale" && i + 1 < a.size()) o.shotScale = static_cast<float>(std::atof(a[++i].c_str()));
     else if (s == "--font" && i + 1 < a.size()) o.shotFont = a[++i];
-    else if (s == "--advanced") o.shotAdvanced = true;
     else if (s == "--drafts") o.shotDrafts = true;
     else if (s == "--script" && i + 1 < a.size()) {
       o.script = a[++i];
@@ -182,8 +153,10 @@ int WINAPI WinMain(HINSTANCE hi, HINSTANCE, LPSTR, int show) {
     }
   }
   if (o.mode == "local" && !bc::hw::IsElevated()) {
-    // restart elevated; the elevated copy owns the hardware
-    ShellExecuteW(nullptr, L"runas", bc::hw::SelfPath().c_str(), L"--local", nullptr, SW_SHOWNORMAL);
+    // The manifest asks for administrator rights, so this only happens when it was bypassed: restart elevated with the same arguments.
+    std::wstring args;
+    for (const std::string& x : a) args += (args.empty() ? L"\"" : L" \"") + bc::hw::W(x) + L"\"";
+    ShellExecuteW(nullptr, L"runas", bc::hw::SelfPath().c_str(), args.empty() ? nullptr : args.c_str(), nullptr, SW_SHOWNORMAL);
     return 0;
   }
   if (!gui) {

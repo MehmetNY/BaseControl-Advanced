@@ -1,55 +1,83 @@
-# Performance profiles: cards apply a profile, the power-source rule is stored, profiles can be saved and deleted.
+# Performance modes: the four cards ask the vendor's service to switch the mode, and the page then shows what really changed.
 # Run: ControlCenterAdvanced.exe --sim --script tests/ui/profiles_flow.txt --size 1360x900
-say == 1. a card applies its profile ==
+say == 1. the page starts in the mode the service reports ==
 page profiles
-expect profile.active
+wait 600
+expect profile.active Overboost
+expect perf.mode 2
+expect ec.pl1 120
+expect fan.mode auto
+shot /tmp/shots/p0_start.png
+
+say == 2. a card switches the mode and the limits follow ==
 clickid pc#Balanced
-wait 800
+wait 1200
 expect profile.active Balanced
-expect ec.pl1 60
-expect ec.pl2 80
-clickid pc#Quiet
-wait 800
-expect profile.active Quiet
-expect ec.pl1 35
+expect perf.mode 0
+expect ec.pl1 45
+expect ec.pl2 64
+expect ec.pl4 90
+clickid pc#Enthusiast
+wait 1200
+expect profile.active Enthusiast
+expect perf.mode 1
+expect ec.pl1 80
+expect ec.pl2 100
+expect ec.pl4 150
+clickid pc#Overboost
+wait 1200
+expect profile.active Overboost
+expect perf.mode 2
+expect ec.pl1 120
+expect ec.pl4 200
 shot /tmp/shots/p1_cards.png
 
-say == 2. power-source switching is stored and the combos work ==
-expect cfg.prof.auto
-clickid tg#prof.auto
-wait 600
-expect cfg.prof.auto 1
-clickid cb#prof.batt
-clickid opt#1
-wait 600
-expect cfg.prof.batt Balanced
-clickid cb#prof.ac
-clickid opt#3
-wait 600
-expect cfg.prof.ac Enthusiast
-shot /tmp/shots/p2_behaviour.png
+say == 3. the Custom mode runs on its own values ==
+clickid pc#Customized
+wait 1200
+expect profile.active Customized
+expect perf.mode 3
+expect ec.pl1 80
+expect ec.pl2 100
+shot /tmp/shots/p2_custom_mode.png
 
-say == 3. a profile of your own: save, apply, delete ==
-clickid in#prof.save
-type Night
-clickid bt#prof.save
-wait 800
-expect profile.active Night
-expect profile.list Quiet,Balanced,Enthusiast,Overboost,Night
+say == 4. the Turbo fan is a switch and does not touch the power limits ==
+expect fan.mode auto
+clickid tg#fanboost
+wait 900
+expect fan.mode boost
+expect fan.boost 1
+expect ec.pl1 80
+clickid tg#fanboost
+wait 900
+expect fan.mode auto
+expect fan.boost 0
+expect ec.pl1 80
+shot /tmp/shots/p3_fan.png
+
+say == 5. switching back restores the limits of the mode ==
+clickid pc#Overboost
+wait 1200
+expect profile.active Overboost
+expect ec.pl2 120
+
+say == 6. without the vendor's service the cards cannot switch and say why ==
+external oem.running 0
+wait 3000
+expect oem.link.state !connected
+expect cap.fan.ctl !ok
+let before snap:profile.active
 clickid pc#Balanced
-wait 800
-expect ec.pl1 60
-clickid pd#Night
-clickid modal#0
-wait 400
-expect profile.list Quiet,Balanced,Enthusiast,Overboost,Night
-clickid pd#Night
-clickid modal#1
-wait 800
-expect profile.list Quiet,Balanced,Enthusiast,Overboost
-shot /tmp/shots/p3_after.png
+wait 600
+expect profile.active $before
+shot /tmp/shots/p4_offline.png
 
-say == 4. a built-in name cannot be taken ==
-clickid in#prof.save
-type Quiet
-shot /tmp/shots/p4_reserved.png
+say == 7. when the service is back the cards work again ==
+external oem.running 1
+wait 4000
+expect oem.link.state connected
+clickid pc#Enthusiast
+wait 1200
+expect profile.active Enthusiast
+expect ec.pl1 80
+shot /tmp/shots/p5_back.png

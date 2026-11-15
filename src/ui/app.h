@@ -1,5 +1,5 @@
-// The Control Center Advanced window: owns the backend (service pipe / in-process controller / simulator), the Ui, the snapshot copy
-// the pages read from, the request bookkeeping (drafts, pending operations, consent / experimental / activation dialogs)
+// The Control Center Advanced window: owns the backend (in-process controller on the real machine, or the simulator), the Ui, the snapshot copy
+// the pages read from, the request bookkeeping (drafts, pending operations, consent dialogs)
 // and the Win32 window, tray icon and offscreen renderer used for the README screenshots.
 #pragma once
 #include <atomic>
@@ -13,35 +13,43 @@
 #include "../common/controller.h"
 #include "../common/settings_reg.h"
 #include "../sim/sim.h"
-#include "../svc/backend.h"
+#include "../common/backend.h"
 #include "i18n.h"
 #include "ui.h"
 
 namespace bc {
 namespace hw { class WinWorld; }
-class PipeBackend;
 namespace ui {
 
 enum class Page {
   Overview, Prefs, Devices, GpuInfo, Osd, Keys,   // general settings
   Profiles, Fan, Custom, Apps,                     // performance
-  Lighting, Battery, Display, DeviceInfo, Safety, About, Count
+  Lighting, Battery, Display, DeviceInfo, Service, About, Count
 };
 
 struct Options {
-  std::string mode = "auto";   // auto | local | sim
+  std::string mode = "local";  // local | sim
   std::string simModel;        // simulator only: exact (default) | family | unknown - which laptop the simulation pretends to be
-  std::string simVersion;      // simulator only: the version the simulated service reports (tests the "service and window differ" note)
+  std::string simVersion;      // simulator only: the version string the window reports
   std::string lang;            // "" = stored preference / system language
   bool tray = false;           // start hidden in the tray
   // offscreen rendering for documentation (--shot)
   std::string shotPage, shotOut, shotFont;
   int shotW = 1280, shotH = 800;
   float shotScale = 1.0f;
-  bool shotAdvanced = false;   // Custom profiles: advanced CPU panel open
-  bool shotDrafts = false;     // Custom profiles: leave a few sliders in the "draft" state
+  bool shotDrafts = false;     // Custom mode: leave a few sliders in the "draft" state (shows the Confirm buttons)
   std::string script;          // --script file: automation for tests
 };
+
+// The accent colours the user can pick (Settings > Appearance). Vivid on purpose: the dark surfaces are quiet, the accent is not.
+struct AccentDef {
+  const char* key;    // stored in ui.kv ("accent")
+  uint32_t col;
+};
+const AccentDef* Accents(int* count);
+const char* const kDefaultAccent = "ember";
+// The stored accent name as one of Accents() (the names the first build stored are mapped to their successors; anything else is the default).
+std::string NormalAccent(const std::string& stored);
 
 struct Draft {
   bool active = false;
@@ -115,7 +123,7 @@ class App {
   void FlushPrefs();
 
   // ---------------------------------------------------------------- session layer (keyboard hook, shortcuts, overlay)
-  // These run in the signed-in user's UI process: the service cannot see the keyboard or draw over a game.
+  // These need the signed-in user's desktop: the keyboard hook, the overlay over a game, the tray icon.
   void ApplySession();                    // re-reads the preferences and (re)configures hook, hotkey, overlay and tray icon
   bool SessionLive() const;               // the real window is running (not an offscreen render)
   bool TouchpadGesture() const;           // a precision touchpad is present, so the corner gesture can work
@@ -127,8 +135,6 @@ class App {
   void RunAction(const std::string& id);  // what a mapped key, the overlay hotkey or the touchpad corner does
   bool OverlayShown() const;
 
-  // elevation helpers (service management)
-  void RunElevated(const std::wstring& args, const std::string& doneToast);
   void OpenUrl(const std::string& url);
   // Opens a Windows tool from a fixed list ("display" = Settings > Display, "nightlight" = Settings > Night light, "colorcpl" = colour
   // management). The id is never a path or a command line. Offscreen renders and scripts only record it (Str("tool.last")).
@@ -140,11 +146,10 @@ class App {
   std::string ProbeReport() const;   // text for "copy diagnostics"
 
   float contentWidth() const { return contentW_; }
-  bool docked() const { return docked_; }    // a page's side panel is shown right now (the page itself must not draw it again)
   bool shotMode() const { return shot_; }
   void Quit();                           // really exit (tray menu); closing the window may only hide it
-  bool Autostart() const;
-  void SetAutostart(bool on);
+  bool Autostart() const;                // "start with Windows": the Task Scheduler task exists, is enabled and starts this program
+  bool SetAutostart(bool on);            // false = it did not work (a toast says why)
 
  private:
   struct Impl;
@@ -154,7 +159,6 @@ class App {
   void MakeBackend();
   void Tick();                           // results, snapshot, history
   void SessionTick();                    // overlay refresh and key-capture timeout (real window only)
-  void LightIdleTick();                  // reports "the user is idle" to the keyboard-light policy (the service cannot see the user's input)
   void AutoRefresh();                    // "lower the refresh rate on battery / follow the profile"
   void UpdateInterest();                 // keep polling while the overlay is up even if the window is hidden
   void Announce(const std::string& title, const std::string& text);   // toast in the window, tray balloon otherwise
@@ -171,8 +175,6 @@ class App {
   void ChainNext(const std::shared_ptr<ChainSt>& st);
   uint64_t Submit(const Request& r, const std::string& label, std::function<void(const Result&)> done, bool quiet = false);
   void AskConsent(const Op& op, const std::string& name, const Result& r);
-  void AskExperimental(const Op& op);
-  void AskActivation(const Op& op);
   void AskApproval(const Op& op, const Result& r);
   std::string CodeText(const std::string& code) const;
 
@@ -181,8 +183,6 @@ class App {
   void DrawRail(const Rect& r);
   void DrawTopBar(const Rect& r);
   void DrawPage(const Rect& r);
-  void DrawDock(const Rect& r);
-  void DrawOffline(const Rect& r);
   void ApplyShotState();
 
   Options opt_;
@@ -202,7 +202,6 @@ class App {
   KV prefs_;
   Page page_ = Page::Overview;
   float contentW_ = 800;
-  bool docked_ = false;
   bool shot_ = false;
   bool dirty_ = true;
   double lastTickT_ = 0;
@@ -223,13 +222,12 @@ float PageKeys(App& a, const Rect& r);
 float PageProfiles(App& a, const Rect& r);
 float PageFan(App& a, const Rect& r);
 float PageCustom(App& a, const Rect& r);
-float PageCustomDock(App& a, const Rect& r);   // advanced CPU registers, shown as a docked panel on the right
 float PageApps(App& a, const Rect& r);
 float PageLighting(App& a, const Rect& r);
 float PageBattery(App& a, const Rect& r);
 float PageDisplay(App& a, const Rect& r);
 float PageDeviceInfo(App& a, const Rect& r);
-float PageSafety(App& a, const Rect& r);
+float PageService(App& a, const Rect& r);
 float PageAbout(App& a, const Rect& r);
 
 std::string PageTitle(Page p);

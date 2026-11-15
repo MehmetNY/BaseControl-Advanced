@@ -1,9 +1,13 @@
-// WriteGuard: the single gatekeeper for EC writes.
+// WriteGuard: the single gatekeeper for writes to the embedded controller.
 //
-//  * allowlist of (address, bit mask, value rule); everything else is refused
+// Control Center Advanced changes almost nothing in the EC itself (profile values, fans, battery and keyboard go through the vendor's own
+// service). The two registers the GPU power engine uses for the extended GPU power (cTGP) are the only addresses on the allow-list;
+// everything else - including every other register this program reads - is refused, and a never-write list wins over everything.
+//
+//  * allow-list of (address, bit mask, value rule); everything else is refused
 //  * refuses (never clamps) out-of-range values
 //  * masked registers are read-modify-write: bits outside the mask must be unchanged
-//  * a global kill switch (read-only mode) and a never-write list that wins over everything
+//  * a global kill switch (read-only mode)
 #pragma once
 #include <cstdint>
 #include <string>
@@ -20,7 +24,7 @@ struct GuardVerdict {
 class WriteGuard {
  public:
   // Pure rule check. `current` is the byte currently in the EC (needed for masked registers).
-  static GuardVerdict Check(uint16_t addr, uint8_t value, uint8_t current, bool haveCurrent, bool initScope = false);
+  static GuardVerdict Check(uint16_t addr, uint8_t value, uint8_t current, bool haveCurrent);
   // Mask the guard applies to this register (0xFF = whole byte, 0 = not allowlisted).
   static uint8_t MaskFor(uint16_t addr);
   static bool IsAllowlisted(uint16_t addr) { return MaskFor(addr) != 0; }
@@ -35,21 +39,6 @@ class GuardedEc : public mgp::IEcDriver {
   mgp::DriverState Probe(uint32_t* winError) override { return inner_.Probe(winError); }
   mgp::EcByte Read(uint16_t addr) override;
   mgp::EcByte Write(uint16_t addr, uint8_t value) override;
-  // Used only to restore a byte we read earlier: the address must still be allowlisted and bits outside the
-  // register's mask must be unchanged, but the value itself is not range-checked (the EC may hold any value).
-  mgp::EcByte WriteRollback(uint16_t addr, uint8_t value);
-
-  // RAII scope that permits the documented EC bring-up writes (and nothing else new).
-  class InitScope {
-   public:
-    explicit InitScope(GuardedEc& g) : g_(g), prev_(g.initScope_) { g.initScope_ = true; }
-    ~InitScope() { g_.initScope_ = prev_; }
-    InitScope(const InitScope&) = delete;
-    InitScope& operator=(const InitScope&) = delete;
-   private:
-    GuardedEc& g_;
-    bool prev_;
-  };
 
   void SetReadOnly(bool ro) { readOnly_ = ro; }
   bool ReadOnly() const { return readOnly_; }
@@ -61,7 +50,6 @@ class GuardedEc : public mgp::IEcDriver {
   mgp::IEcDriver& inner_;
   mgp::ILog& log_;
   bool readOnly_ = false;
-  bool initScope_ = false;
   uint32_t writes_ = 0, refused_ = 0;
   std::string lastRefusal_;
 };

@@ -10,10 +10,10 @@ BUILD    := build/host
 COMMON   := $(wildcard src/common/*.cpp)
 MGPCORE  := $(wildcard src/mgp/core/*.cpp)
 SIM      := $(wildcard src/sim/*.cpp)
-SVCPORT  := src/svc/protocol.cpp src/svc/backend.cpp
+OEM      := $(wildcard src/oem/*.cpp)
 TESTS    := $(wildcard tests/*.cpp)
 
-OBJ_COMMON := $(patsubst src/%.cpp,$(BUILD)/%.o,$(COMMON) $(MGPCORE) $(SIM) $(SVCPORT))
+OBJ_COMMON := $(patsubst src/%.cpp,$(BUILD)/%.o,$(COMMON) $(MGPCORE) $(SIM) $(OEM))
 OBJ_TESTS  := $(patsubst tests/%.cpp,$(BUILD)/tests/%.o,$(TESTS))
 
 .PHONY: all test clean i18n

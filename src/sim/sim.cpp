@@ -6,9 +6,9 @@
 
 #include "../common/fan.h"
 #include "../common/hostdata.h"
-#include "../common/rapl.h"
 #include "../common/registers.h"
 #include "../common/util.h"
+#include "fake_oem.h"
 
 namespace bc {
 namespace sim {
@@ -27,7 +27,7 @@ Platform::Platform(Clock& clock) : clk(clock) {
   ec[kAcAutoBoot] = 0x80;   // PECI loop enabled
   ec[kCustomProfile] = 0x40;
   ec[kPl1] = 120; ec[kPl2] = 120; ec[kPl4] = 200;
-  ec[kTccWrite] = 0x05; ec[kCpuTempLimitRead] = 0x05;  // offset 5 = 100 C target
+  ec[kCpuTempLimitRead] = 0x05;  // offset 5 = 100 C target
   ec[kGpuCtrl] = 0x05; ec[kGpuCtgpOffset] = 15; ec[kCtwa] = 15;
   ec[kFanSwitchSpeed] = 0x85;
   ec[kBatteryMode] = 0x18;
@@ -38,27 +38,6 @@ Platform::Platform(Clock& clock) : clk(clock) {
   }
   ec[kSsdTemp] = 38;
 
-  const rapl::Units u = rapl::DecodeUnits(0xA0E03);
-  msr[0x606] = 0xA0E03;
-  rapl::PkgLimit pk;
-  pk.pl1W = 120; pk.pl2W = 120; pk.pl1En = pk.pl2En = true; pk.pl1Clamp = pk.pl2Clamp = true; pk.tau1S = 28; pk.tau2S = 0.00244;
-  uint64_t v = 0;
-  rapl::EncodePkgLimit(0, pk, u, &v);
-  msr[0x610] = v;
-  rapl::PkgLimit ps;   // platform (PSys) limit: an assumption of the model, not a measurement
-  ps.pl1W = 210; ps.pl2W = 250; ps.pl1En = ps.pl2En = true; ps.pl1Clamp = ps.pl2Clamp = false; ps.tau1S = 28; ps.tau2S = 0.00244;
-  uint64_t vp = 0;
-  rapl::EncodePkgLimit(0, ps, u, &vp);
-  msr[0x65C] = vp;
-  msr[0x1FC] = 0x3;                                            // BD PROCHOT on, C1E on
-  msr[0x614] = (360ULL) | (200ULL << 16) | (1600ULL << 32);    // TDP 45 W, min 25 W, max 200 W
-  msr[0x601] = 1040;                                           // Icc max 130 A, unlocked
-  msr[0x1A2] = 100ULL << 16;                                   // TjMax 100, TCC offset 0
-  msr[0x0CE] = 23ULL << 8;                                     // base ratio 23
-  msr[0x1AD] = 0x2B2B2C2C2D2D2E2EULL;                          // 46,46,45,45,44,44,43,43 (byte 0 = 1 core)
-  msr[0x1A4] = 0;
-  mirroredPl1_ = ec[kPl1];
-  mirroredPl2_ = ec[kPl2];
   last_ = clk.NowMs();
   UpdateRegisters();
 }
@@ -86,17 +65,11 @@ void Platform::MakeEcCold() {
   ec[0x741] = 0x00;
   ec[kAcAutoBoot] &= static_cast<uint8_t>(~0x80);
   ec[kCustomProfile] &= static_cast<uint8_t>(~0x40);
-  pendingActAt_ = 0;
 }
 
-double Platform::Pl1W() const {
-  rapl::PkgLimit p = rapl::DecodePkgLimit(msr.at(0x610), rapl::DecodeUnits(msr.at(0x606)));
-  return p.pl1W;
-}
-double Platform::Pl2W() const {
-  rapl::PkgLimit p = rapl::DecodePkgLimit(msr.at(0x610), rapl::DecodeUnits(msr.at(0x606)));
-  return p.pl2W;
-}
+// While the EC's power-management loop runs the CPU obeys the EC registers; without it the firmware's own defaults apply (assumed here).
+double Platform::Pl1W() const { return EcActive() ? ec[kPl1] : 45.0; }
+double Platform::Pl2W() const { return EcActive() ? ec[kPl2] : 90.0; }
 double Platform::CtgpW() const { return (ec[kGpuCtrl] & 0x04) ? 125.0 + ec[kGpuCtgpOffset] : 125.0; }
 
 // ------------------------------------------------------------------------------------------------ EC access
@@ -127,23 +100,7 @@ mgp::EcByte Platform::EcWrite(uint16_t a, uint8_t v) {
   b.bytesReturned = 1;
   if (ecDropWrites) return b;
   a &= 0xFFF;
-  const bool active = EcActive();
   switch (a) {
-    case 0x741:
-      ec[a] = v;
-      if (v & 0x04) pendingActAt_ = clk.NowMs() + 600;  // the EC clears bit 2 once it has processed the request
-      break;
-    case kPl1: case kPl2: case kPl4:
-      if (active) ec[a] = v;  // an inactive loop ignores power-limit writes
-      break;
-    case kTccWrite:
-      if (active && (v & 0x80)) {
-        ec[kCpuTempLimitRead] = v & 0x7F;
-        ec[a] = v & 0x7F;  // commit bit consumed
-      } else if (active) {
-        ec[a] = v;
-      }
-      break;
     case kGpuCtgpOffset:
       ec[a] = v;
       ec[kCtwa] = v;
@@ -155,106 +112,13 @@ mgp::EcByte Platform::EcWrite(uint16_t a, uint8_t v) {
     default:
       ec[a] = v;
   }
-  if (a == kFanCurveLatch) ec[a] = v;  // the latch bit stays set in this model
   return b;
-}
-
-// ------------------------------------------------------------------------------------------------ MSR access
-bool Platform::MsrAllowed(uint32_t m, bool write) const {
-  static const uint32_t kRead[] = {0x0CE, 0x198, 0x19C, 0x1A2, 0x1A4, 0x1AD, 0x1B1, 0x150, 0x601, 0x606, 0x610, 0x611, 0x613, 0x614, 0x619, 0x639, 0x641, 0x64D, 0x65C, 0x1FC};
-  static const uint32_t kWrite[] = {0x1A4, 0x150, 0x601, 0x610, 0x65C, 0x1FC};
-  if (write) {
-    for (uint32_t x : kWrite)
-      if (x == m) return true;
-    return false;
-  }
-  for (uint32_t x : kRead)
-    if (x == m) return true;
-  return false;
-}
-
-bool Platform::MsrRead(uint32_t m, uint64_t* v) {
-  if (!msrAvailable || !MsrAllowed(m, false)) return false;
-  Step();
-  if (m == 0x150) {
-    *v = ocResp_;
-    return true;
-  }
-  auto it = msr.find(m);
-  *v = it == msr.end() ? 0 : it->second;
-  if (m == 0x610 && msrPkgLocked) *v |= (1ULL << 63);
-  if (m == 0x65C && msrPsysLocked) *v |= (1ULL << 63);
-  return true;
-}
-
-bool Platform::ocHandle(uint64_t cmd) {
-  const int code = static_cast<int>((cmd >> 32) & 0xFF);
-  const int plane = static_cast<int>((cmd >> 40) & 0xFF);
-  uint64_t resp = cmd & ~(1ULL << 63);
-  resp &= ~(0xFFULL << 32);  // response code 0 = success
-  if (!ocMailboxOpen || plane > 4 || (code != 0x10 && code != 0x11)) {
-    ocResp_ = (cmd & ~(1ULL << 63) & ~(0xFFULL << 32)) | (1ULL << 32);
-    return true;
-  }
-  if (code == 0x10) {
-    long long units = std::llround(ocOffsetMv_[plane] * 1.024);
-    resp = (resp & ~(0x7FFULL << 21)) | ((static_cast<uint64_t>(units) & 0x7FF) << 21);
-  } else {
-    int units = static_cast<int>((cmd >> 21) & 0x7FF);
-    if (units & 0x400) units -= 0x800;
-    ocOffsetMv_[plane] = static_cast<int>(std::lround(units / 1.024));
-  }
-  ocResp_ = resp;
-  return true;
-}
-
-bool Platform::MsrWrite(uint32_t m, uint64_t v) {
-  if (!msrAvailable || !MsrAllowed(m, true)) return false;
-  Step();
-  switch (m) {
-    case 0x150:
-      return ocHandle(v);
-    case 0x610:
-      if (msrPkgLocked) return false;
-      msr[0x610] = v & ~(1ULL << 63);
-      return true;
-    case 0x65C:
-      if (msrPsysLocked) return false;
-      msr[0x65C] = v & ~(1ULL << 63);
-      return true;
-    case 0x601:
-      if (iccLocked) return false;
-      msr[0x601] = v & 0xFFFFFFFFULL & ~(1ULL << 31);
-      return true;
-    default:
-      msr[m] = v;
-      return true;
-  }
-}
-
-void Platform::MirrorEcToMsr(bool force) {
-  const uint8_t p1 = ec[kPl1], p2 = ec[kPl2];
-  if (!force && p1 == mirroredPl1_ && p2 == mirroredPl2_) return;
-  mirroredPl1_ = p1;
-  mirroredPl2_ = p2;
-  const rapl::Units u = rapl::DecodeUnits(msr[0x606]);
-  const uint64_t old = msr[0x610] & ~(1ULL << 63);
-  rapl::PkgLimit pk = rapl::DecodePkgLimit(old, u);
-  pk.pl1W = p1;
-  pk.pl2W = p2;
-  uint64_t nv = 0;
-  if (rapl::EncodePkgLimit(old, pk, u, &nv)) msr[0x610] = nv | (msrPkgLocked ? (1ULL << 63) : 0);
 }
 
 // ------------------------------------------------------------------------------------------------ physics
 void Platform::Step() {
   std::lock_guard<std::recursive_mutex> g(mu);
   const uint64_t now = clk.NowMs();
-  if (pendingActAt_ && now >= pendingActAt_) {
-    pendingActAt_ = 0;
-    const bool ok = (ec[kAcAutoBoot] & 0x80) && (ec[kCustomProfile] & 0x40);
-    ec[0x741] = ok ? 0x01 : 0x00;
-  }
   if (now <= last_) return;
   double dt = static_cast<double>(now - last_) / 1000.0;
   last_ = now;
@@ -266,9 +130,6 @@ void Platform::Step() {
 }
 
 void Platform::Sub(double h) {
-  if (msrFirmwareOwns) MirrorEcToMsr(true);
-  else if (msrFollowsEc && EcActive()) MirrorEcToMsr(false);
-
   // ---- CPU power: PL2 burst budget (tau1 = 28 s), then PL1
   const double pl1 = std::max(1.0, Pl1W()), pl2 = std::max(pl1, Pl2W());
   const double tau1 = 28.0;
@@ -339,14 +200,6 @@ void Platform::Sub(double h) {
   if (cpuT >= tcc - 1.0) logThermal = true;
   if (powerLimited) logPower = true;
 
-  // ---- energy counters / throttle time
-  eCpu_ += cpuW * h;
-  eCore_ += cpuW * 0.82 * h;
-  eIgpu_ += (0.8 + 0.3 * cpuLoad) * h;
-  eDram_ += (2.2 + 3.5 * cpuLoad) * h;
-  ePsys_ += (cpuW + gpuW + 18.0) * h;
-  if (powerLimited) throttleS_ += (1.0 - allowed / std::max(1.0, demand)) * h;
-
   // ---- battery
   const double sysW = cpuW + gpuW + 18.0;
   if (ac) battPct = std::min(100.0, battPct + 0.012 * h);
@@ -354,28 +207,6 @@ void Platform::Sub(double h) {
 }
 
 void Platform::UpdateRegisters() {
-  const rapl::Units u = rapl::DecodeUnits(msr[0x606]);
-  auto cnt = [&](double j) { return static_cast<uint64_t>(j / u.energyJ) & 0xFFFFFFFFULL; };
-  msr[0x611] = cnt(eCpu_);
-  msr[0x639] = cnt(eCore_);
-  msr[0x641] = cnt(eIgpu_);
-  msr[0x619] = cnt(eDram_);
-  msr[0x64D] = cnt(ePsys_);
-  msr[0x613] = static_cast<uint64_t>(throttleS_ / u.timeS) & 0xFFFFFFFFULL;
-  const double tjmax = 100.0;
-  const int below = static_cast<int>(Clampd(tjmax - cpuT, 0, 127));
-  uint64_t st = static_cast<uint64_t>(below) << 16;
-  if (cpuT >= tjmax - 2) st |= 1;
-  if (logThermal) st |= 2;
-  if (powerLimited) st |= (1ULL << 10);
-  if (logPower) st |= (1ULL << 11);
-  msr[0x1B1] = st;
-  msr[0x19C] = st & 0x7F0003ULL;
-  const double ratio = 8.0 + 38.0 * Clampd(cpuW / 95.0, 0, 1);
-  msr[0x198] = static_cast<uint64_t>(std::lround(ratio)) << 8;
-  if (iccLocked) msr[0x601] |= (1ULL << 31);
-  else msr[0x601] &= ~(1ULL << 31);
-
   ec[kCpuTemp] = static_cast<uint8_t>(std::lround(cpuT));
   ec[kGpuTemp] = static_cast<uint8_t>(std::lround(gpuT));
   const int cr = static_cast<int>(std::lround(cpuRpm)), gr = static_cast<int>(std::lround(gpuRpm));
@@ -452,14 +283,6 @@ double FpsSim::Fps(std::string* app) {
   return std::floor(244.0 - 150.0 * p_.gpuLoad);
 }
 
-bool Msr::Open(std::string* why) {
-  if (!p_.msrAvailable) {
-    if (why) *why = "PawnIO driver / IntelMSR module not available (simulated)";
-    return false;
-  }
-  return true;
-}
-
 bool GpuExtra::Init(std::string* why) {
   if (!p_.nvmlAvailable) {
     if (why) *why = "NVML unavailable (simulated)";
@@ -494,19 +317,6 @@ bool GpuExtra::Read(GpuInfo* o) {
   o->haveOffsets = true;
   o->coreOffsetMhz = p_.gpuCoreOffset;
   o->memOffsetMhz = p_.gpuMemOffset;
-  return true;
-}
-
-bool Power::SetCpuPolicy(const CpuPolicy& p, std::string* why) {
-  if (failSet) {
-    if (why) *why = "sim: access denied";
-    return false;
-  }
-  if (p.boost >= 0) policy.boost = p.boost;
-  if (p.epp >= 0) policy.epp = p.epp;
-  if (p.minPct >= 0) policy.minPct = p.minPct;
-  if (p.maxPct >= 0) policy.maxPct = p.maxPct;
-  if (p.parkMinPct >= 0) policy.parkMinPct = p.parkMinPct;
   return true;
 }
 
@@ -572,38 +382,13 @@ bool Devices::Set(Dev d, bool on, std::string* why) {
   return true;
 }
 
-OemSvcState Oem::Probe() {
+OemSvcState OemProbeSim::Probe() {
   OemSvcState s;
   s.installed = installed;
-  s.running = installed && running && !disabled;
+  s.running = installed && running;
   s.version = installed ? "4.9.47.11" : "";
   if (installed) s.services = {"gcuService", "GcuBridge"};
   return s;
-}
-
-bool Oem::StopAndDisable(std::string* why) {
-  if (failStop) {
-    if (why) *why = "access denied";
-    return false;
-  }
-  running = false;
-  disabled = true;
-  return true;
-}
-
-bool Oem::EnableAndStart(std::string*) {
-  disabled = false;
-  running = true;
-  return true;
-}
-
-std::vector<LightZone> Light::Detect(std::string* info) {
-  std::vector<LightZone> v;
-  if (kbd) v.push_back(LightZone::Keyboard);
-  if (bar) v.push_back(LightZone::LightBar);
-  if (logo) v.push_back(LightZone::Logo);
-  if (info) *info = kbd ? "simulated ITE 048D:600B" : "none";
-  return v;
 }
 
 Storage::Storage() {
@@ -739,8 +524,7 @@ std::vector<uint8_t> BuildSmbios(const std::string& manuf, const std::string& pr
   return raw;
 }
 
-World::World(Model m, bool realClock)
-    : clock(realClock), plat(clock), ec(plat), nv(plat), msr(plat), gpu(plat), power(plat), fps(plat) {
+World::World(Model m, bool realClock) : clock(realClock), plat(clock), ec(plat), nv(plat), gpu(plat), power(plat), fps(plat) {
   host.smbios = &smbios;
   if (m == Model::Exact) smbios.raw = BuildSmbios("MONSTER", "TULPAR T5 V21.7", "N.1.07Mon08", "GM5TG7Y");
   else if (m == Model::Family) smbios.raw = BuildSmbios("SCHENKER", "XMG NEO 15 M21", "N.1.07Mon08", "GM5TG7W");
@@ -748,6 +532,13 @@ World::World(Model m, bool realClock)
     smbios.raw = BuildSmbios("ACME", "Generic Laptop", "1.0", "XYZ");
     plat.ec[0x740] = 40;
   }
+  oemWorld.reset(new FakeOemWorld(&plat));
+  oemProbe.onStart = [this] { if (oemWorld) oemWorld->SetServiceUp(true); };
+  oemLink.reset(new oem::MqttOemLink(oemWorld->LinkConfigFor()));
+}
+
+World::~World() {
+  if (oemLink) oemLink->Stop();   // the link talks to the fake service: it has to end first
 }
 
 Hardware World::hw() {
@@ -758,13 +549,12 @@ Hardware World::hw() {
   h.oemFiles = nullptr;
   h.clock = &clock;
   h.log = &log;
-  h.msr = &msr;
   h.gpu = &gpu;
   h.power = &power;
   h.display = &display;
   h.devices = &devices;
-  h.oem = &oem;
-  h.light = &light;
+  h.oemSvc = &oemProbe;
+  h.oemLink = oemLink.get();
   h.host = &host;
   h.storage = &storage;
   h.fps = &fps;

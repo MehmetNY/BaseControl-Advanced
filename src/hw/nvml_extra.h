@@ -1,4 +1,5 @@
-// NVIDIA NVML extras: clocks, memory, throttle reasons and the core/memory clock offsets (VF offset).
+// NVIDIA NVML extras (read only): clocks, memory, throttle reasons and the core/memory clock offsets that are in force. The offsets are
+// changed through the vendor's service, never from here.
 // nvml.dll is loaded dynamically from the system folder / NVIDIA's own folder (never from PATH or the working
 // directory). Everything is optional: missing exports simply turn the matching feature off.
 #pragma once
@@ -17,9 +18,6 @@ class NvmlExtra : public IGpuExtra {
 
   bool Init(std::string* why) override;
   bool Read(GpuInfo* out) override;
-  bool OffsetRange(int* coreMin, int* coreMax, int* memMin, int* memMax) override;
-  bool SetCoreOffset(int mhz, std::string* why) override;
-  bool SetMemOffset(int mhz, std::string* why) override;
 
  private:
   struct Fns;

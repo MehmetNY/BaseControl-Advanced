@@ -23,6 +23,7 @@ std::string U(const std::wstring& wide);
 std::string Win32Text(DWORD err);              // "Access is denied (5)" - short, English, no user data
 std::wstring KnownFolder(int csidl);           // CSIDL path or empty
 std::wstring ProgramFiles();
+std::vector<std::string> ProtectedProgramRoots();   // UTF-8: Program Files (both kinds) and the Windows folder - normal users cannot write there
 std::wstring SystemDirectory();
 std::string ProgramDataDir();                  // UTF-8 "%ProgramData%\ControlCenterAdvanced" (created on demand)
 std::string LocalDataDir();                    // UTF-8 "%LOCALAPPDATA%\ControlCenterAdvanced" (created on demand)

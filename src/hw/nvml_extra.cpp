@@ -25,8 +25,6 @@ typedef nvmlReturn_t (*F_mem)(nvmlDevice_t, nvmlMemory_t*);
 typedef nvmlReturn_t (*F_pstate)(nvmlDevice_t, int*);
 typedef nvmlReturn_t (*F_reasons)(nvmlDevice_t, unsigned long long*);
 typedef nvmlReturn_t (*F_getoff)(nvmlDevice_t, int*);
-typedef nvmlReturn_t (*F_setoff)(nvmlDevice_t, int);
-typedef nvmlReturn_t (*F_minmax)(nvmlDevice_t, int*, int*);
 typedef const char* (*F_err)(nvmlReturn_t);
 
 template <typename T>
@@ -63,8 +61,6 @@ struct NvmlExtra::Fns {
   F_pstate pstate = nullptr;
   F_reasons reasons = nullptr;
   F_getoff getGpc = nullptr, getMem = nullptr;
-  F_setoff setGpc = nullptr, setMem = nullptr;
-  F_minmax gpcRange = nullptr, memRange = nullptr;
   F_err errStr = nullptr;
 };
 
@@ -104,11 +100,7 @@ bool NvmlExtra::Init(std::string* why) {
     f_->pstate = Sym<F_pstate>(mod_, "nvmlDeviceGetPerformanceState");
     f_->reasons = Sym<F_reasons>(mod_, "nvmlDeviceGetCurrentClocksEventReasons", "nvmlDeviceGetCurrentClocksThrottleReasons");
     f_->getGpc = Sym<F_getoff>(mod_, "nvmlDeviceGetGpcClkVfOffset");
-    f_->setGpc = Sym<F_setoff>(mod_, "nvmlDeviceSetGpcClkVfOffset");
     f_->getMem = Sym<F_getoff>(mod_, "nvmlDeviceGetMemClkVfOffset");
-    f_->setMem = Sym<F_setoff>(mod_, "nvmlDeviceSetMemClkVfOffset");
-    f_->gpcRange = Sym<F_minmax>(mod_, "nvmlDeviceGetGpcClkMinMaxVfOffset");
-    f_->memRange = Sym<F_minmax>(mod_, "nvmlDeviceGetMemClkMinMaxVfOffset");
     f_->errStr = Sym<F_err>(mod_, "nvmlErrorString");
   }
   if (!f_->init || !f_->shutdown || !f_->count || !f_->handle || !f_->name) return fail("nvml.dll lacks the basic exports");
@@ -183,43 +175,6 @@ bool NvmlExtra::Read(GpuInfo* o) {
   }
   o->ok = true;
   return true;
-}
-
-bool NvmlExtra::OffsetRange(int* coreMin, int* coreMax, int* memMin, int* memMax) {
-  EnterCriticalSection(&cs_);
-  struct Leave { CRITICAL_SECTION* c; ~Leave() { LeaveCriticalSection(c); } } leave{&cs_};
-  if (!inited_ || !dev_ || !f_->gpcRange || !f_->memRange || !f_->setGpc || !f_->setMem) return false;
-  int a = 0, b = 0, c = 0, d = 0;
-  if (f_->gpcRange(dev_, &a, &b) != 0 || f_->memRange(dev_, &c, &d) != 0) return false;
-  if (coreMin) *coreMin = a;
-  if (coreMax) *coreMax = b;
-  if (memMin) *memMin = c;
-  if (memMax) *memMax = d;
-  return true;
-}
-
-bool NvmlExtra::SetCoreOffset(int mhz, std::string* why) {
-  EnterCriticalSection(&cs_);
-  struct Leave { CRITICAL_SECTION* c; ~Leave() { LeaveCriticalSection(c); } } leave{&cs_};
-  if (!inited_ || !dev_ || !f_->setGpc) {
-    if (why) *why = "core clock offset is not exposed by this driver";
-    return false;
-  }
-  const nvmlReturn_t rc = f_->setGpc(dev_, mhz);
-  if (rc != 0 && why) *why = std::string("NVML: ") + (f_->errStr ? f_->errStr(rc) : Fmt("%d", rc).c_str());
-  return rc == 0;
-}
-
-bool NvmlExtra::SetMemOffset(int mhz, std::string* why) {
-  EnterCriticalSection(&cs_);
-  struct Leave { CRITICAL_SECTION* c; ~Leave() { LeaveCriticalSection(c); } } leave{&cs_};
-  if (!inited_ || !dev_ || !f_->setMem) {
-    if (why) *why = "memory clock offset is not exposed by this driver";
-    return false;
-  }
-  const nvmlReturn_t rc = f_->setMem(dev_, mhz);
-  if (rc != 0 && why) *why = std::string("NVML: ") + (f_->errStr ? f_->errStr(rc) : Fmt("%d", rc).c_str());
-  return rc == 0;
 }
 
 }  // namespace hw

@@ -23,6 +23,7 @@ std::string Trim(const std::string& s);
 bool StartsWith(const std::string& s, const std::string& p);
 bool EndsWith(const std::string& s, const std::string& p);
 std::string Lower(std::string s);
+std::string Upper(std::string s);
 bool EqNoCase(const std::string& a, const std::string& b);
 
 bool ParseInt(const std::string& s, long long& out);      // decimal or 0x-hex, whole string

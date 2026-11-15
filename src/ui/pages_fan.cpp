@@ -1,5 +1,6 @@
 // "Fan settings": the live fan readings, the temperature -> fan speed curves (draggable points that are drafted first and sent
-// only when you press Apply), the cooling mode, a short history and the experimental fixed-speed controls.
+// only when you press Apply), the cooling mode (Auto, Turbo fan, Custom curve) and a short history. Curves and modes are changed by the
+// vendor's service; the table shown is the one the embedded controller holds.
 #include <algorithm>
 #include <climits>
 #include <cmath>
@@ -31,18 +32,17 @@ bool Linked(App& a) { return a.PrefB("fan.link", false); }
 
 std::string ModeName(const std::string& m) {
   if (m == "auto") return T("Auto");
-  if (m == "boost") return T("Boost");
+  if (m == "boost") return T("Turbo fan");
   if (m == "custom") return T("Custom curve");
   if (m == "fixed") return T("Fixed speed");
   return m;
 }
 
-// What the hardware uses now: the table the EC holds in Custom mode, otherwise the curve Control Center Advanced will write when Custom is
-// switched on (or the built-in default before anything was stored).
+// What the hardware uses now: the fan table the embedded controller holds (the vendor's own curve in Auto, yours in Custom curve), or the
+// built-in default before the controller could be read.
 fan::Curve AppliedCurve(App& a, bool cpu) {
   fan::Curve c;
-  if (a.S("fan.mode") == "custom" && fan::FromText(a.S(cpu ? "fan.cpu.curve" : "fan.gpu.curve"), &c) && fan::Validate(c, nullptr)) return c;
-  if (fan::FromText(a.S(cpu ? "cfg.fan.cpu" : "cfg.fan.gpu"), &c) && fan::Validate(c, nullptr)) return c;
+  if (fan::FromText(a.S(cpu ? "fan.cpu.curve" : "fan.gpu.curve"), &c) && fan::Validate(c, nullptr)) return c;
   return cpu ? fan::DefaultCpu() : fan::DefaultGpu();
 }
 
@@ -392,8 +392,8 @@ void ChartCard(Ctx& c, Masonry& m) {
   if (!canEdit) {
     banner = a.CapWhy("fan.curve").empty() ? T("Fan curves are not available on this system.") : a.CapWhy("fan.curve");
   } else if (mode != "custom") {
-    if (mode == "boost") banner = T("Fan boost is on, so both fans run at full speed. These curves are used once boost is off and the mode is Custom curve.");
-    else if (mode == "fixed") banner = T("A fixed fan speed is set. These curves are used once you switch to Custom curve.");
+    if (mode == "boost") banner = T("Turbo fan is on, so both fans run at full speed. These curves are used once it is off and the mode is Custom curve.");
+    else if (mode == "fixed") banner = T("Another program holds the fans at a fixed speed. These curves are used once you switch to Custom curve.");
     else banner = T("The fan mode is Auto, so the laptop decides the fan speed. These curves are used once you switch to Custom curve.");
     bannerCol = th.blue;
   }
@@ -550,6 +550,25 @@ void ChartCard(Ctx& c, Masonry& m) {
       ui.Tip(b, p.tip);
       x += 94;
     }
+    // the vendor's own default curves (what the original window's "restore" does), when there is room next to the presets
+    const float bw = 150;
+    const Rect vb(row.r() - bw, row.y + 4, bw, 30);
+    if (x + 6 < vb.x) {
+      if (ui.Button("fan.vendor", vb, T("Vendor's curves"), Btn::Normal, IconId::Undo, canEdit && !a.Pending("cmd:fan.restore"))) {
+        ModalSpec ms;
+        ms.title = T("Restore the vendor's fan curves?");
+        ms.body = T("The vendor's service puts its default curves back into the active fan table. Changes you made to the curves are replaced.");
+        ms.icon = IconId::Undo;
+        ms.buttons = {{T("Cancel"), Btn::Ghost, 0}, {T("Restore"), Btn::Primary, 1}};
+        App* ap = &a;
+        ui.ModalOpen(ms, [ap](int id) {
+          if (id != 1) return;
+          DiscardCurves(*ap);
+          ap->Cmd("fan.restore", KV(), T("The vendor's default fan curves were asked for"));
+        });
+      }
+      ui.Tip(vb, T("Asks the vendor's service for its default fan curves."));
+    }
   }
   k.Gap(10);
 
@@ -584,18 +603,18 @@ void CoolingCard(Ctx& c, Masonry& m) {
   const std::string mode = a.S("fan.mode");
   const float h = kRowSlider + 9 + kRowToggle + 9 + kRowToggle;
   Card k(c, m, T("Cooling behaviour"), "", IconId::Fan, h);
-  k.EnumConfirm("fan.mode", T("Cooling mode"), T("Auto: the laptop decides. Custom curve: your curves. Fixed speed: one value (experimental)."),
-                {T("Auto"), T("Boost"), T("Custom curve"), T("Fixed speed")});
+  k.EnumConfirm("fan.mode", T("Cooling mode"), T("Auto: the laptop decides. Turbo fan: both fans at full speed. Custom curve: your curves."),
+                {T("Auto"), T("Turbo fan"), T("Custom curve")});
   k.Divider();
   const bool boost = mode == "boost";
-  if (k.Toggle("tg#fan.boost", T("Fan boost"), T("Both fans at maximum speed until you turn it off."), boost, a.CapOk("fan.ctl") && !a.Pending("fan.mode"))) {
+  if (k.Toggle("tg#fan.boost", T("Turbo fan"), T("Both fans at maximum speed until you turn it off."), boost, a.CapOk("fan.ctl") && !a.Pending("fan.mode"))) {
     if (!boost) {
       a.Str("fan.prev") = mode;
-      a.Set("fan.mode", "boost", T("Fan boost on"));
+      a.Set("fan.mode", "boost", T("Turbo fan on"));
     } else {
       std::string prev = a.Str("fan.prev");
       if (prev.empty() || prev == "boost" || prev == "fixed") prev = "auto";
-      a.Set("fan.mode", prev, T("Fan boost off"));
+      a.Set("fan.mode", prev, T("Turbo fan off"));
     }
   }
   k.Divider();
@@ -629,59 +648,6 @@ void HistoryCard(Ctx& c, Masonry& m) {
   const float ymax = std::ceil(top * 1.05f / 1000.0f) * 1000.0f;
   LineChart(ui, Rect(cr.x, cr.y, cr.w, cr.h - 18), {&a.hist().cpuRpm, &a.hist().gpuRpm}, {th.accent, th.blue}, 0, ymax, "RPM");
   TimeAxis(ui, Rect(cr.x + 34, cr.y + 6, cr.w - 40, cr.h - 34), 120);
-}
-
-SliderCfg FixedCfg(App& a, bool cpu) {
-  SliderCfg s;
-  s.key = cpu ? "fan.fixed.cpu" : "fan.fixed.gpu";
-  const bool fixedMode = a.S("fan.mode") == "fixed";
-  if (fixedMode) {
-    s.liveKey = s.key;
-  } else {
-    s.liveKey = cpu ? "cfg.fan.fixed.cpu" : "cfg.fan.fixed.gpu";
-    s.fallback = 60;
-    s.tag = T("STORED");
-  }
-  s.title = cpu ? T("Fixed CPU fan speed") : T("Fixed GPU fan speed");
-  s.desc = fixedMode ? T("The fan duty held right now.") : T("Used when the mode is Fixed speed. Stored until then.");
-  return s;
-}
-
-void AdvancedCard(Ctx& c, Masonry& m) {
-  App& a = c.app;
-  Ui& ui = c.ui;
-  const bool two = m.InnerW(true) >= 760;
-  const float colGap = 30;
-  const std::string note = Tf("Fixed speed holds one duty and bypasses the laptop's thermal control. While Control Center Advanced (or its service) runs, a watchdog forces full speed at %d \xC2\xB0""C CPU or %d \xC2\xB0""C GPU. Without it nothing protects the laptop.", 97, 92);
-  const float innerW = m.InnerW(true);
-  const float colW = two ? (innerW - colGap) / 2 : innerW;
-  const float noteH = ui.gfx.Wrapped(Rect(0, 0, colW, 3000), note, FontId::Small, 0, false) + 10;
-  const float left = 2 * kRowSlider + 9;
-  const float right = kRowSlider + 9 + noteH;
-  const float h = two ? std::max(left, right) : left + 9 + right;
-  Card k(c, m, T("Advanced fan control"), T("Experimental. Needs Safety and service > Allow experimental writes."), IconId::Sliders, h, true);
-  const float x0 = k.x0, y0 = k.y, fullW = k.w;
-  k.w = colW;
-  k.Slider(FixedCfg(a, true));
-  k.Divider();
-  k.Slider(FixedCfg(a, false));
-  const float yLeft = k.y;
-  if (two) {
-    k.x0 = x0 + colW + colGap;
-    k.y = y0;
-  } else {
-    k.Divider();
-  }
-  SliderCfg ramp;
-  ramp.key = "fan.ramp";
-  ramp.title = T("Fan switching speed");
-  ramp.desc = T("The value the embedded controller uses when the fans change speed (1 to 127). The effect is not documented.");
-  k.Slider(ramp);
-  k.Divider();
-  k.Note(note);
-  k.x0 = x0;
-  k.w = fullW;
-  k.y = std::max(k.y, yLeft);
 }
 
 }  // namespace
@@ -724,11 +690,7 @@ float PageFan(App& a, const Rect& r) {
     row2 = m.Bottom();
   }
 
-  // ---- row 3: advanced
-  Section s2(ui, row2 + kGap);
-  Masonry m3(w, w, 1);
-  AdvancedCard(c, m3);
-  return row1 + kGap + row2 + kGap + m3.Bottom();
+  return row1 + kGap + row2;
 }
 
 }  // namespace ui

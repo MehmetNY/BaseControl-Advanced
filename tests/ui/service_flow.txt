@@ -1,0 +1,108 @@
+# Service page: the link to the vendor's service, the vendor's services, the protection switches, the confirmations and the diagnostics.
+# Run: ControlCenterAdvanced.exe --sim --script tests/ui/service_flow.txt --size 1360x1500
+say == 1. a healthy link ==
+clickid nav#service
+wait 800
+expect oem.link.state connected
+expect oem.link.slot 18
+expect oem.link.class UWPClient
+expect oem.installed 1
+expect oem.running 1
+expecthit vn#start 0
+shot /tmp/shots/sv0_connected.png
+
+say == 2. Reconnect asks the service again and the link stays up ==
+let rx0 snap:oem.link.rx
+clickid lk#reconnect
+wait 1500
+expect oem.link.state connected
+expect oem.link.rx !$rx0
+
+say == 3. read-only mode is a kill switch: nothing is sent while it is on ==
+clickid sp#readonly
+wait 700
+expect cfg.readonly 1
+page profiles
+clickid pc#Balanced
+wait 1500
+expect profile.active Overboost
+expect ec.pl1 120
+clickid nav#service
+wait 600
+shot /tmp/shots/sv1_readonly.png
+clickid sp#readonly
+wait 700
+expect cfg.readonly 0
+page profiles
+clickid pc#Balanced
+wait 1500
+expect profile.active Balanced
+expect ec.pl1 45
+
+say == 4. recording the other windows' messages is a switch ==
+clickid nav#service
+wait 600
+expect oem.link.capture 0
+clickid dg#capture
+wait 800
+expect oem.link.capture 1
+clickid dg#capture
+wait 800
+expect oem.link.capture 0
+
+say == 5. a risky confirmation that was given can be reset here ==
+expect cfg.consent.ctgp_over_oem
+page custom
+dragid sl#gpu.ctgp 1
+clickid ok#gpu.ctgp
+wait 1500
+expectmodal 1
+clickid modal#1
+wait 5000
+expect cfg.consent.ctgp_over_oem 1
+clickid nav#service
+wait 700
+expecthit cs#reset 1
+shot /tmp/shots/sv2_consent.png
+clickid cs#reset
+wait 900
+expect cfg.consent.ctgp_over_oem
+
+say == 6. the vendor's services are installed but stopped: the link says so and one button starts them ==
+external oem.running 0
+wait 3500
+expect oem.link.state offline
+expect oem.running 0
+expecthit vn#start 1
+shot /tmp/shots/sv3_stopped.png
+clickid vn#start
+wait 5000
+expect oem.running 1
+expect oem.link.state connected
+expecthit vn#start 0
+shot /tmp/shots/sv4_started.png
+
+say == 7. with read-only on, the button does not start anything ==
+external oem.running 0
+wait 3500
+expect oem.running 0
+clickid sp#readonly
+wait 600
+expect cfg.readonly 1
+clickid vn#start
+wait 1500
+expect oem.running 0
+clickid sp#readonly
+wait 600
+expect cfg.readonly 0
+clickid vn#start
+wait 5000
+expect oem.running 1
+
+say == 8. the vendor's Control Center is not installed at all ==
+external oem.installed 0
+wait 3500
+expect oem.installed 0
+expect oem.link.state offline
+expecthit vn#start 0
+shot /tmp/shots/sv5_uninstalled.png

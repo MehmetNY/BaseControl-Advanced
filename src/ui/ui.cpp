@@ -6,7 +6,7 @@ namespace bc {
 namespace ui {
 
 namespace {
-constexpr uint32_t kInk = 0xFF1B1A18;  // text on accent fills
+constexpr uint32_t kInk = 0xFF0D1015;  // text on accent fills (the page background colour: dark on every accent)
 
 std::string Utf8Of(wchar_t hi, wchar_t lo) {
   unsigned cp = hi;

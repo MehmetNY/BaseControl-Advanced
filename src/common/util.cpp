@@ -60,6 +60,11 @@ std::string Lower(std::string s) {
   for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
   return s;
 }
+
+std::string Upper(std::string s) {
+  for (char& c : s) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+  return s;
+}
 bool EqNoCase(const std::string& a, const std::string& b) { return Lower(a) == Lower(b); }
 
 bool ParseInt(const std::string& in, long long& out) {

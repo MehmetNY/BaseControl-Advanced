@@ -48,6 +48,15 @@ std::wstring ProgramFiles() {
   return p.empty() ? L"C:\\Program Files" : p;
 }
 
+std::vector<std::string> ProtectedProgramRoots() {
+  std::vector<std::string> r;
+  for (int csidl : {CSIDL_PROGRAM_FILES, CSIDL_PROGRAM_FILESX86, CSIDL_WINDOWS}) {
+    const std::wstring p = KnownFolder(csidl);
+    if (!p.empty()) r.push_back(U(p));
+  }
+  return r;
+}
+
 std::wstring SystemDirectory() {
   wchar_t p[MAX_PATH] = {0};
   UINT n = GetSystemDirectoryW(p, MAX_PATH);
@@ -59,7 +68,7 @@ std::string ProgramDataDir() {
   if (base.empty()) base = L"C:\\ProgramData";
   const std::string d = U(base) + "\\ControlCenterAdvanced";
   if (!fs::IsDir(d) && IsElevated()) {
-    // the service reads its configuration from here: only SYSTEM and Administrators may write, everybody may read
+    // the settings that are applied again at start (and the logs) live here: only SYSTEM and Administrators may write, everybody may read
     PSECURITY_DESCRIPTOR sd = nullptr;
     if (ConvertStringSecurityDescriptorToSecurityDescriptorW(L"D:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;0x1200a9;;;BU)", SDDL_REVISION_1, &sd, nullptr)) {
       SECURITY_ATTRIBUTES sa = {sizeof sa, sd, FALSE};

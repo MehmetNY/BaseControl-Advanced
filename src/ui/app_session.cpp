@@ -12,6 +12,7 @@
 #include "../common/osdcfg.h"
 #include "../common/util.h"
 #include "app_internal.h"
+#include "pages_shared.h"
 #include "page.h"
 
 namespace bc {
@@ -247,7 +248,7 @@ void App::RunAction(const std::string& id) {
   } else if (id == "profile_next") {
     const std::vector<std::string> names = Split(S("profile.list"), ',');
     if (names.empty() || !connected()) {
-      Announce(T("Performance profile"), T("Not connected to the Control Center Advanced service."));
+      Announce(T("Performance mode"), T("The vendor's service is not reachable."));
       return;
     }
     const std::string cur = S("profile.active");
@@ -257,8 +258,8 @@ void App::RunAction(const std::string& id) {
     a.Set("name", names[next]);
     const std::string name = names[next];
     Cmd("profile.apply", a, "", [this, name](const Result& r) {
-      if (r.ok) Announce(T("Performance profile"), name);
-      else ui_.Toast(Tf("Could not apply: %s", name.c_str()), ToastKind::Error, CodeText(r.code));
+      if (r.ok) Announce(T("Performance mode"), ProfileLabel(name));
+      else ui_.Toast(Tf("Could not apply: %s", ProfileLabel(name).c_str()), ToastKind::Error, CodeText(r.code));
     });
   } else if (id == "fan_boost") {
     const std::string cur = S("fan.mode", "auto");
@@ -312,53 +313,10 @@ void App::RunAction(const std::string& id) {
 }
 
 // ------------------------------------------------------------------------------------------------ overlay and housekeeping
-// Keyboard light "turn off when idle". The service runs in session 0 and cannot see the user's keyboard or mouse, so this process
-// watches the last input time (GetLastInputInfo: no hook, nothing is recorded) and reports the state to the controller: on=1 once the
-// idle time has passed and again every 5 s while it lasts (the controller treats silence as "the watcher is gone" and lights up),
-// on=0 with the next key press or mouse move. While the lock screen or a UAC prompt is up, input does not reach this session, so
-// that counts as "not idle": the keyboard stays usable for typing a password.
-void App::LightIdleTick() {
-  Impl& d = *d_;
-  const double now = NowSeconds();
-  if (now - d.lightIdleT < 0.5) return;
-  d.lightIdleT = now;
-  const bool linked = backend_ && backend_->Connected();
-  const long long limit = linked ? I("light.idle", 0) : 0;
-  const bool watch = limit > 0 && CapOk("light.kbd");
-  bool idle = false;
-  if (watch) {
-    LASTINPUTINFO li;
-    li.cbSize = sizeof li;
-    li.dwTime = 0;
-    if (GetLastInputInfo(&li)) {
-      const double idleS = static_cast<double>(static_cast<DWORD>(GetTickCount() - li.dwTime)) / 1000.0;
-      idle = idleS >= static_cast<double>(limit);
-    }
-    if (idle) {
-      HDESK input = OpenInputDesktop(0, FALSE, DESKTOP_SWITCHDESKTOP);
-      if (!input) idle = false;   // secure desktop (lock screen, UAC)
-      else CloseDesktop(input);
-    }
-  }
-  KV a;
-  if (idle) {
-    if (!d.lightIdleSent || now - d.lightIdleBeat >= 5.0) {
-      a.SetI("on", 1);
-      CmdQuiet("light.idle.state", a);
-      d.lightIdleSent = true;
-      d.lightIdleBeat = now;
-    }
-  } else if (d.lightIdleSent) {
-    a.SetI("on", 0);
-    if (linked) CmdQuiet("light.idle.state", a);
-    d.lightIdleSent = false;
-  }
-}
-
+// ------------------------------------------------------------------------------------------------ overlay and housekeeping
 void App::SessionTick() {
   Impl& d = *d_;
   const double now = NowSeconds();
-  LightIdleTick();
 
   if (d.capturing && now - d.captureT > 20) {   // nobody pressed anything: do not keep swallowing keys
     CancelKeyCapture();
@@ -381,8 +339,8 @@ void App::SessionTick() {
   d.osd->Update(cfg, OsdDataFrom(snap_), want, ui_.gfx.Family());
 }
 
-// "Lower the rate on battery" and "Follow the performance profile". It reacts when one of its inputs changes (power source,
-// profile, the two switches) and then leaves the rate alone, so a rate you pick by hand stays until the next change.
+// "Lower the rate on battery" and "Follow the performance mode" (Office = lowest rate, every other mode = highest). It reacts when one of
+// its inputs changes (power source, mode, the two switches) and then leaves the rate alone, so a rate you pick by hand stays until the next change.
 void App::AutoRefresh() {
   if (!backend_ || !backend_->Connected()) return;
   const double now = NowSeconds();
@@ -408,7 +366,7 @@ void App::AutoRefresh() {
 
   int want = 0;
   if (batt && !ac) want = rates.front();
-  else if (mode) want = (prof == "Quiet") ? rates.front() : rates.back();
+  else if (mode) want = (prof == "Balanced") ? rates.front() : rates.back();
   if (!want) {
     // nothing asks for a particular rate any more: give back the one the user had
     if (autoUserHz_ > 0 && std::find(rates.begin(), rates.end(), autoUserHz_) != rates.end() && autoUserHz_ != cur)

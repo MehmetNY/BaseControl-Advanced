@@ -58,24 +58,24 @@ void OsdPaint(Gfx& g, V2 topLeft, const OsdConfig& c, const std::vector<OsdLine>
 
 void OsdPreviewScene(Gfx& g, const Rect& r) {
   g.PushClip(r);
-  g.FillGrad(r, 0, 0xFF56616D, 0xFFC9A58B, 90);                       // dusk sky
+  g.FillGrad(r, 0, 0xFF1E2A6B, 0xFFFF7E5F, 90);                       // dusk sky
   const float hz = r.y + r.h * 0.58f;                                  // horizon
-  g.Dot({r.x + r.w * 0.70f, hz - r.h * 0.17f}, r.h * 0.085f, 0x66FFF1DC);
+  g.Dot({r.x + r.w * 0.70f, hz - r.h * 0.17f}, r.h * 0.085f, 0x88FFE9C4);
   std::vector<V2> ridgeFar = {{r.x, hz}, {r.x + r.w * 0.10f, hz - r.h * 0.14f}, {r.x + r.w * 0.24f, hz - r.h * 0.30f}, {r.x + r.w * 0.33f, hz - r.h * 0.20f},
                          {r.x + r.w * 0.46f, hz - r.h * 0.36f}, {r.x + r.w * 0.60f, hz - r.h * 0.22f}, {r.x + r.w * 0.78f, hz - r.h * 0.33f},
                          {r.x + r.w * 0.90f, hz - r.h * 0.16f}, {r.r(), hz - r.h * 0.24f}, {r.r(), hz}};
-  g.PolyFill(ridgeFar, 0xFF4C5560);
+  g.PolyFill(ridgeFar, 0xFF2D2F6E);
   std::vector<V2> ridgeNear = {{r.x, hz}, {r.x + r.w * 0.18f, hz - r.h * 0.10f}, {r.x + r.w * 0.36f, hz - r.h * 0.05f}, {r.x + r.w * 0.58f, hz - r.h * 0.13f},
                           {r.x + r.w * 0.80f, hz - r.h * 0.06f}, {r.r(), hz - r.h * 0.11f}, {r.r(), hz}};
-  g.PolyFill(ridgeNear, 0xFF343B43);
-  g.FillGrad(Rect(r.x, hz, r.w, r.b() - hz), 0, 0xFF56606A, 0xFF2A3239, 90);   // lake
+  g.PolyFill(ridgeNear, 0xFF1B1D4A);
+  g.FillGrad(Rect(r.x, hz, r.w, r.b() - hz), 0, 0xFF3A4C9C, 0xFF141A3D, 90);   // lake
   for (int i = 0; i < 5; i++) {                                         // soft ripples
     const float y = hz + (r.b() - hz) * (0.14f + 0.17f * static_cast<float>(i));
     g.Line({r.x + r.w * (0.10f + 0.07f * static_cast<float>(i)), y}, {r.x + r.w * (0.48f + 0.05f * static_cast<float>(i)), y}, 0x22FFFFFF, 1.2f);
   }
   std::vector<V2> shore = {{r.r(), r.b()}, {r.r() - r.w * 0.34f, r.b()}, {r.r() - r.w * 0.26f, r.b() - r.h * 0.10f}, {r.r() - r.w * 0.12f, r.b() - r.h * 0.17f},
                            {r.r(), r.b() - r.h * 0.12f}};
-  g.PolyFill(shore, 0xFF4A3F36);
+  g.PolyFill(shore, 0xFF2A1F3D);
   g.PopClip();
 }
 

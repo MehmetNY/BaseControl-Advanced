@@ -129,17 +129,18 @@ float PagePrefs(App& a, const Rect& r) {
       a.ApplyLanguage();
     }
     k.Divider();
-    static const struct { const char* key; uint32_t col; } kAcc[] = {{"copper", 0xFFE2A387}, {"sage", 0xFFADBD9A}, {"sky", 0xFFA0B5C0}, {"sand", 0xFFD8BA83}, {"violet", 0xFFBBA9DA}};
+    int accN = 0;
+    const AccentDef* accs = Accents(&accN);
     std::vector<uint32_t> cols;
     int curA = 0;
-    const std::string acc = a.Pref("accent", "copper");
-    for (size_t i = 0; i < 5; i++) {
-      cols.push_back(kAcc[i].col);
-      if (acc == kAcc[i].key) curA = static_cast<int>(i);
+    const std::string acc = NormalAccent(a.Pref("accent", kDefaultAccent));
+    for (int i = 0; i < accN; i++) {
+      cols.push_back(accs[i].col);
+      if (acc == accs[i].key) curA = i;
     }
     const int pa = k.Swatches("acc", T("Accent colour"), cols, curA);
-    if (pa >= 0) {
-      a.SetPref("accent", kAcc[pa].key);
+    if (pa >= 0 && pa < accN) {
+      a.SetPref("accent", accs[pa].key);
       a.ApplyAccent();
     }
   }
@@ -148,17 +149,19 @@ float PagePrefs(App& a, const Rect& r) {
   {
     const float h = 5 * kRowToggle + 4 * 9;
     Card k(c, m, T("Application behaviour"), "", IconId::Settings, h);
-    // The Run key is read at most once every two seconds, not on every frame.
+    // Asking the Task Scheduler runs a helper process, so the answer is kept for half a minute (and refreshed right after a change).
     int& cached = a.Int("autostart.val", -1);
     int& stamp = a.Int("autostart.t", -100);
     const int nowS = static_cast<int>(ui.now);
-    if (cached < 0 || nowS - stamp >= 2) {
+    if (cached < 0 || nowS - stamp >= 30) {
       cached = a.Autostart() ? 1 : 0;
       stamp = nowS;
     }
-    if (k.Toggle("tg#autostart", T("Start with Windows"), T("Starts hidden in the tray when you sign in, and re-applies your settings."), cached == 1)) {
-      a.SetAutostart(cached != 1);
+    if (k.Toggle("tg#autostart", T("Start with Windows"), T("Starts hidden in the tray when you sign in, and re-applies your settings."), cached == 1, true,
+                 T("Windows does not start programs that need administrator rights from its start-up list, so this creates a scheduled task that starts Control Center Advanced at sign-in with the highest rights of your account. No prompt appears, so the task is only created for the copy in Program Files, where only administrators can change files."))) {
+      a.SetAutostart(cached != 1);   // a toast says why when it did not work
       cached = a.Autostart() ? 1 : 0;
+      stamp = static_cast<int>(ui.now);
     }
     k.Divider();
     if (k.PrefRow("tray.icon", T("Tray icon"), T("Show Control Center Advanced in the notification area."), true)) a.ApplySession();
@@ -305,7 +308,7 @@ float PageGpuInfo(App& a, const Rect& r) {
       k.Divider();
       k.PrefRow("disp.auto.batt", T("Lower the rate on battery"), T("Use the lowest rate unplugged and go back to your choice on AC."), false, !rates.empty());
       k.Divider();
-      k.PrefRow("disp.auto.mode", T("Follow the performance profile"), T("Quiet uses the lowest rate; the other profiles use the highest."), false, !rates.empty());
+      k.PrefRow("disp.auto.mode", T("Follow the performance mode"), T("Office mode uses the lowest rate; the other modes use the highest."), false, !rates.empty());
     }
 
     // GPU status
@@ -329,13 +332,14 @@ float PageGpuInfo(App& a, const Rect& r) {
       k.Info(T("Limited by"), ThrottleText(a));
     }
 
-    // NVIDIA features
+    // Clock offsets: read-only here, changed in Custom mode
     {
-      Card k(c, m, T("NVIDIA features"), "", IconId::Bolt, kRowToggle + 9 + kRowInfo + kRowButtons);
-      k.BoolRow("gpu.db", T("Dynamic Boost"), T("Shifts power between the CPU and the GPU while you play."));
-      k.Divider();
-      k.Info(T("Clock offsets and power budget"), T("Performance \xE2\x80\xA2 Custom profiles"));
-      if (k.Button("go#custom", T("Open custom profiles"), Btn::Ghost, IconId::ChevronR)) a.Go(Page::Custom);
+      Card k(c, m, T("Clock offsets"), "", IconId::Bolt, 2 * kRowInfo + 8 + kRowButtons);
+      k.Info(T("Core clock offset"), a.Has("perf.gpu.core") ? With(a.N("perf.gpu.core"), 0, "MHz") : Dash(), 0,
+             T("What the graphics driver applies now. It is changed in Performance \xE2\x80\xA2 Custom mode."));
+      k.Info(T("Memory clock offset"), a.Has("perf.gpu.mem") ? With(a.N("perf.gpu.mem"), 0, "MHz") : Dash());
+      k.Gap(8);
+      if (k.Button("go#custom", T("Open custom mode"), Btn::Ghost, IconId::ChevronR)) a.Go(Page::Custom);
     }
 
     y += m.Bottom() + kGap;

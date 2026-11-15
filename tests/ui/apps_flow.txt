@@ -10,7 +10,7 @@ type  C:\Games\Night Game\Game
 clickid in#apps.name
 type My game
 clickid cb#apps.prof
-clickid opt#3
+clickid opt#2
 clickid apps.save
 wait 900
 expect cfg.app.0.exe game.exe
@@ -25,7 +25,7 @@ clickid ae#0
 expectui apps.exe game.exe
 expectui apps.name My game
 clickid cb#apps.prof
-clickid opt#2
+clickid opt#1
 shot /tmp/shots/a3_edit.png
 clickid apps.save
 wait 900

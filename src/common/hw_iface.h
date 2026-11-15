@@ -7,21 +7,9 @@
 
 #include "../mgp/core/interfaces.h"
 #include "../mgp/core/oem_platform.h"
+#include "../oem/link.h"
 
 namespace bc {
-
-// ------------------------------------------------------------------------------------------------ MSR (PawnIO)
-class IMsr {
- public:
-  virtual ~IMsr() = default;
-  virtual bool Open(std::string* why) = 0;  // true when a driver + module is usable
-  virtual bool Read(uint32_t msr, uint64_t* v) = 0;
-  virtual bool Write(uint32_t msr, uint64_t v) = 0;
-  virtual std::string Name() const = 0;
-  // Per-logical-processor access (APERF/MPERF effective clocks, per-core prefetcher state). Optional.
-  virtual int CpuCount() { return 0; }
-  virtual bool ReadCpu(int /*cpu*/, uint32_t /*msr*/, uint64_t* /*v*/) { return false; }
-};
 
 // ------------------------------------------------------------------------------------------------ GPU (NVML extras)
 struct GpuInfo {
@@ -42,25 +30,15 @@ inline constexpr uint64_t kNvThrottleIdle = 0x1, kNvThrottleAppClocks = 0x2, kNv
                           kNvThrottleSyncBoost = 0x10, kNvThrottleSwThermal = 0x20, kNvThrottleHwThermal = 0x40,
                           kNvThrottleHwPowerBrake = 0x80, kNvThrottleDisplayClk = 0x100;
 
+// Extra readings from the graphics driver (NVML): clocks, load, throttle reasons and the clock offsets that are in force.
 class IGpuExtra {
  public:
   virtual ~IGpuExtra() = default;
   virtual bool Init(std::string* why) = 0;
-  virtual bool Read(GpuInfo* out) = 0;
-  virtual bool OffsetRange(int* coreMin, int* coreMax, int* memMin, int* memMax) = 0;
-  virtual bool SetCoreOffset(int mhz, std::string* why) = 0;
-  virtual bool SetMemOffset(int mhz, std::string* why) = 0;
+  virtual bool Read(GpuInfo* out) = 0;   // read only: the clock offsets are the vendor service's to change
 };
 
-// ------------------------------------------------------------------------------------------------ OS: power / CPU policy / usage
-struct CpuPolicy {
-  int boost = -1;     // Windows "processor performance boost mode": 0 disabled 1 enabled 2 aggressive 3 efficient enabled 4 efficient aggressive 5 aggressive at guaranteed 6 efficient aggressive at guaranteed
-  int epp = -1;       // 0..100 energy performance preference (0 = performance)
-  int minPct = -1;    // 0..100 minimum processor state
-  int maxPct = -1;    // 1..100 maximum processor state
-  int parkMinPct = -1;  // 0..100 minimum parked cores
-};
-
+// ------------------------------------------------------------------------------------------------ OS: power status / running programs
 struct SysStatus {
   bool ac = true;
   int battPct = -1;
@@ -75,8 +53,6 @@ struct SysStatus {
 class IOsPower {
  public:
   virtual ~IOsPower() = default;
-  virtual bool GetCpuPolicy(CpuPolicy* out) = 0;
-  virtual bool SetCpuPolicy(const CpuPolicy& p, std::string* why) = 0;
   virtual SysStatus Status() = 0;
   virtual std::vector<std::string> RunningExes() = 0;  // lower-case image names of running processes
 };
@@ -133,30 +109,22 @@ class IFpsSource {
   virtual double Fps(std::string* app) = 0;
 };
 
-// ------------------------------------------------------------------------------------------------ OEM Control Center coexistence
+// ------------------------------------------------------------------------------------------------ OEM Control Center (read-only look)
+// Control Center Advanced does not stop, disable or replace anything of the vendor's: its services are the way to the EC and the BIOS.
+// This tells the Service page whether they are installed and running and can start them again when they are not.
 struct OemSvcState {
   bool installed = false;
   bool running = false;
   std::string version;
   std::vector<std::string> services;  // names of OEM services that are installed
 };
-class IOemControl {
+class IOemProbe {
  public:
-  virtual ~IOemControl() = default;
+  virtual ~IOemProbe() = default;
   virtual OemSvcState Probe() = 0;
-  virtual bool StopAndDisable(std::string* why) = 0;   // stop + start type Disabled (reversible)
-  virtual bool EnableAndStart(std::string* why) = 0;
-};
-
-// ------------------------------------------------------------------------------------------------ RGB lighting (ITE HID)
-enum class LightZone { Keyboard = 0, LightBar = 2, Logo = 3 };
-class ILightHid {
- public:
-  virtual ~ILightHid() = default;
-  // Returns the zones for which a controller was found. `info` is a human readable list (for the probe report).
-  virtual std::vector<LightZone> Detect(std::string* info) = 0;
-  // 9-byte HID feature report ([0]=report id 0). false = not delivered.
-  virtual bool Send(LightZone z, const uint8_t report[9]) = 0;
+  // Starts the vendor's services that are installed but not running (an earlier version of this program, or the user, may have stopped
+  // them). Never installs, stops, disables or replaces anything.
+  virtual bool StartServices(std::string* why) { if (why) *why = "not supported here"; return false; }
 };
 
 // ------------------------------------------------------------------------------------------------ cross-process apply lock
@@ -223,13 +191,12 @@ struct Hardware {
   mgp::oem::IOemPlatform* oemFiles = nullptr;  // OEM profile JSON access (optional; only for cTGP persistence sync)
   mgp::IClock* clock = nullptr;
   mgp::ILog* log = nullptr;
-  IMsr* msr = nullptr;
   IGpuExtra* gpu = nullptr;
   IOsPower* power = nullptr;
   IOsDisplay* display = nullptr;
   IOsDevices* devices = nullptr;
-  IOemControl* oem = nullptr;
-  ILightHid* light = nullptr;
+  IOemProbe* oemSvc = nullptr;             // optional: are the vendor's services installed / running (read-only)
+  oem::IOemLink* oemLink = nullptr;        // the way to the vendor's service (profile values, fans, keyboard lighting, battery, switches)
   IHostInfo* host = nullptr;
   IStorage* storage = nullptr;             // optional (Device info page)
   IFpsSource* fps = nullptr;               // optional

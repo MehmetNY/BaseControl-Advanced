@@ -302,7 +302,7 @@ float PageBattery(App& a, const Rect& r) {
     for (int i = 0; i < 3; i++) descH = std::max(descH, g.Wrapped(Rect(0, 0, descW, 3000), ModeDesc(i), FontId::Small, 0, false));
     const float tileH = across ? 16 + 36 + 12 + 24 + 4 + descH + 18 : std::max(72.0f, 14 + 26 + descH + 16);
     const float tilesH = across ? tileH : 3 * tileH + 2 * 10;
-    const std::string note = T("The laptop's embedded controller applies the limit, so the exact charge levels are decided by its firmware.");
+    const std::string note = T("The vendor's service sets the mode and the laptop's embedded controller applies it, so the exact charge levels are decided by its firmware.");
     const float noteH = NoteHeight(c, m, note, true);
     Card k(c, m, T("Charge profile"), T("How far the battery is charged when the charger stays connected"), IconId::Battery, tilesH + 14 + 36 + 8 + noteH, true);
     if (def->ev != Ev::Os) {

@@ -9,12 +9,12 @@ namespace bc {
 
 enum class Kind { Int, Bool, Enum, Text };
 
-// Evidence tier of the underlying mechanism (shown in the UI as a badge):
-//  Verified     - measured on a GM5TG7Y by the device owner
-//  Family       - documented for the same chassis family / same ModelID (IDY); not measured on this unit
-//  Experimental - plausible but unproven; also used for anything that bypasses firmware protections
-//  Os           - plain Windows API / driverless; no firmware involved
-enum class Ev { Verified, Family, Experimental, Os };
+// Where a value goes (shown in the UI as a badge):
+//  Verified - the program's own GPU power engine, measured on a GM5TG7Y by the device owner
+//  Service  - the vendor's own Control Center service does it, exactly as the vendor's window would; every change is confirmed by what
+//             the service and the embedded controller report afterwards
+//  Os       - plain Windows API; no firmware involved
+enum class Ev { Verified, Service, Os };
 
 struct SettingDef {
   const char* key;
@@ -23,7 +23,6 @@ struct SettingDef {
   const char* unit;          // "W", "C", "%", "mV", "ms", ""
   Ev ev;
   const char* cap;           // capability key that must read "ok" ("" = always available)
-  bool needsExperimental;    // refused unless Safety and service > "Allow experimental writes" is on
   const char* enumNames;     // comma separated, for Kind::Enum
 };
 

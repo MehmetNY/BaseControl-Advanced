@@ -311,7 +311,7 @@ void DriveTile(Ctx& c, const Rect& t, int idx) {
 
   const bool health = a.Has(p + "temp") || a.Has(p + "cycles") || a.Has(p + "hours") || a.Has(p + "wear") || a.Has(p + "written");
   if (!health) {
-    const std::string note = T("Health values are not available. Windows only gives them to administrator processes, so install the background service (System > Safety and service). Some drives do not report them at all.");
+    const std::string note = T("Health values are not available. Some drives do not report them, and some drivers refuse the query.");
     g.Wrapped(Rect(t.x + 16, t.y + 70, t.w - 32, t.h - 80), note, FontId::Small, th.muted, true);
     return;
   }
@@ -381,11 +381,15 @@ void CardSystem(Ctx& c, Masonry& m) {
                                                    : T("Hardware writes stay disabled until the model is recognised."),
                cls == "verified" ? th.green : (cls == "family" ? th.amber : (cls == "unknown" ? th.red : 0))});
   const std::string mode = a.mode();
-  f.push_back({T("Running as"), mode == "service" ? T("Background service") : mode == "sim" ? T("Simulation") : T("This window, elevated"),
-               "", mode == "sim" ? th.amber : 0});
+  f.push_back({T("Running as"), mode == "sim" ? T("Simulation") : T("This program, as administrator"), "", mode == "sim" ? th.amber : 0});
+  const std::string ls = a.S("oem.link.state", "none");
+  f.push_back({T("Vendor's service"), ls == "connected" ? T("Connected") : ls == "connecting" ? T("Connecting...") : ls == "refused" ? T("Refused by the service")
+                                      : ls == "offline" ? T("Not reachable") : Dash(),
+               T("The link to the vendor's Control Center service. See the Service page."),
+               ls == "connected" ? th.green : (ls == "connecting" ? th.amber : ((ls == "offline" || ls == "refused") ? th.red : 0))});
 
   const bool two = m.InnerW(true) >= 700;
-  const int perCol = two ? 3 : 6;
+  const int perCol = two ? 4 : 7;
   Card k(c, m, T("System"), "", IconId::Info, perCol * kRowInfo + 8 + kRowButtons, true);
   const float gap = 34;
   const float cw = two ? (k.w - gap) / 2 : k.w;

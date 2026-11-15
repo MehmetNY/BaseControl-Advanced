@@ -3,10 +3,12 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <sstream>
 
 #include "../common/registers.h"
+#include "../sim/fake_oem.h"
 #include "../common/util.h"
 #include "app_internal.h"
 #include "page.h"
@@ -73,7 +75,6 @@ void App::ApplyShotState() {
   bool ok = false;
   const Page p = PageFromName(opt_.shotPage, &ok);
   if (ok) Go(p);
-  if (opt_.shotAdvanced) Flag("custom.adv") = true;
   if (opt_.shotDrafts && ok && p == Page::Display) {
     // a warmer, more saturated draft: the preview follows it and the picture is marked DRAFT
     struct C { const char* key; int v; };
@@ -89,7 +90,7 @@ void App::ApplyShotState() {
   if (opt_.shotDrafts) {
     struct D { const char* key; int delta; };
     // modest edits (a bit quieter, a small GPU offset): the screenshots must not look like a recommendation to overclock
-    static const D kDrafts[] = {{"ec.pl1", -25}, {"ec.pl2", -10}, {"nv.offset.core", 50}, {"os.max", -8}};
+    static const D kDrafts[] = {{"perf.pl1", -25}, {"perf.pl2", -10}, {"perf.gpu.core", 50}, {"perf.gpu.temp", -5}};
     for (const D& d : kDrafts) {
       const SettingDef* def = FindSetting(d.key);
       if (!def) continue;
@@ -322,21 +323,11 @@ int App::RunShot() {
         setLoad(c, g);
       } else if (cmd == "external") {
         // Another program changes a value behind Control Center Advanced's back (simulator only): the LIVE readings must follow.
-        std::string key;
-        double val = 0;
-        ss >> key;
+        std::string key, tok;
+        ss >> key >> tok;
+        const double val = std::atof(tok.c_str());
         bool done = false;
-        if (key == "svc.state") {   // what the Windows service manager reports: missing | stopped | starting | running | stopping
-          std::string word;
-          ss >> word;
-          Str("svc.state.fake") = word;
-          done = true;
-        } else {
-          ss >> val;
-        }
-        if (done) {
-          // handled above
-        } else if (d_->simWorld) {
+        if (d_->simWorld) {
           std::lock_guard<std::recursive_mutex> lk(d_->simWorld->plat.mu);
           sim::Platform& pl = d_->simWorld->plat;
           const uint8_t b = static_cast<uint8_t>(std::max(0.0, std::min(255.0, val)));
@@ -344,8 +335,6 @@ int App::RunShot() {
           else if (key == "ec.pl2") { pl.ec[reg::kPl2] = b; done = true; }
           else if (key == "ec.pl4") { pl.ec[reg::kPl4] = b; done = true; }
           else if (key == "gpu.ctgp") { pl.ec[reg::kGpuCtgpOffset] = static_cast<uint8_t>(std::max(0.0, val - 125.0)); done = true; }
-          else if (key == "os.max") { d_->simWorld->power.policy.maxPct = static_cast<int>(val); done = true; }
-          else if (key == "os.min") { d_->simWorld->power.policy.minPct = static_cast<int>(val); done = true; }
           else if (key == "power.ac") { pl.ac = val != 0; done = true; }
           else if (key == "disp.sat") { d_->simWorld->display.saturationOk = val != 0; done = true; }   // the Windows colour-effect API is there / missing
           else if (key.rfind("storage.", 0) == 0) {
@@ -366,9 +355,33 @@ int App::RunShot() {
               }
             }
           }
-          else if (key == "oem.installed") { d_->simWorld->oem.installed = val != 0; done = true; }   // the OEM Control Center is there / uninstalled
-          else if (key == "oem.fail") { d_->simWorld->oem.failStop = val != 0; done = true; }         // stopping its service is refused
-          else if (key == "oem.running") { d_->simWorld->oem.running = val != 0; done = true; }       // somebody started / stopped its service
+          else if (key == "oem.installed") {   // the vendor's Control Center is there / uninstalled (an uninstalled one is not running either)
+            d_->simWorld->oemProbe.installed = val != 0;
+            if (val == 0) {
+              d_->simWorld->oemProbe.running = false;
+              if (d_->simWorld->oemWorld) d_->simWorld->oemWorld->SetServiceUp(false);
+            }
+            done = true;
+          }
+          else if (key == "oem.running") {     // its services were started / stopped (the link follows: connecting fails while they are down)
+            d_->simWorld->oemProbe.running = val != 0;
+            if (d_->simWorld->oemWorld) d_->simWorld->oemWorld->SetServiceUp(val != 0);
+            done = true;
+          }
+          else if (key == "oem.silent") {      // the broker works but the service does not answer
+            if (d_->simWorld->oemWorld) d_->simWorld->oemWorld->SetSilent(val != 0);
+            done = true;
+          }
+          else if (key.rfind("kb.", 0) == 0) {   // the vendor's service reports a keyboard light change that another program made
+            // kb.power 0|1, kb.bright 0..4, kb.speed 0..4, kb.effect <id>, kb.direction -1..5, kb.color #rrggbb (every block), kb.timer <seconds>
+            if (d_->simWorld->oemWorld) {
+              const std::string what = key.substr(3);
+              long long v = static_cast<long long>(val);
+              if (what == "color") v = std::strtoll(tok.c_str() + (tok.size() && tok[0] == '#' ? 1 : 0), nullptr, 16);
+              d_->simWorld->oemWorld->ExternalKeyboard(what, v);
+              done = true;
+            }
+          }
           else if (key == "batt.mode") {   // 0 full capacity, 1 balanced, 2 eco
             pl.ec[reg::kBatteryMode] = static_cast<uint8_t>((pl.ec[reg::kBatteryMode] & ~0x38) | (val < 0.5 ? 0x08 : val < 1.5 ? 0x18 : 0x28));
             done = true;
@@ -454,6 +467,15 @@ int App::RunShot() {
         const bool open = ui_.ModalOpen();
         if (open == (want != 0)) std::printf("ok   line %d: dialog is %s\n", lineNo, open ? "open" : "closed");
         else { std::printf("FAIL line %d: dialog is %s, expected %s\n", lineNo, open ? "open" : "closed", want != 0 ? "open" : "closed"); failures++; }
+      } else if (cmd == "expecthit") {
+        // whether a control is on screen right now: "expecthit <id> 1" (present) or "expecthit <id> 0" (absent)
+        std::string id;
+        int want = 1;
+        ss >> id >> want;
+        step(2, 20);
+        const bool there = ui_.hits.find(id) != ui_.hits.end();
+        if (there == (want != 0)) std::printf("ok   line %d: %s is %s\n", lineNo, id.c_str(), there ? "on screen" : "not on screen");
+        else { std::printf("FAIL line %d: %s is %s, expected %s\n", lineNo, id.c_str(), there ? "on screen" : "not on screen", want != 0 ? "on screen" : "not on screen"); failures++; }
       } else if (cmd == "expectint") {
         // a number the page keeps in App::Int (a tile choice, a tab)
         std::string key, want;
@@ -496,24 +518,13 @@ int App::RunShot() {
   }
   ApplyShotState();
   step(6, 20);
-  if (opt_.shotDrafts && known && p == Page::Profiles) {
-    // a lived-in Profiles page: a profile of your own, one built-in profile active but changed by hand since, power-source switching on
-    Set("ec.pl1", "95");
-    Set("ec.pl2", "110");
-    step(10, 30);
-    KV mine;
-    mine.Set("name", "My game");
-    Cmd("profile.save", mine);
-    step(10, 30);
-    KV bal;
-    bal.Set("name", "Balanced");
-    Cmd("profile.apply", bal);
-    step(10, 30);
-    Set("ec.pl1", "70");
-    Cfg("cfg.prof.auto", "1");
-    Cfg("cfg.prof.batt", "Quiet");
+  if (known && p == Page::Custom) {
+    // the sliders belong to the Customized mode: switch to it so the picture shows live values, not a hint
+    KV m;
+    m.Set("name", "Customized");
+    Cmd("profile.apply", m);
     step(12, 30);
-    const double calm = NowSeconds() + 4.6;   // let the "applied" toasts of the set-up above fade out before the picture is taken
+    const double calm = NowSeconds() + 4.6;   // let the "applied" toast fade out before the picture is taken
     while (NowSeconds() < calm) step(1, 40);
   }
   if (opt_.shotDrafts && known && p == Page::Apps) {
@@ -522,7 +533,7 @@ int App::RunShot() {
     const Row rows[] = {{"cyberpunk2077.exe", "Overboost", "Cyberpunk 2077"},
                         {"blender.exe", "Overboost", "Blender"},
                         {"cs2.exe", "Enthusiast", "Counter-Strike 2"},
-                        {"chrome.exe", "Quiet", "Google Chrome"}};
+                        {"chrome.exe", "Balanced", "Google Chrome"}};
     for (const Row& r : rows) {
       KV k;
       k.Set("exe", r.exe);

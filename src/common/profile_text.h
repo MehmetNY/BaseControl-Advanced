@@ -7,16 +7,12 @@
 
 namespace bc {
 
-// The four profiles that ship with Control Center Advanced, in display order. They always exist and can be neither deleted nor overwritten.
+// The four profiles of the vendor's Control Center, in display order (the service's OperatingMode 0..3): Balanced (office), Enthusiast
+// (gaming), Overboost (turbo) and Customized. The program does not add profiles of its own.
 const std::vector<std::string>& BuiltinProfiles();
 bool IsBuiltinProfile(const std::string& name);   // not case-sensitive
 
-// What one profile stores travels in the snapshot as "ec.pl1=60|ec.pl2=80|fan.mode=auto" (key "profile.v.<name>").
-// Keys and values are escaped, so any stored text round-trips.
-std::string FormatProfileValues(const KV& values);
-KV ParseProfileValues(const std::string& text);
-
-// Profile names for display, taken from the snapshot ("profile.list"): built-ins first, then the user's own.
+// Profile names for display, taken from the snapshot ("profile.list", comma separated): duplicates and blanks dropped.
 std::vector<std::string> ProfileList(const KV& snap);
 
 }  // namespace bc

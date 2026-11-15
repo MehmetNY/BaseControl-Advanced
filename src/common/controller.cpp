@@ -38,29 +38,8 @@ struct Controller::RingLog : mgp::ILog {
 };
 
 namespace {
-const char* kProfileKeys[] = {"ec.pl1", "ec.pl2", "ec.pl4", "ec.tcc", "gpu.ctgp", "fan.mode", "fan.cpu.curve", "fan.gpu.curve",
-                              "os.boost", "os.epp", "os.min", "os.max", "os.park", "batt.mode"};
-
-bool IsProfileKey(const std::string& k) {
-  for (const char* p : kProfileKeys)
-    if (k == p) return true;
-  return false;
-}
-
-// Built-in presets. Values are Control Center Advanced defaults, not OEM profile equivalents.
-KV Preset(const std::string& name) {
-  KV k;
-  if (name == "Quiet") {
-    k.Set("ec.pl1", "35"); k.Set("ec.pl2", "45"); k.Set("ec.pl4", "90"); k.Set("ec.tcc", "90"); k.Set("fan.mode", "auto");
-  } else if (name == "Balanced") {
-    k.Set("ec.pl1", "60"); k.Set("ec.pl2", "80"); k.Set("ec.pl4", "120"); k.Set("ec.tcc", "95"); k.Set("fan.mode", "auto");
-  } else if (name == "Enthusiast") {
-    k.Set("ec.pl1", "80"); k.Set("ec.pl2", "100"); k.Set("ec.pl4", "150"); k.Set("ec.tcc", "95"); k.Set("fan.mode", "auto");
-  } else if (name == "Overboost") {
-    k.Set("ec.pl1", "120"); k.Set("ec.pl2", "120"); k.Set("ec.pl4", "200"); k.Set("ec.tcc", "100"); k.Set("fan.mode", "boost");
-  }
-  return k;
-}
+// The only value this program keeps and puts back itself: the extended GPU power. Everything else lives in the vendor's own profiles.
+bool IsProfileKey(const std::string& k) { return k == "gpu.ctgp"; }
 }  // namespace
 
 // ------------------------------------------------------------------------------------------------ lifecycle
@@ -81,12 +60,12 @@ void Controller::Start() {
   if (started_) return;
   started_ = true;
   LoadConfig();
-  LoadProfiles();
   if (gec_) gec_->SetReadOnly(cfg_.Bool("cfg.readonly", false));
   if (gec_ && hw_.nv && hw_.smbios && hw_.clock) {
     engine_.reset(new mgp::PowerProfileEngine(*gec_, *hw_.nv, *hw_.smbios, *hw_.clock, *hw_.log));
   }
   LoadDesired();
+  if (hw_.oemLink) hw_.oemLink->Start();   // the way to the vendor's service; it keeps trying until the service answers
   Probe();
   PollOnce(true);
   if (hw_.display && !StoredColor().Neutral()) ScheduleColorReapply(2500, 2);   // colours chosen earlier come back after sign-in
@@ -102,13 +81,7 @@ void Controller::Stop() {
   stop_ = true;
   qCv_.notify_all();
   if (th_.joinable()) th_.join();
-  // Safety: a fixed fan duty has no thermal feedback of its own; this process's watchdog is its only protection.
-  // Hand the fans back to the EC on the way out (the stored choice is re-applied the next time the controller starts).
-  if (ecConnected_ && Snapshot().Str("fan.mode") == "fixed") {
-    L(mgp::LogLevel::Info, "stopping: returning the fans to automatic mode");
-    Result r = SetFanMode(0);
-    if (!r.ok) L(mgp::LogLevel::Warn, "could not return the fans to automatic mode: " + r.msg);
-  }
+  if (hw_.oemLink) hw_.oemLink->Stop();
   if (engine_) engine_->Shutdown();
   started_ = false;
 }
@@ -127,7 +100,7 @@ void Controller::Notify(const std::string& event) {
 KV Controller::Snapshot() const {
   std::lock_guard<std::mutex> g(snapMu_);
   KV out;
-  out.Merge(sStatic_); out.Merge(sCaps_); out.Merge(sEc_); out.Merge(sGpu_); out.Merge(sMsr_); out.Merge(sOs_); out.Merge(sMisc_);
+  out.Merge(sStatic_); out.Merge(sCaps_); out.Merge(sEc_); out.Merge(sOem_); out.Merge(sGpu_); out.Merge(sOs_); out.Merge(sMisc_);
   out.Merge(sStor_);
   out.Merge(sStatus_);
   return out;
@@ -199,24 +172,18 @@ void Controller::PollOnce(bool full) {
   const uint64_t slowMs = vis ? 2000 : 10000;
   const uint64_t osMs = vis ? 1000 : 5000;
   bool did = false;
+  // The order matters: what the EC and the graphics driver really run is read first, then merged with what the vendor's service reports.
   if (full || now - lastFast_ >= fastMs) {
     PollEc(false);
-    PollMsr(false);
     PollGpu();
+    PollOem();
     lastFast_ = now;
     did = true;
   }
   if (full || now - lastSlow_ >= slowMs) {
     PollEc(true);
-    PollMsr(true);
+    PollOem();
     lastSlow_ = now;
-    did = true;
-  }
-  // The fan watchdog judges the temperatures of the last poll. While a custom or fixed fan setting is active that must not depend on
-  // whether the window is open (the full poll then runs every 5 s): two register reads a second, not the whole table.
-  if (!vis && fanWatch_ && now - lastFast_ >= 1000 && now - lastWatch_ >= 1000) {
-    PollEcTemps();
-    lastWatch_ = now;
     did = true;
   }
   if (full || now - lastOs_ >= osMs) {
@@ -232,13 +199,14 @@ void Controller::PollOnce(bool full) {
     lastStorage_ = now;
     did = true;
   }
+  // The vendor's service also reports on its own (another program changed a value, a hotkey switched the profile): follow it between polls.
+  if (!did && hw_.oemLink && hw_.oemLink->Version() != oemSeen_) {
+    PollOem();
+    did = true;
+  }
   if (full || now - lastHk_ >= 1000) {
     Housekeeping();
     lastHk_ = now;
-  }
-  if (now - lastLight_ >= 70) {
-    LightTick();
-    lastLight_ = now;
   }
   if (did) SyncSnapshot();
 }
@@ -249,25 +217,15 @@ void Controller::SyncSnapshot() {
   st.Set("svc.mode", opt_.mode);
   st.Set("ec.link", ecConnected_ ? "connected" : "absent");
   st.Set("dev.class", devClass_);
-  st.Set("cfg.readonly", gec_ && gec_->ReadOnly() ? "1" : "0");
+  st.Set("cfg.readonly", cfg_.Bool("cfg.readonly", false) ? "1" : "0");
   st.SetI("ec.writes", gec_ ? gec_->writes() : 0);
   st.SetI("ec.refused", gec_ ? gec_->refused() : 0);
-  st.Set("profile.active", activeProfile_);
   st.Set("app.active", appRunning_);               // the program whose profile is applied right now ("" = none)
   st.Set("app.before", profileBeforeApp_);         // the profile that comes back when it closes
-  st.Set("profile.list", Join(ProfileNames(), ","));
-  // what each profile stores, for the Profiles page: "ec.pl1=60|ec.pl2=80|..."
-  for (auto& p : profiles_) st.Set("profile.v." + p.first, FormatProfileValues(p.second));
   for (auto& p : cfg_.All()) st.Set(p.first, p.second);
   auto tail = ring_->Tail(30);
   st.Set("log.tail", Join(tail, "\n"));
   st.Set("last.error", lastError_);
-  if (light_[0].present || light_[2].present || light_[3].present) {
-    st.Set("light.off.why", LightSuppressed());             // "" while the lights show the user's setting
-    st.SetI("light.bright.eff", LightEffectiveBright(0));   // what the keyboard really gets (battery limit applied)
-  }
-  st.Set("fan.guard", fanGuard_.empty() ? "ok" : "tripped");
-  st.Set("fan.guard.why", fanGuard_);
   std::lock_guard<std::mutex> g(snapMu_);
   if (!battHistText_.empty()) {
     st.Set("batt.hist", battHistText_);
@@ -299,7 +257,7 @@ void Controller::Probe() {
   PublishStatic();
   ProbeEc();
   ProbeGpu();
-  ProbeCpu();
+  ProbeOem();
   ProbeMisc();
   L(mgp::LogLevel::Info, Fmt("probe done: class=%s ec=%s", devClass_.c_str(), ecConnected_ ? "connected" : "absent"));
 }
@@ -343,9 +301,7 @@ void Controller::PublishStatic() {
 // ------------------------------------------------------------------------------------------------ config / profiles
 void Controller::LoadConfig() {
   cfg_.Clear();
-  cfg_.Set("cfg.experimental", "0");
   cfg_.Set("cfg.keep", "1");
-  cfg_.Set("cfg.takeover", "0");
   cfg_.Set("cfg.lang", "auto");
   cfg_.Set("cfg.accent", "e2a387");
   if (opt_.dataDir.empty()) return;
@@ -357,30 +313,6 @@ void Controller::SaveConfig() {
   if (opt_.dataDir.empty()) return;
   fs::MakeDirs(opt_.dataDir);
   if (!fs::WriteAtomic(fs::Join(opt_.dataDir, "config.kv"), cfg_.Serialize())) L(mgp::LogLevel::Warn, "could not save config.kv");
-}
-
-void Controller::LoadProfiles() {
-  profiles_.clear();
-  for (const std::string& n : BuiltinProfiles()) profiles_[n] = Preset(n);
-  if (opt_.dataDir.empty()) return;
-  std::string text;
-  if (fs::ReadAll(fs::Join(opt_.dataDir, "profiles.kv"), &text, 4u << 20)) {
-    KV all = KV::Parse(text);
-    for (auto& p : all.All()) {
-      if (!StartsWith(p.first, "p.")) continue;
-      profiles_[p.first.substr(2)] = KV::Parse(Unescape(p.second));
-    }
-    activeProfile_ = all.Str("active", "");
-  }
-}
-
-void Controller::SaveProfiles() {
-  if (opt_.dataDir.empty()) return;
-  KV all;
-  for (auto& p : profiles_) all.Set("p." + p.first, Escape(p.second.Serialize()));
-  all.Set("active", activeProfile_);
-  fs::MakeDirs(opt_.dataDir);
-  if (!fs::WriteAtomic(fs::Join(opt_.dataDir, "profiles.kv"), all.Serialize())) L(mgp::LogLevel::Warn, "could not save profiles.kv");
 }
 
 void Controller::LoadDesired() {
@@ -403,13 +335,6 @@ void Controller::SaveDesired() {
   if (!fs::WriteAtomic(fs::Join(opt_.dataDir, "desired.kv"), desired_.Serialize())) L(mgp::LogLevel::Warn, "could not save desired.kv");
 }
 
-std::vector<std::string> Controller::ProfileNames() const {
-  std::vector<std::string> v = BuiltinProfiles();
-  for (auto& p : profiles_)
-    if (!IsBuiltinProfile(p.first)) v.push_back(p.first);
-  return v;
-}
-
 // ------------------------------------------------------------------------------------------------ request dispatch
 Result Controller::Ok(const std::string& msg, const KV& data) {
   Result r;
@@ -425,6 +350,11 @@ Result Controller::Fail(const std::string& code, const std::string& msg) {
   r.ok = false;
   r.code = code;
   r.msg = msg;
+  if (code == "gate.consent" || code == "needs.approval") {
+    // Asking first is the normal course of a risky change, not a failure: the window shows a dialog and sends the request again once the user agrees.
+    L(mgp::LogLevel::Info, "waiting for the user's confirmation: " + code + ": " + msg);
+    return r;
+  }
   lastError_ = code + ": " + msg;
   L(mgp::LogLevel::Warn, "request failed: " + lastError_);
   return r;
@@ -447,20 +377,7 @@ Result Controller::Run(const Request& r) {
 }
 
 Result Controller::Gate(const SettingDef& d) {
-  if (d.ev != Ev::Os) {
-    if (cfg_.Bool("cfg.readonly", false)) return Fail("gate.readonly", N_("read-only mode (kill switch) is on"));
-  }
-  // Family-tier mechanisms (same EC family, independently documented, plausibility-probed at start-up) are enabled by default
-  // only on the exactly identified unit; on other models, and for anything Experimental, the explicit toggle is required.
-  bool needExp = d.needsExperimental;
-  if (needExp && d.ev == Ev::Family && devClass_ == "verified") needExp = false;
-  if (needExp && !cfg_.Bool("cfg.experimental", false))
-    return Fail("gate.experimental", std::string(d.key) + " is " + EvName(d.ev) + "; enable Safety and service > Allow experimental writes");
-  const std::string k = d.key;
-  const bool hwWrite = StartsWith(k, "ec.") || StartsWith(k, "fan.") || StartsWith(k, "batt.") || StartsWith(k, "pref.") ||
-                       StartsWith(k, "gpu.") || StartsWith(k, "msr.") || StartsWith(k, "nv.");
-  if (hwWrite && devClass_ == "unknown" && !cfg_.Bool("cfg.unknownModel", false))
-    return Fail("gate.model", N_("unrecognised hardware model; hardware writes are disabled (see Safety and service)"));
+  if (d.ev != Ev::Os && cfg_.Bool("cfg.readonly", false)) return Fail("gate.readonly", N_("read-only mode (kill switch) is on"));
   Result ok;
   ok.ok = true;
   ok.code = "ok";
@@ -473,12 +390,15 @@ Result Controller::DoSet(const std::string& key, const std::string& raw, const K
   Validated v = ValidateSetting(*d, raw);
   if (!v.ok) return Fail("range", v.why);
   if (d->cap[0] && !CapOk(d->cap)) {
+    const std::string state = CapState(d->cap);
     std::string why;
     {
       std::lock_guard<std::mutex> g(snapMu_);
       why = sCaps_.Str(std::string("capwhy.") + d->cap, "");
     }
-    return Fail("unsupported", Fmt("capability %s is %s%s%s", d->cap, CapState(d->cap).c_str(), why.empty() ? "" : ": ", why.c_str()));
+    // the vendor's service not being reachable is something the user can fix, so it has its own code
+    return Fail(state == "offline" ? "needs.service" : "unsupported",
+                Fmt("capability %s is %s%s%s", d->cap, state.c_str(), why.empty() ? "" : ": ", why.c_str()));
   }
   Result g = Gate(*d);
   if (!g.ok) return g;
@@ -494,28 +414,15 @@ Result Controller::DoSet(const std::string& key, const std::string& raw, const K
 
   const std::string k = key;
   Result res;
-  if (k == "ec.pl1" || k == "ec.pl2" || k == "ec.pl4") res = SetEcPower(k, v.ival, args);
-  else if (k == "ec.tcc") res = SetTcc(v.ival);
+  if (StartsWith(k, "perf.")) res = SetPerf(k, v.ival);
   else if (k == "gpu.ctgp") res = SetCtgp(v.ival, args);
-  else if (k == "gpu.db") res = SetGpuDb(v.ival != 0);
-  else if (k == "nv.offset.core") res = SetNvOffset(true, v.ival);
-  else if (k == "nv.offset.mem") res = SetNvOffset(false, v.ival);
-  else if (k == "fan.mode") {
-    res = SetFanMode(v.ival);
-    if (res.ok) fanGuard_.clear();
-  }
+  else if (k == "fan.mode") res = SetFanMode(v.ival);
   else if (k == "fan.cpu.curve") res = SetFanCurve(true, v.value);
   else if (k == "fan.gpu.curve") res = SetFanCurve(false, v.value);
-  else if (k == "fan.fixed.cpu") res = SetFixedFan(true, v.ival);
-  else if (k == "fan.fixed.gpu") res = SetFixedFan(false, v.ival);
-  else if (k == "fan.ramp") res = SetFanRamp(v.ival);
   else if (k == "batt.mode") res = SetBattMode(v.ival);
-  else if (k == "pref.fnlock") res = SetEcBit(reg::kFnLock, 4, v.ival != 0, "FnLock");
-  else if (k == "pref.acboot") res = SetUsbVsBoot(false, v.ival != 0);
-  else if (k == "pref.usbpower") res = SetUsbVsBoot(true, v.ival != 0);
-  else if (StartsWith(k, "os.")) res = SetOsCpu(k, v.ival);
-  else if (StartsWith(k, "msr.")) res = SetMsr(k, v.ival);
-  else if (StartsWith(k, "light.")) res = SetLight(k, v.value);
+  else if (k == "pref.fnlock" || k == "pref.acboot" || k == "pref.usbpower") res = SetSwitchPref(k, v.ival != 0);
+  else if (k == "light.kbd.timer") res = SetKbdTimer(v.ival);
+  else if (StartsWith(k, "light.kbd.")) res = SetKbd(k, v.value);
   else if (StartsWith(k, "disp.")) res = SetDisplay(k, v.ival);
   else if (StartsWith(k, "dev.")) res = SetDevice(k, v.ival != 0);
   else res = Fail("unsupported", "no handler for " + k);
@@ -528,8 +435,8 @@ Result Controller::DoSet(const std::string& key, const std::string& raw, const K
     L(mgp::LogLevel::Info, Fmt("set %s=%s ok", k.c_str(), v.value.c_str()));
     // refresh the affected domains right away so the UI shows the result without waiting for the next tick
     PollEc(true);
-    PollMsr(true);
     PollGpu();
+    PollOem();
     PollOs(true);
     PollMisc();
     SyncSnapshot();
@@ -558,19 +465,56 @@ Result Controller::DoCmd(const std::string& name, const KV& args) {
     PollOnce(true);
     return Ok();
   }
-  if (name == "profile.apply") return ApplyProfile(args.Str("name"), args);
-  if (name == "profile.save") return SaveProfile(args.Str("name"));
-  if (name == "profile.delete") return DeleteProfile(args.Str("name"));
-  if (name == "light.idle.state") return LightIdleState(args);
+  if (name == "profile.apply") {
+    Result r = ApplyProfile(args.Str("name"), args);
+    if (r.ok) {
+      PollEc(true);   // the new profile's values are what the EC shows now
+      PollGpu();
+      PollOem();
+      SyncSnapshot();
+    }
+    return r;
+  }
   if (name == "app.set") return AppSet(args);
   if (name == "app.delete") return AppDelete(args);
   if (name == "app.move") return AppMove(args);
-  if (name == "oem.takeover") return OemTakeover(true);
-  if (name == "oem.restore") return OemTakeover(false);
-  if (name == "ec.bringup") {
-    Result g;
-    if (!cfg_.Bool("cfg.experimental", false)) return Fail("gate.experimental", "EC bring-up needs experimental writes");
-    return EcBringUp();
+  if (name == "fan.restore" || name == "perf.restore" || StartsWith(name, "kb.")) {
+    if (cfg_.Bool("cfg.readonly", false)) return Fail("gate.readonly", N_("read-only mode (kill switch) is on"));
+    Result r;
+    if (name == "fan.restore") r = FanRestore();
+    else if (name == "perf.restore") r = DetailRestore();
+    else if (name == "kb.save") r = KbdSave();
+    else r = Fail("unknown", "unknown command " + name);
+    if (r.ok) {
+      PollEc(true);
+      PollGpu();
+      PollOem();
+      SyncSnapshot();
+    }
+    return r;
+  }
+  if (name == "link.capture") {   // diagnostics: also record every other message on the broker (Service page)
+    if (hw_.oemLink) hw_.oemLink->SetCapture(args.Bool("on", false));
+    return Ok();
+  }
+  if (name == "oem.start") {   // Service page: start the vendor's services when they are installed but stopped
+    if (cfg_.Bool("cfg.readonly", false)) return Fail("gate.readonly", N_("read-only mode (kill switch) is on"));
+    if (!hw_.oemSvc) return Fail("unsupported", N_("this build cannot start the vendor's services"));
+    std::string why;
+    if (!hw_.oemSvc->StartServices(&why)) return Fail("failed.hw", why);
+    L(mgp::LogLevel::Info, "the vendor's services were started");
+    if (hw_.oemLink) hw_.oemLink->RequestAll();
+    PollMisc();
+    PollOem();
+    SyncSnapshot();
+    return Ok();
+  }
+  if (name == "link.reconnect") {
+    if (hw_.oemLink) {
+      hw_.oemLink->RequestAll();
+      PollOem();
+    }
+    return Ok();
   }
   if (name == "consent.reset") {
     std::vector<std::string> del;
@@ -589,11 +533,8 @@ Result Controller::DoCmd(const std::string& name, const KV& args) {
 
 // ------------------------------------------------------------------------------------------------ housekeeping
 void Controller::Housekeeping() {
-  FanWatchdog();
   AppProfileTick();
-  PowerSourceTick();
   BatteryHistoryTick();
-  LightPolicyTick();
   ColorTick();
   // events -> delayed re-apply (firmware resets values after resume / AC change / display wake)
   std::vector<std::string> ev;
@@ -604,7 +545,6 @@ void Controller::Housekeeping() {
   const uint64_t now = hw_.clock ? hw_.clock->NowMs() : 0;
   for (auto& e : ev) {
     L(mgp::LogLevel::Info, "event: " + e);
-    LightEvent(e);
     ColorEvent(e);
     if (e == "suspend" || e == "display_off") continue;   // nothing to re-apply while the machine is going quiet
     if (cfg_.Bool("cfg.keep", true)) {
@@ -630,9 +570,8 @@ void Controller::Reapply(const char* why) {
     return;
   }
   L(mgp::LogLevel::Info, Fmt("re-applying %zu desired values (%s)", desired_.Size(), why));
-  // dependency order: EC power group first, then the rest
-  static const char* order[] = {"ec.pl1", "ec.pl2", "ec.pl4", "ec.tcc", "gpu.ctgp", "fan.mode", "fan.cpu.curve", "fan.gpu.curve", "batt.mode",
-                                "os.boost", "os.epp", "os.min", "os.max", "os.park"};
+  // Only the extended GPU power is kept by this program; the vendor's own profiles keep their values themselves.
+  static const char* order[] = {"gpu.ctgp"};
   KV want = desired_;
   for (const char* k : order) {
     if (!want.Has(k)) continue;

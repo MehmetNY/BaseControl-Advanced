@@ -32,24 +32,21 @@ std::string Watts(double v, int dec) { return With(v, dec, "W"); }
 uint32_t EvColor(const Theme& t, Ev e) {
   switch (e) {
     case Ev::Verified: return t.green;
-    case Ev::Family: return t.blue;
-    case Ev::Experimental: return t.amber;
+    case Ev::Service: return t.blue;
     default: return t.muted;
   }
 }
 std::string EvLabel(Ev e) {
   switch (e) {
     case Ev::Verified: return T("Verified");
-    case Ev::Family: return T("Family");
-    case Ev::Experimental: return T("Experimental");
+    case Ev::Service: return T("Service");
     default: return T("OS");
   }
 }
 std::string EvTip(Ev e) {
   switch (e) {
     case Ev::Verified: return T("Measured on a GM5TG7Y by the device owner.");
-    case Ev::Family: return T("Documented for the same chassis family / EC project, but not measured on this exact unit.");
-    case Ev::Experimental: return T("Plausible but unproven, or it bypasses a firmware protection. Needs Safety > Allow experimental writes.");
+    case Ev::Service: return T("Done by the vendor's own Control Center service, as its window does it. Control Center Advanced reads the result back afterwards.");
     default: return T("Plain Windows API; no firmware involved.");
   }
 }
@@ -236,7 +233,8 @@ int Card::ComboRow(const std::string& id, const std::string& label, const std::s
   return c.ui.Combo(id, cbox, items, cur, enabled);
 }
 
-void Card::BoolRow(const std::string& key, const std::string& label, const std::string& desc, const std::string& warnOff, const std::string& warnOn) {
+void Card::BoolRow(const std::string& key, const std::string& label, const std::string& desc, const std::string& warnOff, const std::string& warnOn,
+                   const std::string& lockWhy) {
   const SettingDef* d = FindSetting(key);
   const bool capOk = d ? c.app.CapOk(d->cap) : false;
   const bool pending = c.app.Pending(key);
@@ -262,7 +260,9 @@ void Card::BoolRow(const std::string& key, const std::string& label, const std::
     if (g.TextW(shown, FontId::Small) > tw) c.ui.Tip(Rect(r.x, r.y + 28, tw, 18), shown);
   }
   if (pending) c.ui.Spinner(Rect(sw.x - 26, r.cy() - 9, 18, 18));
-  if (c.ui.Switch("sw#" + key, sw, on, capOk && !pending)) {
+  const bool locked = !lockWhy.empty();
+  if (locked) c.ui.Tip(Rect(r.x, r.y, r.w, r.h), lockWhy);
+  if (c.ui.Switch("sw#" + key, sw, on, capOk && !pending && !locked)) {
     const std::string& warn = on ? warnOff : warnOn;
     const std::string nextVal = on ? "0" : "1";
     const std::string doneText = label + ": " + (on ? T("off") : T("on"));
@@ -332,7 +332,11 @@ void Card::Slider(const SliderCfg& cfg) {
   const Theme& th = ui.th;
   const std::string liveKey = cfg.liveKey.empty() ? cfg.key : cfg.liveKey;
   const bool capOk = app.CapOk(def->cap);
-  const int vmin = std::max(def->min, cfg.vmin), vmax = std::min(def->max, cfg.vmax);
+  int vmin = std::max(def->min, cfg.vmin), vmax = std::min(def->max, cfg.vmax);
+  // the vendor's service states the real limits of the active profile ("<key>.min" / "<key>.max" in the snapshot): they narrow the range
+  if (app.Has(liveKey + ".min")) vmin = std::max(vmin, static_cast<int>(std::lround(app.N(liveKey + ".min"))));
+  if (app.Has(liveKey + ".max")) vmax = std::min(vmax, static_cast<int>(std::lround(app.N(liveKey + ".max"))));
+  if (vmax < vmin) vmax = vmin;
   const int step = std::max(1, def->step);
   const std::string unit = UnitText(cfg.unit.empty() ? std::string(def->unit) : cfg.unit);
   auto fmt = [&](int v) {
@@ -345,6 +349,8 @@ void Card::Slider(const SliderCfg& cfg) {
   const std::string tagText = storedTag ? cfg.tag : T("LIVE");
   Draft& d = app.GetDraft(cfg.key);
   const bool pending = app.Pending(cfg.key);
+  const bool locked = !cfg.lockWhy.empty();
+  if (locked) d.active = false;   // nothing can be drafted while the value is locked: the row just shows the live reading
   if (!d.active) {
     d.v = haveLive ? std::min(vmax, std::max(vmin, live)) : vmin;
     d.liveAtStart = live;
@@ -358,7 +364,7 @@ void Card::Slider(const SliderCfg& cfg) {
 
   // ---- slider + state
   int v = d.v;
-  const bool moved = ui.Slider("sl#" + cfg.key, track, vmin, vmax, step, &v, live, cfg.softMax, capOk && !pending, EvColor(th, def->ev) == th.amber ? th.amber : th.accent);
+  const bool moved = ui.Slider("sl#" + cfg.key, track, vmin, vmax, step, &v, live, cfg.softMax, capOk && !pending && !locked, EvColor(th, def->ev) == th.amber ? th.amber : th.accent);
   if (moved) {
     d.active = true;
     d.v = v;
@@ -403,16 +409,18 @@ void Card::Slider(const SliderCfg& cfg) {
       ui.Tip(chip, EvTip(def->ev));
     }
   }
-  ui.Tip(track, Tf("Range %s to %s, step %d. Setting key: %s", fmt(vmin).c_str(), fmt(vmax).c_str(), step, cfg.key.c_str()));
+  ui.Tip(track, locked ? cfg.lockWhy : Tf("Range %s to %s, step %d. Setting key: %s", fmt(vmin).c_str(), fmt(vmax).c_str(), step, cfg.key.c_str()));
 
   // ---- buttons
   if (changed && ui.IconButton("dc#" + cfg.key, discard, IconId::Undo, true)) app.DiscardDraft(cfg.key);
   if (changed) ui.Tip(discard, T("Discard the draft"));
-  const bool canConfirm = capOk && changed && !pending && err.empty();
+  const bool canConfirm = capOk && changed && !pending && err.empty() && !locked;
   const bool clicked = ui.Button("ok#" + cfg.key, confirm, pending ? T("Applying") : T("Confirm"), Btn::Primary,
                                  pending ? IconId::None : IconId::Check, canConfirm);
   if (pending) ui.Spinner(Rect(confirm.x + 10, confirm.cy() - 8, 16, 16), th.muted);
-  if (changed) {
+  if (locked) {
+    ui.Tip(confirm, cfg.lockWhy);
+  } else if (changed) {
     ui.Tip(confirm, canConfirm ? Tf("Send %s to the hardware now. Nothing is sent until you press this.", draftS.c_str())
                                : (err.empty() ? std::string() : err));
   } else {

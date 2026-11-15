@@ -1,4 +1,4 @@
-// Pure-logic tests: helpers, KV store, fan curves, RAPL/MSR codecs, setting validation, WriteGuard.
+// Pure-logic tests: helpers, KV store, fan curves, setting validation, WriteGuard (the cTGP-only EC write allow-list), colour ramps, host data.
 #include <cstring>
 
 #include <cstdlib>
@@ -10,8 +10,6 @@
 #include "../src/common/fsutil.h"
 #include "../src/common/hostdata.h"
 #include "../src/common/kv.h"
-#include "../src/common/lightfx.h"
-#include "../src/common/rapl.h"
 #include "../src/common/registers.h"
 #include "../src/common/settings_reg.h"
 #include "../src/common/util.h"
@@ -230,100 +228,10 @@ TEST(fan_editor_add_and_remove_points) {
   for (int t = 30; t <= 110; t++) CHECK(fan::DutyAt(r2, t) >= fan::DutyAt(c, t));
 }
 
-// ------------------------------------------------------------------------------------------------ RAPL / MSR codecs
-TEST(rapl_units) {
-  rapl::Units u = rapl::DecodeUnits(0xA0E03);
-  CHECK_NEAR(u.powerW, 0.125, 1e-12);
-  CHECK_NEAR(u.energyJ, 1.0 / 16384.0, 1e-12);
-  CHECK_NEAR(u.timeS, 1.0 / 1024.0, 1e-12);
-}
-
-TEST(rapl_pkg_limit_roundtrip) {
-  rapl::Units u = rapl::DecodeUnits(0xA0E03);
-  rapl::PkgLimit p;
-  p.pl1W = 120; p.pl2W = 150; p.pl1En = p.pl2En = true; p.pl1Clamp = p.pl2Clamp = true; p.tau1S = 28; p.tau2S = 0.00244;
-  uint64_t v = 0;
-  CHECK(rapl::EncodePkgLimit(0, p, u, &v));
-  rapl::PkgLimit q = rapl::DecodePkgLimit(v, u);
-  CHECK_NEAR(q.pl1W, 120, 1e-9);
-  CHECK_NEAR(q.pl2W, 150, 1e-9);
-  CHECK(q.pl1En && q.pl2En && q.pl1Clamp && q.pl2Clamp);
-  CHECK_NEAR(q.tau1S, 28, 1.0);
-  CHECK(!q.lock);
-  // changing only PL1 keeps the rest
-  q.pl1W = 90;
-  uint64_t v2 = 0;
-  CHECK(rapl::EncodePkgLimit(v, q, u, &v2));
-  rapl::PkgLimit r = rapl::DecodePkgLimit(v2, u);
-  CHECK_NEAR(r.pl1W, 90, 1e-9);
-  CHECK_NEAR(r.pl2W, 150, 1e-9);
-}
-
-TEST(rapl_lock_and_range) {
-  rapl::Units u = rapl::DecodeUnits(0xA0E03);
-  rapl::PkgLimit p;
-  p.pl1W = 100; p.pl2W = 100; p.tau1S = 28;
-  uint64_t out = 0;
-  CHECK(!rapl::EncodePkgLimit(1ULL << 63, p, u, &out));  // locked: refuse
-  p.pl1W = 5000;                                         // 15-bit field overflow
-  CHECK(!rapl::EncodePkgLimit(0, p, u, &out));
-  p.pl1W = 100; p.tau1S = 1e9;                           // time window not representable (max ~3.7e6 s)
-  CHECK(!rapl::EncodePkgLimit(0, p, u, &out));
-  p.tau1S = 28;
-  CHECK(rapl::EncodePkgLimit(0, p, u, &out));
-  CHECK((out >> 63) == 0);                               // never sets the lock bit
-}
-
-TEST(rapl_time_window) {
-  rapl::Units u = rapl::DecodeUnits(0xA0E03);
-  uint32_t y, z;
-  CHECK(rapl::EncodeTimeWindow(28, u, &y, &z));
-  CHECK_NEAR(rapl::DecodeTimeWindow(y, z, u), 28, 0.5);
-  CHECK(!rapl::EncodeTimeWindow(0, u, &y, &z));
-}
-
-TEST(rapl_energy_wrap) {
-  rapl::Units u = rapl::DecodeUnits(0xA0E03);
-  // 16384 counts = 1 J; 1 s window -> 1 W
-  CHECK_NEAR(rapl::EnergyToWatts(0, 16384, 1.0, u), 1.0, 1e-9);
-  CHECK_NEAR(rapl::EnergyToWatts(0xFFFFFF00u, 0x00003F00u + 0x100u - 0x100u, 1.0, u) > 0 ? 1.0 : 0.0, 1.0, 1e-9);
-  // wrap: prev near the top, cur small
-  double w = rapl::EnergyToWatts(0xFFFFC000u, 0x00004000u, 2.0, u);  // delta = 0x8000 counts = 2 J over 2 s = 1 W
-  CHECK_NEAR(w, 1.0, 1e-9);
-  CHECK_NEAR(rapl::EnergyToWatts(10, 20, 0, u), 0.0, 1e-12);
-}
-
-TEST(rapl_icc_and_temp_fields) {
-  CHECK_NEAR(rapl::DecodeIccMaxA(1040), 130.0, 1e-9);
-  uint64_t out = 0;
-  CHECK(rapl::EncodeIccMax(1040, 140, &out));
-  CHECK_NEAR(rapl::DecodeIccMaxA(out), 140.0, 1e-9);
-  CHECK(!rapl::EncodeIccMax(1040 | (1ULL << 31), 140, &out));  // locked
-  CHECK(!rapl::EncodeIccMax(1040, 0.5, &out));
-  CHECK_EQ(rapl::TjMax(100ULL << 16), 100);
-  CHECK_EQ(rapl::TccOffset(5ULL << 24), 5);
-  CHECK_EQ(rapl::ThermReadout(37ULL << 16), 37);
-  CHECK_EQ(rapl::PlatformBaseRatio(23ULL << 8), 23);
-  CHECK_EQ(rapl::TurboRatio(0x2B2B2C2C2D2D2E2EULL, 0), 0x2E);
-}
-
-TEST(rapl_oc_mailbox_codec) {
-  uint64_t rd = rapl::OcReadVoltageCmd(0);
-  CHECK((rd >> 63) == 1);
-  CHECK_EQ(static_cast<int>((rd >> 32) & 0xFF), 0x10);
-  uint64_t wr = rapl::OcWriteVoltageCmd(2, -80);
-  CHECK_EQ(static_cast<int>((wr >> 32) & 0xFF), 0x11);
-  CHECK_EQ(static_cast<int>((wr >> 40) & 0xFF), 2);
-  CHECK_EQ(rapl::OcDecodeOffsetMv(wr & ~(1ULL << 63)), -80);
-  CHECK_EQ(rapl::OcDecodeOffsetMv(rapl::OcWriteVoltageCmd(0, 0)), 0);
-  CHECK(rapl::OcBusy(wr));
-  CHECK(!rapl::OcBusy(wr & ~(1ULL << 63)));
-}
-
 // ------------------------------------------------------------------------------------------------ settings registry
 TEST(settings_registry_consistency) {
   const auto& all = AllSettings();
-  CHECK(all.size() > 50);
+  CHECK_EQ(all.size(), static_cast<size_t>(39));   // the vendor's own settings plus the GPU power; docs/SETTINGS.md is generated from this table
   for (const SettingDef& d : all) {
     CHECK(FindSetting(d.key) == &d);  // unique keys
     if (d.kind == Kind::Enum) CHECK_EQ(EnumCount(d), d.max + 1);
@@ -333,125 +241,107 @@ TEST(settings_registry_consistency) {
 }
 
 TEST(settings_validation) {
-  const SettingDef* pl1 = FindSetting("ec.pl1");
+  const SettingDef* pl1 = FindSetting("perf.pl1");
   CHECK(pl1 != nullptr);
   CHECK(ValidateSetting(*pl1, "120").ok);
-  CHECK(!ValidateSetting(*pl1, "9").ok);
-  CHECK(!ValidateSetting(*pl1, "201").ok);
+  CHECK(!ValidateSetting(*pl1, "4").ok);
+  CHECK(!ValidateSetting(*pl1, "251").ok);
   CHECK(!ValidateSetting(*pl1, "abc").ok);
+  const SettingDef* gc = FindSetting("perf.gpu.core");
+  CHECK(ValidateSetting(*gc, "-150").ok);                  // offsets may be negative
+  CHECK(!ValidateSetting(*gc, "1001").ok);
+  const SettingDef* tcc = FindSetting("perf.tcc.on");
+  CHECK(ValidateSetting(*tcc, "on").ival == 1);
+  CHECK(ValidateSetting(*tcc, "0").ival == 0);
   const SettingDef* ct = FindSetting("gpu.ctgp");
   CHECK(ValidateSetting(*ct, "140").ok);
-  CHECK(!ValidateSetting(*ct, "141").ok);   // step grid
+  CHECK(!ValidateSetting(*ct, "141").ok);                  // step grid
   CHECK(!ValidateSetting(*ct, "155").ok);
+  CHECK(!ValidateSetting(*ct, "120").ok);
   const SettingDef* fm = FindSetting("fan.mode");
   CHECK_EQ(ValidateSetting(*fm, "custom").ival, 2);
-  CHECK_EQ(ValidateSetting(*fm, "3").value, std::string("fixed"));
+  CHECK_EQ(ValidateSetting(*fm, "1").value, std::string("boost"));
+  CHECK(!ValidateSetting(*fm, "fixed").ok);                // no fixed-speed mode any more: the vendor's service has none
   CHECK(!ValidateSetting(*fm, "turbo").ok);
+  const SettingDef* bm = FindSetting("batt.mode");
+  CHECK_EQ(ValidateSetting(*bm, "eco").ival, 2);
   const SettingDef* col = FindSetting("light.kbd.color");
   CHECK_EQ(ValidateSetting(*col, "#FFAA00").value, std::string("#ffaa00"));
   CHECK(!ValidateSetting(*col, "red").ok);
   CHECK(!ValidateSetting(*col, "#ggg000").ok);
+  const SettingDef* cols = FindSetting("light.kbd.colors");
+  CHECK_EQ(ValidateSetting(*cols, "#FF0000, #00ff00").value, std::string("#ff0000,#00ff00"));
+  CHECK(!ValidateSetting(*cols, "#ff0000,nope").ok);
+  CHECK(!ValidateSetting(*cols, "").ok);
+  const SettingDef* br = FindSetting("light.kbd.bright");
+  CHECK(ValidateSetting(*br, "4").ok);
+  CHECK(!ValidateSetting(*br, "5").ok);
+  const SettingDef* ef = FindSetting("light.kbd.effect");
+  CHECK_EQ(ValidateSetting(*ef, "wave").ival, 2);
   const SettingDef* cv = FindSetting("fan.cpu.curve");
   CHECK(ValidateSetting(*cv, "35:0,48:30,60:45,72:60,84:80,96:100").ok);
-  CHECK(!ValidateSetting(*cv, "35:0,48:30,60:45").ok);  // safety floor not reached at 100 C
-  const SettingDef* volt = FindSetting("msr.volt.core");
-  CHECK(ValidateSetting(*volt, "-100").ok);
-  CHECK(!ValidateSetting(*volt, "10").ok);              // overvolt never accepted
+  CHECK(!ValidateSetting(*cv, "35:0,48:30,60:45").ok);     // safety floor not reached at 100 C
+}
+
+TEST(settings_registry_has_no_removed_features) {
+  // the removed extras (MSR / PawnIO, RAPL, undervolt, direct GPU offsets, fixed fan speed, CPU policy) must not come back as settings
+  for (const char* k : {"ec.pl1", "ec.pl2", "ec.pl4", "ec.tcc", "msr.pl1", "msr.pl2", "msr.icc", "msr.volt.core", "nv.offset.core", "nv.offset.mem",
+                        "fan.fixed.cpu", "fan.fixed.gpu", "gpu.db", "os.boost", "os.minstate", "os.maxstate", "light.idle"})
+    CHECK(FindSetting(k) == nullptr);
 }
 
 TEST(settings_evidence_flags) {
-  // nothing that bypasses firmware protection may be "verified" or ungated
-  for (const char* k : {"msr.pl1", "msr.pl2", "msr.icc", "msr.volt.core", "nv.offset.core", "fan.fixed.cpu", "gpu.db"}) {
+  // every service-backed value says so; only the GPU power engine is "verified"; plain Windows values are "os"
+  for (const char* k : {"perf.pl1", "perf.pl2", "perf.pl4", "perf.tcc", "perf.gpu.core", "perf.gpu.mem", "perf.gpu.temp", "fan.mode", "fan.cpu.curve",
+                        "batt.mode", "pref.fnlock", "pref.acboot", "pref.usbpower", "light.kbd.effect", "light.kbd.colors"}) {
     const SettingDef* d = FindSetting(k);
     CHECK(d != nullptr);
-    CHECK(d->ev == Ev::Experimental);
-    CHECK(d->needsExperimental);
+    if (d) CHECK(d->ev == Ev::Service);
   }
   CHECK(FindSetting("gpu.ctgp")->ev == Ev::Verified);
-  CHECK(FindSetting("os.boost")->ev == Ev::Os);
+  CHECK(FindSetting("disp.refresh")->ev == Ev::Os);
+  CHECK(FindSetting("dev.wifi")->ev == Ev::Os);
+  CHECK_EQ(std::string(EvName(Ev::Service)), std::string("service"));
 }
 
 // ------------------------------------------------------------------------------------------------ WriteGuard
+// The EC is written for exactly one feature (the extended GPU power); everything else goes through the vendor's service.
 TEST(guard_never_write_wins) {
   for (uint16_t a : {0x0780, 0x0781, 0x077E, 0x07E8, 0x0DFF, 0x0459}) {
-    GuardVerdict g = WriteGuard::Check(a, 0x00, 0, true, true);
+    GuardVerdict g = WriteGuard::Check(a, 0x00, 0, true);
     CHECK(!g.ok);
     CHECK(!WriteGuard::IsAllowlisted(a));
   }
 }
 
-TEST(guard_not_on_allowlist) {
+TEST(guard_only_the_ctgp_registers_are_writable) {
+  // every address of the EC window is refused except the two cTGP registers
+  int allowed = 0;
+  for (uint32_t a = 0; a < 0x1000; a++)
+    if (WriteGuard::IsAllowlisted(static_cast<uint16_t>(a))) {
+      allowed++;
+      CHECK(a == reg::kGpuCtrl || a == reg::kGpuCtgpOffset);
+    }
+  CHECK_EQ(allowed, 2);
+  // the registers the old versions wrote (power limits, fan tables, fixed fan speed, battery mode, switches) are plain reads now
+  for (uint16_t a : {reg::kPl1, reg::kPl2, reg::kPl4, reg::kTccWrite, reg::kFnLock, reg::kAcAutoBoot, reg::kFanMode, reg::kFanCurveLatch,
+                     reg::kFanFixedCpu, reg::kFanFixedGpu, reg::kBatteryMode, reg::kEcActive})
+    CHECK(!WriteGuard::Check(a, 0x01, 0x00, true).ok);
+  CHECK(!WriteGuard::Check(reg::kFanTableCpuUp + 3, 70, 0, false).ok);
   CHECK(!WriteGuard::Check(0x0100, 1, 0, true).ok);
-  CHECK(!WriteGuard::Check(0x043E, 50, 0, true).ok);  // sensor
-  CHECK(!WriteGuard::Check(0x0728, 1, 0, true).ok);
+  CHECK(!WriteGuard::Check(0x043E, 50, 0, true).ok);   // a sensor
 }
 
-TEST(guard_power_limits) {
-  CHECK(WriteGuard::Check(reg::kPl1, 120, 0, false).ok);
-  CHECK(!WriteGuard::Check(reg::kPl1, 9, 0, false).ok);
-  CHECK(!WriteGuard::Check(reg::kPl1, 211, 0, false).ok);
-  CHECK(WriteGuard::Check(reg::kPl4, 250, 0, false).ok);
-  CHECK(!WriteGuard::Check(reg::kPl4, 4, 0, false).ok);
-  CHECK(WriteGuard::Check(reg::kTccWrite, 0x85, 0, false).ok);
-  CHECK(!WriteGuard::Check(reg::kTccWrite, 0x05, 0, false).ok);   // commit bit missing
-  CHECK(!WriteGuard::Check(reg::kTccWrite, 0x80 | 36, 0, false).ok);
-}
-
-TEST(guard_masked_registers_need_rmw) {
-  // 0x074E: only bit 4 may change
-  CHECK(!WriteGuard::Check(reg::kFnLock, 0x10, 0, false).ok);              // no fresh read
-  CHECK(WriteGuard::Check(reg::kFnLock, 0x10, 0x00, true).ok);             // flips bit 4 only
-  CHECK(!WriteGuard::Check(reg::kFnLock, 0x11, 0x00, true).ok);            // would change bit 0
-  // 0x0726: bits 3 and 7 only; bits 0..2 (battery derating commands) never
-  CHECK(WriteGuard::Check(reg::kAcAutoBoot, 0x88, 0x00, true).ok);
-  CHECK(!WriteGuard::Check(reg::kAcAutoBoot, 0x81, 0x00, true).ok);
-  // 0x0751: only bit 6
-  CHECK(WriteGuard::Check(reg::kFanMode, 0x40, 0x00, true).ok);
-  CHECK(!WriteGuard::Check(reg::kFanMode, 0x50, 0x00, true).ok);
-  // 0x07C6: only bit 2 (bit 6 must never be touched)
-  CHECK(WriteGuard::Check(reg::kFanCurveLatch, 0x04, 0x00, true).ok);
-  CHECK(!WriteGuard::Check(reg::kFanCurveLatch, 0x44, 0x00, true).ok);
-}
-
-TEST(guard_gpu_registers) {
+TEST(guard_ctgp_registers) {
   CHECK(WriteGuard::Check(reg::kGpuCtrl, 0x05, 0x01, true).ok);
   CHECK(WriteGuard::Check(reg::kGpuCtrl, 0x01, 0x05, true).ok);
-  CHECK(!WriteGuard::Check(reg::kGpuCtrl, 0x03, 0x05, true).ok);   // 0x03 not allowed
-  CHECK(WriteGuard::Check(reg::kGpuCtgpOffset, 25, 0, false).ok);
-  CHECK(!WriteGuard::Check(reg::kGpuCtgpOffset, 12, 0, false).ok);
-  CHECK(!WriteGuard::Check(reg::kGpuCtgpOffset, 30, 0, false).ok);
-}
-
-TEST(guard_fan_registers) {
-  CHECK(WriteGuard::Check(reg::kFanFixedCpu, 0x80 | 60, 0, false).ok);
-  CHECK(WriteGuard::Check(reg::kFanFixedCpu, 0, 0, false).ok);
-  CHECK(!WriteGuard::Check(reg::kFanFixedCpu, 60, 0, false).ok);            // missing 0x80
-  CHECK(!WriteGuard::Check(reg::kFanFixedGpu, 0x80 | 101, 0, false).ok);
-  CHECK(WriteGuard::Check(reg::kFanTableCpuUp + 3, 70, 0, false).ok);
-  CHECK(WriteGuard::Check(reg::kFanTableCpuUp + 12, 0xFF, 0, false).ok);
-  CHECK(!WriteGuard::Check(reg::kFanTableCpuUp + 3, 120, 0, false).ok);
-  CHECK(WriteGuard::Check(reg::kFanTableCpuDuty + 2, 200, 0, false).ok);
-  CHECK(!WriteGuard::Check(reg::kFanTableCpuDuty + 2, 201, 0, false).ok);
-  CHECK(!WriteGuard::Check(reg::kFanTableEnd + 1, 0, 0, false).ok);         // one past the table
-}
-
-TEST(guard_battery_mode_values) {
-  CHECK(WriteGuard::Check(reg::kBatteryMode, 0x18, 0x08, true).ok);
-  CHECK(!WriteGuard::Check(reg::kBatteryMode, 0x38, 0x08, true).ok);
-  CHECK(!WriteGuard::Check(reg::kBatteryMode, 0x1A, 0x08, true).ok);        // bit outside mask changes
-}
-
-TEST(guard_bringup_registers_need_scope) {
-  CHECK(!WriteGuard::Check(reg::kBiosCtrl, 0x41, 0, false, false).ok);
-  CHECK(WriteGuard::Check(reg::kBiosCtrl, 0x41, 0, false, true).ok);
-  CHECK(!WriteGuard::Check(reg::kBiosCtrl, 0x40, 0, false, true).ok);       // wrong value even in scope
-  CHECK(WriteGuard::Check(reg::kEcHandshake1, 0x05, 0, false, true).ok);
-  CHECK(!WriteGuard::Check(reg::kEcHandshake2, 0x05, 0, false, true).ok);
-  CHECK(WriteGuard::Check(reg::kFeatureEnable, 0x81, 0, false, true).ok);
-  CHECK(WriteGuard::Check(reg::kOcpl, 0x0C, 0, false, true).ok);
-  CHECK(!WriteGuard::Check(reg::kOcpl, 0x0D, 0, false, true).ok);
-  CHECK(WriteGuard::Check(reg::kEcActive, 0x05, 0, false).ok);
-  CHECK(!WriteGuard::Check(reg::kEcActive, 0x01, 0, false).ok);
+  CHECK(!WriteGuard::Check(reg::kGpuCtrl, 0x03, 0x05, true).ok);     // 0x03 is not allowed
+  CHECK(!WriteGuard::Check(reg::kGpuCtrl, 0x00, 0x05, true).ok);
+  CHECK(!WriteGuard::Check(reg::kGpuCtrl, 0x05, 0x01, false).ok);    // masked register needs a fresh read
+  CHECK(!WriteGuard::Check(reg::kGpuCtrl, 0x05, 0xF1, true).ok);     // bits outside the 0x07 mask would change (0xF1 -> 0x05)
+  CHECK(!WriteGuard::Check(reg::kGpuCtrl, 0xF5, 0xF1, true).ok);     // only the two plain values the engine knows are ever written
+  for (int v : {0, 5, 10, 15, 20, 25}) CHECK(WriteGuard::Check(reg::kGpuCtgpOffset, static_cast<uint8_t>(v), 0, false).ok);
+  for (int v : {1, 4, 12, 26, 30, 255}) CHECK(!WriteGuard::Check(reg::kGpuCtgpOffset, static_cast<uint8_t>(v), 0, false).ok);
 }
 
 TEST(guard_decorator_behaviour) {
@@ -459,32 +349,27 @@ TEST(guard_decorator_behaviour) {
   GuardedEc g(w.ec, w.log);
   CHECK(!g.Write(0x0100, 1).ok);                       // not allowlisted
   CHECK(!g.Write(0x0780, 0).ok);                       // never-write
-  CHECK(g.Write(reg::kPl1, 100).ok);
-  CHECK_EQ(w.plat.ec[reg::kPl1], static_cast<uint8_t>(100));
+  CHECK(!g.Write(reg::kPl1, 100).ok);                  // the power limits are the vendor service's business
+  w.plat.ec[reg::kGpuCtgpOffset] = 0;
+  CHECK(g.Write(reg::kGpuCtgpOffset, 15).ok);
+  CHECK_EQ(w.plat.ec[reg::kGpuCtgpOffset], static_cast<uint8_t>(15));
   CHECK_EQ(g.writes(), 1u);
-  CHECK_EQ(g.refused(), 2u);
+  CHECK_EQ(g.refused(), 3u);
+  CHECK(!g.Write(reg::kGpuCtgpOffset, 12).ok);         // off the 5 W grid
   g.SetReadOnly(true);
-  CHECK(!g.Write(reg::kPl1, 90).ok);                   // kill switch
-  CHECK_EQ(w.plat.ec[reg::kPl1], static_cast<uint8_t>(100));
-  CHECK(g.Read(reg::kPl1).ok);                         // reads still work
+  CHECK(!g.Write(reg::kGpuCtgpOffset, 5).ok);          // kill switch
+  CHECK_EQ(w.plat.ec[reg::kGpuCtgpOffset], static_cast<uint8_t>(15));
+  CHECK(g.Read(reg::kPl1).ok);                         // reads always work
+  CHECK(g.ReadOnly());
   g.SetReadOnly(false);
-  // masked register: the guard reads the current byte itself
-  w.plat.ec[reg::kFnLock] = 0x01;
-  CHECK(!g.Write(reg::kFnLock, 0x10).ok);              // would clear bit 0 -> refused
-  CHECK(g.Write(reg::kFnLock, 0x11).ok);
-  // rollback: address still allowlisted, but value not range checked
-  w.plat.ec[reg::kPl2] = 150;
-  CHECK(g.WriteRollback(reg::kPl2, 5).ok);
-  CHECK(!g.WriteRollback(0x0100, 5).ok);
-  w.plat.ec[reg::kFnLock] = 0x41;
-  CHECK(!g.WriteRollback(reg::kFnLock, 0x00).ok);      // bit 6 differs and is outside the mask
-  // bring-up scope
-  CHECK(!g.Write(reg::kBiosCtrl, 0x41).ok);
-  {
-    GuardedEc::InitScope s(g);
-    CHECK(g.Write(reg::kBiosCtrl, 0x41).ok);
-  }
-  CHECK(!g.Write(reg::kBiosCtrl, 0x41).ok);
+  // masked register: the guard reads the current byte itself and keeps the bits outside the mask
+  w.plat.ec[reg::kGpuCtrl] = 0x01;
+  CHECK(g.Write(reg::kGpuCtrl, 0x05).ok);
+  CHECK_EQ(w.plat.ec[reg::kGpuCtrl], static_cast<uint8_t>(0x05));
+  CHECK(!g.Write(reg::kGpuCtrl, 0x03).ok);             // 0x03 is not a permitted value
+  w.plat.ec[reg::kGpuCtrl] = 0xA1;
+  CHECK(!g.Write(reg::kGpuCtrl, 0x05).ok);             // would clear bits 5 and 7: an unknown state is left alone
+  CHECK_EQ(w.plat.ec[reg::kGpuCtrl], static_cast<uint8_t>(0xA1));
 }
 
 // ------------------------------------------------------------------------------------------------ fsutil
@@ -690,82 +575,23 @@ TEST(colorramp_image_profiles_match_the_registry) {
   CHECK(FindColorPreset("custom") == nullptr);                         // "custom" is what a hand-made setting is called, not a profile
 }
 
-TEST(profile_text_roundtrip_and_builtins) {
+TEST(profile_text_builtins_and_list) {
   using namespace bc;
-  CHECK(IsBuiltinProfile("Quiet"));
+  // the four profiles of the vendor's Control Center (Balanced / Enthusiast / Overboost / Customized)
+  CHECK(IsBuiltinProfile("Balanced"));
   CHECK(IsBuiltinProfile("overboost"));
+  CHECK(IsBuiltinProfile("CUSTOMIZED"));
+  CHECK(!IsBuiltinProfile("Quiet"));
   CHECK(!IsBuiltinProfile("My game"));
   CHECK_EQ(BuiltinProfiles().size(), static_cast<size_t>(4));
-  KV v;
-  v.Set("ec.pl1", "60");
-  v.Set("fan.cpu.curve", "30:25,40:30,100:100");
-  v.Set("weird", "a=b|c\\d");
-  const std::string t = FormatProfileValues(v);
-  CHECK(t.find("ec.pl1=60") != std::string::npos);
-  // exactly one '|' between the three entries, none inside a value
-  size_t bars = 0;
-  for (char ch : t) bars += ch == '|';
-  CHECK_EQ(bars, static_cast<size_t>(2));
-  KV back = ParseProfileValues(t);
-  CHECK_EQ(back.Size(), static_cast<size_t>(3));
-  CHECK_EQ(back.Str("ec.pl1"), std::string("60"));
-  CHECK_EQ(back.Str("fan.cpu.curve"), std::string("30:25,40:30,100:100"));
-  CHECK_EQ(back.Str("weird"), std::string("a=b|c\\d"));
-  CHECK_EQ(ParseProfileValues("").Size(), static_cast<size_t>(0));
-  CHECK_EQ(ParseProfileValues("garbage|=x|k=").Size(), static_cast<size_t>(1));
+  CHECK_EQ(BuiltinProfiles()[0], std::string("Balanced"));
+  CHECK_EQ(BuiltinProfiles()[3], std::string("Customized"));
   KV snap;
-  snap.Set("profile.list", "Quiet,Balanced, My game ,,My game,Enthusiast");
+  snap.Set("profile.list", "Balanced,Enthusiast, Overboost ,,Overboost,Customized");
   std::vector<std::string> l = ProfileList(snap);
   CHECK_EQ(l.size(), static_cast<size_t>(4));
-  CHECK_EQ(l[2], std::string("My game"));
-}
-
-// ------------------------------------------------------------------------------------------------ keyboard light effects
-TEST(lightfx_hex_roundtrip_and_rejects) {
-  lightfx::Rgb c;
-  CHECK(lightfx::ParseHex("#10AA40", &c));
-  CHECK_EQ(static_cast<int>(c.r), 0x10);
-  CHECK_EQ(static_cast<int>(c.g), 0xAA);
-  CHECK_EQ(static_cast<int>(c.b), 0x40);
-  CHECK_EQ(lightfx::ToHex(c), std::string("#10aa40"));
-  for (const char* bad : {"", "#12345", "#1234567", "10aa40", "#10aa4g", "#10 a40", "red"}) CHECK(!lightfx::ParseHex(bad, &c));
-}
-
-TEST(lightfx_effects_have_the_right_shape) {
-  using namespace lightfx;
-  const Rgb base{200, 100, 50};
-  // static: always the chosen colour
-  Rgb s = EffectColor(kStatic, 5, 12345, base, 60);
-  CHECK(s.r == 200 && s.g == 100 && s.b == 50);
-  // breathing: dark at the start of the cycle, brightest at half of it
-  const double period = PeriodMs(5);
-  Rgb b0 = EffectColor(kBreathing, 5, 0, base, 60);
-  Rgb bh = EffectColor(kBreathing, 5, static_cast<uint64_t>(period / 2), base, 60);
-  CHECK(b0.r == 0 && b0.g == 0 && b0.b == 0);
-  CHECK(bh.r >= 198 && bh.g >= 99);
-  // pulse: starts bright, is dark for the last part of the cycle
-  Rgb p0 = EffectColor(kPulse, 5, 0, base, 60);
-  Rgb p9 = EffectColor(kPulse, 5, static_cast<uint64_t>(period * 0.9), base, 60);
-  CHECK(p0.r == 200);
-  CHECK(p9.r == 0 && p9.g == 0 && p9.b == 0);
-  // cycle ignores the base colour and starts at red
-  Rgb c0 = EffectColor(kCycle, 5, 0, base, 60);
-  CHECK(c0.r == 255 && c0.g == 0 && c0.b == 0);
-  // temperature: cool = green, hot = red, in between = yellow-ish
-  Rgb cool = EffectColor(kTemp, 5, 0, base, 35);
-  Rgb hot = EffectColor(kTemp, 5, 0, base, 95);
-  Rgb mid = EffectColor(kTemp, 5, 0, base, 67);
-  CHECK(cool.g == 255 && cool.r == 0);
-  CHECK(hot.r == 255 && hot.g == 0);
-  CHECK(mid.r > 100 && mid.g > 100);
-  // faster speed = shorter cycle, and the speed is clamped
-  CHECK(PeriodMs(10) < PeriodMs(1));
-  CHECK(PeriodMs(0) == PeriodMs(1));
-  CHECK(PeriodMs(99) == PeriodMs(10));
-  CHECK(LevelFraction(1) < LevelFraction(4));
-  CHECK(LevelFraction(0) == LevelFraction(1) && LevelFraction(9) == 1.0);
-  CHECK_EQ(std::string(EffectName(3)), std::string("temp"));
-  CHECK_EQ(std::string(EffectName(99)), std::string("pulse"));
+  CHECK_EQ(l[2], std::string("Overboost"));
+  CHECK_EQ(ProfileList(KV()).size(), static_cast<size_t>(0));
 }
 
 // ------------------------------------------------------------------------------------------------ Device info data: SMBIOS memory, drive health

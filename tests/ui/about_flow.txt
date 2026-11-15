@@ -3,7 +3,7 @@
 # Run: ControlCenterAdvanced.exe --sim --script tests/ui/about_flow.txt --size 1360x1500
 say == 1. the page shows the version and the credits ==
 page about
-expect app.version 1.0.0-beta
+expect app.version 2.0.0
 shot /tmp/shots/ab_default.png
 
 say == 2. the language combo changes the stored language; Turkish shows at once, Automatic goes back to the system language ==
@@ -29,12 +29,12 @@ clickid cr#0
 expectui url.last https://github.com/MehmetNY/Control-Center-Advanced/issues/new
 clickid cr#1
 expectui url.last https://github.com/MehmetNY/Monster-XMG-Gpu-Power-Control
-clickid cr#10
-expectui url.last https://github.com/namazso/PawnIO
+clickid cr#9
+expectui url.last https://github.com/Gumwars/HydroControl
 
 say == 4. the version text can be copied ==
 clickid ab#copy
-expectui clip.last ~Control Center Advanced 1.0.0-beta
+expectui clip.last ~Control Center Advanced 2.0.0
 expectui clip.last ~OEM Control Center 4.9.47.11
 expectui clip.last ~GNU GPL v3
 hoverid cr#4

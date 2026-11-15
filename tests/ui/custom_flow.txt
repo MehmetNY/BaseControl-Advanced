@@ -1,45 +1,191 @@
-# Custom profiles: a slider only DRAFTS a value; nothing reaches the hardware until Confirm is pressed.
-# Run: ControlCenterAdvanced.exe --sim --script tests/ui/custom_flow.txt --size 1360x1100   (simulator, Wine or Windows)
-say == 1. moving a slider changes nothing ==
+# Custom mode: a slider only DRAFTS a value; nothing reaches the laptop until its Confirm button is pressed. The readings are LIVE.
+# Run: ControlCenterAdvanced.exe --sim --script tests/ui/custom_flow.txt --size 1360x1500   (simulator, Wine or Windows)
+say == 1. in a ready-made mode the values are only shown: live, but locked ==
 page custom
+wait 600
+expect profile.active Overboost
 expect ec.pl1 120
-expect ec.pl2 120
-dragid sl#ec.pl1 0.3
-expectdraft ec.pl1 1
-wait 800
-expect ec.pl1 120
-expect ec.pl2 120
-shot /tmp/shots/s1_draft.png
-
-say == 2. Confirm sends exactly that value ==
-dump ec.pl1
-clickid ok#ec.pl1
+expect perf.pl1 120
+dragid sl#perf.pl1 0.3
+expectdraft perf.pl1 0
+clickid ok#perf.pl1
+clickid sw#perf.tcc.on
 wait 1500
-dump ec.pl1
-expectdraft ec.pl1 0
-expect ec.pl2 120
+expect ec.pl1 120
+expect perf.tcc.on 0
+expect perf.pl1.profile 120
+external ec.pl1 110
+wait 1500
+expect perf.pl1 110
+external ec.pl1 120
+wait 1500
+expect perf.pl1 120
+shot /tmp/shots/c0_readymade.png
 
-say == 3. the LIVE reading follows another program ==
+say == 2. one button switches to the Custom mode ==
+clickid cu#tocustom
+wait 1500
+expect profile.active Customized
+expect perf.mode 3
+expect ec.pl1 80
+expect ec.pl2 100
+expect ec.pl4 150
+shot /tmp/shots/c1_custom.png
+
+say == 3. moving a slider changes nothing ==
+dragid sl#perf.pl1 0.3
+expectdraft perf.pl1 1 67
+wait 800
+expect ec.pl1 80
+expect ec.pl2 100
+shot /tmp/shots/c2_draft.png
+
+say == 4. Confirm sends exactly that value ==
+clickid ok#perf.pl1
+wait 2000
+expectdraft perf.pl1 0
+expect ec.pl1 67
+expect perf.pl1 67
+expect ec.pl2 100
+
+say == 5. the LIVE reading follows another program ==
 external ec.pl2 135
 wait 1500
 expect ec.pl2 135
-shot /tmp/shots/s3_external.png
+expect perf.pl2 135
+shot /tmp/shots/c3_external.png
 
-say == 4. a draft that breaks PL1 <= PL2 cannot be confirmed ==
-dragid sl#ec.pl1 0.95
-expectdraft ec.pl1 1
-clickid ok#ec.pl1
+say == 6. a draft that breaks PL1 <= PL2 cannot be confirmed ==
+dragid sl#perf.pl1 0.95
+expectdraft perf.pl1 1
+clickid ok#perf.pl1
 wait 600
-dump ec.pl1
-shot /tmp/shots/s4_invalid.png
-clickid dc#ec.pl1
-expectdraft ec.pl1 0
+expect ec.pl1 !190
+shot /tmp/shots/c4_invalid.png
+clickid dc#perf.pl1
+expectdraft perf.pl1 0
 
-say == 5. Discard drops every draft ==
-dragid sl#ec.pl2 0.2
-dragid sl#nv.offset.core 0.7
-expectdraft ec.pl2 1
-expectdraft nv.offset.core 1
+say == 7. Confirm all applies a whole set in a safe order ==
+dragid sl#perf.pl1 0.8
+dragid sl#perf.pl2 0.8
+dragid sl#perf.pl4 0.8
+expectdraft perf.pl1 1
+expectdraft perf.pl2 1
+expectdraft perf.pl4 1
+shot /tmp/shots/c5_three.png
+clickid cu#confirmall
+wait 3500
+expectdraft perf.pl1 0
+expectdraft perf.pl2 0
+expectdraft perf.pl4 0
+dump ec.pl1
+dump ec.pl2
+dump ec.pl4
+shot /tmp/shots/c6_applied.png
+
+say == 8. Discard all drops every draft ==
+dragid sl#perf.pl2 0.2
+dragid sl#perf.gpu.core 0.7
+expectdraft perf.pl2 1
+expectdraft perf.gpu.core 1
 clickid cu#discard
-expectdraft ec.pl2 0
-expectdraft nv.offset.core 0
+expectdraft perf.pl2 0
+expectdraft perf.gpu.core 0
+
+say == 9. GPU clock offset goes through the service and is read back from the driver ==
+expect perf.gpu.core 0
+dragid sl#perf.gpu.core 0.7
+expectdraft perf.gpu.core 1
+expect perf.gpu.core 0
+clickid ok#perf.gpu.core
+wait 2500
+expectdraft perf.gpu.core 0
+expect perf.gpu.core !0
+expect nv.offset.core !0
+shot /tmp/shots/c7_gpu.png
+
+say == 10. the thermal offset needs its switch ==
+expect perf.tcc.on 0
+clickid sw#perf.tcc.on
+wait 1500
+expect perf.tcc.on 1
+dragid sl#perf.tcc 0.6
+clickid ok#perf.tcc
+wait 2000
+expectdraft perf.tcc 0
+expect perf.tcc !5
+shot /tmp/shots/c8_tcc.png
+
+say == 11. the GPU power target (cTGP) is this program's own engine: a verified step applies at once ==
+expect gpu.ctgp 140
+dragid sl#gpu.ctgp 0
+expectdraft gpu.ctgp 1 125
+expect gpu.ctgp 140
+clickid ok#gpu.ctgp
+wait 4500
+expectdraft gpu.ctgp 0
+expect gpu.ctgp 125
+shot /tmp/shots/c9_ctgp125.png
+
+say == 12. above the OEM maximum it asks first, and Cancel leaves everything as it was ==
+dragid sl#gpu.ctgp 1
+expectdraft gpu.ctgp 1 150
+clickid ok#gpu.ctgp
+wait 1500
+expectmodal 1
+shot /tmp/shots/c10_consent.png
+clickid modal#0
+wait 500
+expectmodal 0
+expect gpu.ctgp 125
+clickid ok#gpu.ctgp
+wait 1500
+expectmodal 1
+clickid modal#1
+wait 5000
+expectmodal 0
+expect gpu.ctgp 150
+expect cfg.consent.ctgp_over_oem 1
+shot /tmp/shots/c11_ctgp150.png
+
+say == 13. the vendor's defaults can be asked for again: it asks first, Cancel changes nothing, and the GPU power is left alone ==
+expect perf.mode 3
+expect gpu.ctgp 150
+expect perf.pl1 !80
+expect perf.gpu.core !0
+clickid cu#restore
+wait 500
+expectmodal 1
+shot /tmp/shots/c12_restore_ask.png
+clickid modal#0
+wait 500
+expectmodal 0
+expect perf.pl1 !80
+clickid cu#restore
+wait 500
+expectmodal 1
+clickid modal#1
+wait 3000
+expectmodal 0
+expect perf.pl1 80
+expect ec.pl1 80
+expect ec.pl2 100
+expect ec.pl4 150
+expect perf.gpu.core 0
+expect perf.tcc.on 0
+expect gpu.ctgp 150
+expect last.error
+shot /tmp/shots/c13_restored.png
+
+say == 14. in a ready-made mode the same button is locked and nothing is sent ==
+page profiles
+wait 600
+clickid pc#Balanced
+wait 1500
+page custom
+wait 600
+expect perf.mode 0
+clickid cu#restore
+wait 400
+expectmodal 0
+expect ec.pl1 45

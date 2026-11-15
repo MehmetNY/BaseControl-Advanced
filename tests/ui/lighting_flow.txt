@@ -1,77 +1,121 @@
-# Lighting: preset colours, the picker, hex entry, effects, brightness with Confirm, power switch, idle timeout, battery dimming,
-# display and sleep events, restore defaults.
+# Keyboard lighting, through the vendor's service: what the keyboard reports, a preset colour for every light block or for one,
+# the picker (sent when you let go), hex entry, effects and direction, brightness, speed, the power switch, changes made by another
+# program, the idle timer, "Save to the keyboard", restore defaults, and the service going away.
 # Run: ControlCenterAdvanced.exe --sim --script tests/ui/lighting_flow.txt --size 1360x1500
-say == 1. defaults ==
+say == 1. what the keyboard reports ==
 page lighting
+expect cap.light.kbd ok
 expect light.kbd.power 1
 expect light.kbd.effect static
+expect light.kbd.effect.id 0
+expect light.kbd.bright 3
+expect light.kbd.speed 2
+expect light.kbd.dir none
+expect light.kbd.blocks 8
 expect light.kbd.color #ffffff
-expect light.kbd.bright 4
-expect light.idle 0
-expect light.battdim 0
-expect light.sleepoff 1
-expect light.off.why
+expect light.kbd.colors #ffffff,#ffffff,#ffffff,#ffffff,#ffffff,#ffffff,#ffffff,#ffffff
+expecthit zn#0 1
+expecthit zn#8 1
+expecthit zn#9 0
 shot /tmp/shots/l_default.png
 
-say == 2. a preset colour is applied at once ==
+say == 2. a preset colour goes to every light block at once ==
 clickid sw#light.preset#2
-wait 600
+wait 700
 expect light.kbd.color #ff2d2d
+expect light.kbd.colors #ff2d2d,#ff2d2d,#ff2d2d,#ff2d2d,#ff2d2d,#ff2d2d,#ff2d2d,#ff2d2d
+expect last.error
 shot /tmp/shots/l_red.png
 
-say == 3. dragging in the picker, the colour is sent when you let go ==
+say == 3. one light block alone, counted from the left ==
+clickid zn#3
+clickid sw#light.preset#6
+wait 700
+expect light.kbd.colors #ff2d2d,#ff2d2d,#19d45a,#ff2d2d,#ff2d2d,#ff2d2d,#ff2d2d,#ff2d2d
+expect light.kbd.color #ff2d2d
+shot /tmp/shots/l_block3.png
+
+say == 4. dragging in the picker: the colour is sent when you let go, to the chosen block only ==
+let before snap:light.kbd.colors
 dragby lp.hue 60 0
 wait 700
-expect light.kbd.color !#ff2d2d
-let hueMoved snap:light.kbd.color
+expect light.kbd.colors !$before
+expect light.kbd.color #ff2d2d
+let hueMoved snap:light.kbd.colors
 dragby lp.sv 100 -40
 wait 700
-expect light.kbd.color !$hueMoved
+expect light.kbd.colors !$hueMoved
+expect light.kbd.color #ff2d2d
 shot /tmp/shots/l_picker.png
 
-say == 4. hex entry: a good value is applied, a bad one is refused ==
+say == 5. hex entry: a good value is applied, a bad one is refused ==
 clickid in#light.hex
 type #12ab34
 clickid bt#light.hex
 wait 700
-expect light.kbd.color #12ab34
+expect light.kbd.colors #ff2d2d,#ff2d2d,#12ab34,#ff2d2d,#ff2d2d,#ff2d2d,#ff2d2d,#ff2d2d
 clickid in#light.hex
 type nonsense
 clickid bt#light.hex
 wait 700
-expect light.kbd.color #12ab34
+expect light.kbd.colors #ff2d2d,#ff2d2d,#12ab34,#ff2d2d,#ff2d2d,#ff2d2d,#ff2d2d,#ff2d2d
+clickid zn#0
+clickid sw#light.preset#0
+wait 700
+expect light.kbd.colors #ffffff,#ffffff,#ffffff,#ffffff,#ffffff,#ffffff,#ffffff,#ffffff
 
-say == 5. effects, and the speed slider that waits for Confirm ==
-clickid seg#light.effect#1
+say == 6. effects: the vendor's list, and the colour card switches itself off for Rainbow ==
+clickid cmb#light.effect
+clickid opt#1
 wait 700
-expect light.kbd.effect breathing
-dragid sl#light.kbd.speed 0.95
-expect light.kbd.speed 5
-expectdraft light.kbd.speed 1
-shot /tmp/shots/l_speed_draft.png
-clickid ok#light.kbd.speed
+expect light.kbd.effect wave
+expect light.kbd.effect.id 2
+shot /tmp/shots/l_wave.png
+clickid cmb#light.effect
+clickid opt#3
 wait 700
-expect light.kbd.speed !5
-shot /tmp/shots/l_breathing.png
-clickid seg#light.effect#3
+expect light.kbd.effect rainbow
+let beforeRainbow snap:light.kbd.colors
+clickid sw#light.preset#9
 wait 700
-expect light.kbd.effect temp
-shot /tmp/shots/l_temp.png
-clickid seg#light.effect#0
+expect light.kbd.colors $beforeRainbow
+shot /tmp/shots/l_rainbow.png
+clickid cmb#light.effect
+clickid opt#0
 wait 700
 expect light.kbd.effect static
+expect light.kbd.effect.id 0
 
-say == 6. brightness waits for Confirm ==
-dragid sl#light.kbd.bright 0.0
-expect light.kbd.bright 4
-expectdraft light.kbd.bright 1 1
-clickid ok#light.kbd.bright
+say == 7. direction ==
+clickid cmb#light.dir
+clickid opt#2
+wait 700
+expect light.kbd.dir right-left
+clickid cmb#light.dir
+clickid opt#5
+wait 700
+expect light.kbd.dir press
+clickid cmb#light.dir
+clickid opt#0
+wait 700
+expect light.kbd.dir none
+
+say == 8. brightness and speed ==
+clickid seg#light.bright#1
 wait 700
 expect light.kbd.bright 1
-expect light.bright.eff 1
 shot /tmp/shots/l_dim.png
+clickid seg#light.speed#4
+wait 700
+expect light.kbd.speed 4
+clickid seg#light.bright#4
+wait 700
+expect light.kbd.bright 4
+clickid seg#light.speed#2
+wait 700
+expect light.kbd.speed 2
 
-say == 7. the power switch ==
+say == 9. the power switch ==
 clickid sw#light.kbd.power
 wait 700
 expect light.kbd.power 0
@@ -80,86 +124,101 @@ clickid sw#light.kbd.power
 wait 700
 expect light.kbd.power 1
 
-say == 8. idle timeout ==
-clickid sw#light.idle
-wait 700
-expect light.idle 30
-clickid cmb#light.idle
-clickid opt#3
-wait 700
-expect light.idle 60
-cmd light.idle.state on=1
-wait 700
-expect light.off.why idle
-shot /tmp/shots/l_idle.png
-cmd light.idle.state on=0
-wait 700
-expect light.off.why
-clickid sw#light.idle
-wait 700
-expect light.idle 0
-say   (a late idle report after the timeout was switched off does nothing)
-cmd light.idle.state on=1
-wait 700
-expect light.off.why
-
-say == 9. dimming on battery ==
-dragid sl#light.kbd.bright 1.0
-clickid ok#light.kbd.bright
-wait 700
-expect light.kbd.bright 4
-clickid sw#light.battdim
-wait 700
-expect light.battdim 1
-clickid seg#light.battlevel#1
-wait 700
-expect light.battlevel 2
-external power.ac 0
-wait 3500
-expect light.bright.eff 2
-expect light.kbd.bright 4
-shot /tmp/shots/l_battery.png
-external power.ac 1
-wait 3500
-expect light.bright.eff 4
-
-say == 10. display and sleep ==
-notify display_off
-wait 2500
-expect light.off.why display
-shot /tmp/shots/l_display_off.png
-notify display_on
-wait 2500
-expect light.off.why
-notify suspend
-wait 2500
-expect light.off.why sleep
-notify resume
-wait 2500
-expect light.off.why
-clickid sw#light.sleepoff
-wait 700
-expect light.sleepoff 0
-notify display_off
-wait 2500
-expect light.off.why
-notify display_on
+say == 10. another program changes the light: the page follows ==
+external kb.bright 0
 wait 1500
-clickid sw#light.sleepoff
+expect light.kbd.bright 0
+external kb.color #1ec8ff
+wait 1500
+expect light.kbd.color #1ec8ff
+expect light.kbd.colors #1ec8ff,#1ec8ff,#1ec8ff,#1ec8ff,#1ec8ff,#1ec8ff,#1ec8ff,#1ec8ff
+external kb.power 0
+wait 1500
+expect light.kbd.power 0
+shot /tmp/shots/l_external.png
+external kb.power 1
+wait 1500
+expect light.kbd.power 1
+say   (an effect that is not on the vendor window's list is still shown and can be left again)
+external kb.effect 7
+wait 1500
+expect light.kbd.effect neon
+shot /tmp/shots/l_neon.png
+clickid cmb#light.effect
+clickid opt#0
 wait 700
-expect light.sleepoff 1
+expect light.kbd.effect static
+external kb.bright 4
+wait 1500
+expect light.kbd.bright 4
 
-say == 11. restore defaults ==
+say == 11. save to the keyboard ==
+clickid light.save
+wait 1500
+expect last.error
+expect light.kbd.effect static
+
+say == 12. restore defaults ==
+clickid zn#0
 clickid sw#light.preset#6
 wait 700
-clickid seg#light.effect#2
+clickid cmb#light.effect
+clickid opt#2
 wait 700
-expect light.kbd.effect cycle
+expect light.kbd.effect ripple
 clickid light.reset
-wait 2500
+wait 3500
 expect light.kbd.color #ffffff
+expect light.kbd.colors #ffffff,#ffffff,#ffffff,#ffffff,#ffffff,#ffffff,#ffffff,#ffffff
 expect light.kbd.effect static
 expect light.kbd.bright 4
-expect light.kbd.speed 5
 expect light.kbd.power 1
 shot /tmp/shots/l_restored.png
+
+say == 13. idle timer: what the service reports, a choice, a value another program sets ==
+expect cap.light.kbd.timer ok
+expect light.kbd.timer 30
+clickid cmb#light.timer
+clickid opt#4
+wait 700
+expect light.kbd.timer 120
+expect last.error
+clickid cmb#light.timer
+clickid opt#0
+wait 700
+expect light.kbd.timer 0
+external kb.timer 600
+wait 1500
+expect light.kbd.timer 600
+say   (a value that is not on the list is shown too, and the list still works)
+external kb.timer 45
+wait 1500
+expect light.kbd.timer 45
+clickid cmb#light.timer
+clickid opt#2
+wait 700
+expect light.kbd.timer 30
+shot /tmp/shots/l_timer.png
+
+say == 14. the vendor's service goes away: nothing can be changed until it is back ==
+external oem.running 0
+wait 3000
+expect cap.light.kbd offline
+expect cap.light.kbd.timer offline
+clickid cmb#light.timer
+wait 300
+expecthit opt#5 0
+expect light.kbd.timer 30
+clickid sw#light.preset#2
+wait 500
+expect light.kbd.color #ffffff
+clickid sw#light.kbd.power
+wait 500
+expect light.kbd.power 1
+shot /tmp/shots/l_offline.png
+external oem.running 1
+wait 5000
+expect cap.light.kbd ok
+clickid sw#light.preset#2
+wait 700
+expect light.kbd.color #ff2d2d

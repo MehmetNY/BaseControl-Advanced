@@ -1,8 +1,8 @@
-// Coexistence with the OEM Control Center. Evidence (device inventory): the Windows service "GCUBridge" (Auto start,
-// C:\Program Files\OEM\Control Center\UniwillService\GCUBridge.exe) is the OEM front; its worker process is
-// MyControlCenter\GCUService.exe, which owns the EC/profile files while it runs. Control Center Advanced never edits those files:
-// instead the user can "take over", which stops + disables the OEM services (and only services whose binary lives in
-// %ProgramFiles%\OEM\Control Center\) and can be reverted at any time. The original start types are remembered.
+// The vendor's Control Center (read-only look). Evidence (device inventory): the Windows service "GCUBridge" (Auto start,
+// C:\Program Files\OEM\Control Center\UniwillService\GCUBridge.exe) is the vendor's front end; its worker process is
+// MyControlCenter\GCUService.exe, which owns the EC and the BIOS settings. Control Center Advanced does not replace, stop or disable any
+// of it - it talks to it (src/oem) - so this class only reports whether it is installed and running and, on request, starts services that
+// are installed but stopped (an earlier build of this program could stop and disable them; the start types it recorded are restored).
 #pragma once
 #include "../common/hw_iface.h"
 #include "winutil.h"
@@ -10,12 +10,11 @@
 namespace bc {
 namespace hw {
 
-class OemServices : public IOemControl {
+class OemProbeWin : public IOemProbe {
  public:
-  explicit OemServices(const std::string& stateDir);
+  explicit OemProbeWin(const std::string& stateDir);
   OemSvcState Probe() override;
-  bool StopAndDisable(std::string* why) override;
-  bool EnableAndStart(std::string* why) override;
+  bool StartServices(std::string* why) override;
 
  private:
   struct Svc {
@@ -25,7 +24,7 @@ class OemServices : public IOemControl {
     DWORD state = SERVICE_STOPPED;
   };
   std::vector<Svc> Discover(bool full);
-  bool ProcessRunning(std::vector<DWORD>* pids);
+  bool ProcessRunning();
   std::wstring OemRoot() const;
   bool IsOemImage(const std::wstring& path) const;
   std::wstring ServiceImagePath(SC_HANDLE svc) const;

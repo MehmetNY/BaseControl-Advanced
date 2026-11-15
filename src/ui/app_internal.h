@@ -17,8 +17,6 @@
 #include "../hw/win_world.h"
 #include "../hw/winutil.h"
 #include "../sim/sim.h"
-#include "../svc/pipe_client.h"
-#include "../svc/service.h"
 #include "app.h"
 #include "osd_window.h"
 #include "session.h"
@@ -61,19 +59,12 @@ struct App::Impl {
   bool osdVisible = true;         // runtime show/hide of the overlay (the hotkey); "enabled" is the stored preference
   bool overlayWanted = false;     // the overlay is on screen: keep the data fresh even with the window hidden
   double lastOverlayT = 0;
-  bool lightIdleSent = false;     // the controller was told the user is idle (and has not been told otherwise since)
-  double lightIdleBeat = 0, lightIdleT = 0;
   void Balloon(const std::string& title, const std::string& text);
-
-  // ---- elevated helper process (service install, ...)
-  HANDLE elevProc = nullptr;
-  std::string elevToast;
 
   // ---- data sources. Declaration order = reverse destruction order: controllers go before the hardware they use.
   std::unique_ptr<sim::World> simWorld;
-  std::unique_ptr<hw::WinWorld> world, userWorld;
-  std::unique_ptr<Controller> ctl, userCtl;
-  std::unique_ptr<PipeBackend> pipe;
+  std::unique_ptr<hw::WinWorld> world;
+  std::unique_ptr<Controller> ctl;
 
   // ---- window procedure helpers (app_window.cpp)
   static LRESULT CALLBACK WndProc(HWND h, UINT m, WPARAM w, LPARAM l);

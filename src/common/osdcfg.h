@@ -15,7 +15,7 @@ struct OsdConfig {
   int corner = 0;             // 0 top-left, 1 top-right, 2 bottom-left, 3 bottom-right
   int mx = 20, my = 20;       // distance from the screen edge, px
   int size = 0;               // 0 small, 1 medium, 2 large
-  uint32_t color = 0xFFD9F0C4;
+  uint32_t color = 0xFF8CF06A;
   int opacity = 78;           // background, percent
   bool gamesOnly = false;     // show only while a game from the list is the foreground window
   std::vector<std::string> games;   // lower-case image names

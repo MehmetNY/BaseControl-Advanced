@@ -1,10 +1,10 @@
-// Lighting: a live drawing of the keyboard (the same effect maths the keyboard runs, see common/lightfx), the light's own
-// settings, a colour picker that only sends the colour when you let go, the idle timeout and the rules by power state.
+// Lighting: a drawing of the keyboard in the colours the keyboard reports (one colour per light block), and the light's settings - on/off,
+// effect, direction, brightness, speed, the idle timer, the colour of each block, and "save to the keyboard". Everything is sent through the vendor's
+// service, exactly as its own window does, and shown only after the service has reported it back.
 #include <algorithm>
 #include <cmath>
 
 #include "../common/keymap.h"
-#include "../common/lightfx.h"
 #include "../common/util.h"
 #include "page.h"
 #include "pages_shared.h"
@@ -13,9 +13,49 @@ namespace bc {
 namespace ui {
 namespace {
 
-using lightfx::Rgb;
+struct Rgb {
+  uint8_t r = 255, g = 255, b = 255;
+};
 
 uint32_t ToArgb(const Rgb& c, int a = 255) { return Argb(a, c.r, c.g, c.b); }
+
+bool ParseHex(const std::string& s, Rgb* out) {
+  if (s.size() != 7 || s[0] != '#') return false;
+  unsigned v = 0;
+  for (size_t i = 1; i < 7; i++) {
+    const char ch = s[i];
+    unsigned d;
+    if (ch >= '0' && ch <= '9') d = static_cast<unsigned>(ch - '0');
+    else if (ch >= 'a' && ch <= 'f') d = static_cast<unsigned>(ch - 'a' + 10);
+    else if (ch >= 'A' && ch <= 'F') d = static_cast<unsigned>(ch - 'A' + 10);
+    else return false;
+    v = v * 16 + d;
+  }
+  out->r = static_cast<uint8_t>((v >> 16) & 255);
+  out->g = static_cast<uint8_t>((v >> 8) & 255);
+  out->b = static_cast<uint8_t>(v & 255);
+  return true;
+}
+
+std::string ToHex(const Rgb& c) { return Fmt("#%02x%02x%02x", c.r, c.g, c.b); }
+
+Rgb FromHsv(double h, double s, double v) {
+  h = std::fmod(h, 360.0);
+  if (h < 0) h += 360.0;
+  const double c = v * s, x = c * (1.0 - std::fabs(std::fmod(h / 60.0, 2.0) - 1.0)), m = v - c;
+  double r = 0, g = 0, b = 0;
+  if (h < 60) { r = c; g = x; }
+  else if (h < 120) { r = x; g = c; }
+  else if (h < 180) { g = c; b = x; }
+  else if (h < 240) { g = x; b = c; }
+  else if (h < 300) { r = x; b = c; }
+  else { r = c; b = x; }
+  Rgb o;
+  o.r = static_cast<uint8_t>(std::lround((r + m) * 255.0));
+  o.g = static_cast<uint8_t>(std::lround((g + m) * 255.0));
+  o.b = static_cast<uint8_t>(std::lround((b + m) * 255.0));
+  return o;
+}
 
 double Luma(uint32_t c) { return (0.299 * ((c >> 16) & 255) + 0.587 * ((c >> 8) & 255) + 0.114 * (c & 255)) / 255.0; }
 
@@ -40,84 +80,103 @@ Hsv ToHsv(const Rgb& c, double keepHue) {
   return o;
 }
 
-const char* const kEffectIds[lightfx::kEffectCount] = {"static", "breathing", "cycle", "temp", "pulse"};
-
-int EffectIdx(const std::string& n) {
-  for (int i = 0; i < lightfx::kEffectCount; i++)
-    if (n == kEffectIds[i]) return i;
-  return 0;
-}
-
-std::vector<std::string> EffectLabels() { return {T("Static"), T("Breathing"), T("Cycle"), T("CPU temp"), T("Pulse")}; }
-
-std::string EffectHelp(int e) {
-  switch (e) {
-    case lightfx::kBreathing: return T("The colour fades in and out.");
-    case lightfx::kCycle: return T("Runs through every colour. The chosen colour is not used.");
-    case lightfx::kTemp: return T("Green while the CPU is cool, red near 95 \xC2\xB0""C. The chosen colour is not used.");
-    case lightfx::kPulse: return T("A short flash that fades out, again and again.");
-    default: return T("One steady colour.");
-  }
-}
-
-struct IdleChoice {
-  int sec;
-  std::string text;
+// The effects the vendor's window offers for this kind of keyboard, as numbers of its RGBKB_Effect list, in its order.
+struct EffectDef {
+  int id;
+  const char* label;
+  const char* help;
+};
+const EffectDef kEffects[] = {
+    {0, N_("Static"), N_("One steady colour per light block.")},
+    {2, N_("Wave"), N_("A wave of light that moves across the keyboard.")},
+    {5, N_("Ripple"), N_("Rings of light spread from the key you press.")},
+    {4, N_("Rainbow"), N_("Runs through every colour. The colours below are not used.")},
+    {17, N_("Mix"), N_("A mix of moving colours.")},
+    {3, N_("Reactive"), N_("Keys light up when you press them.")},
+    {13, N_("Music"), N_("The light follows the sound that is playing.")},
 };
 
-std::string Duration(long long s) {
-  if (s <= 0) return T("Off");
-  if (s < 60) return Fmt("%lld s", s);
-  if (s % 60 == 0) return Fmt("%lld min", s / 60);
-  return Fmt("%lld s", s);
+std::string EffectLabel(int id) {
+  for (const EffectDef& e : kEffects)
+    if (e.id == id) return T(e.label);
+  return Tf("Effect %d", id);
 }
 
-std::vector<IdleChoice> IdleChoices(long long current) {
-  std::vector<int> v = {10, 15, 30, 60, 120, 300, 600};
-  if (current > 0 && std::find(v.begin(), v.end(), static_cast<int>(current)) == v.end()) {
-    v.push_back(static_cast<int>(current));   // a value set from elsewhere stays selectable
-    std::sort(v.begin(), v.end());
+std::string EffectHelp(int id) {
+  for (const EffectDef& e : kEffects)
+    if (e.id == id) return T(e.help);
+  return T("An effect this window does not describe.");
+}
+
+// Idle timer choices, in seconds (0 = never). The value that is active is added to the list when it is not one of these.
+const int kTimerChoices[] = {0, 10, 30, 60, 120, 300, 600, 1800};
+
+std::string TimerLabel(int s) {
+  switch (s) {
+    case 0: return T("Never");
+    case 10: return T("10 seconds");
+    case 30: return T("30 seconds");
+    case 60: return T("1 minute");
+    case 120: return T("2 minutes");
+    case 300: return T("5 minutes");
+    case 600: return T("10 minutes");
+    case 1800: return T("30 minutes");
+    default: break;
   }
-  std::vector<IdleChoice> out;
-  for (int s : v) out.push_back({s, Duration(s)});
-  return out;
+  if (s % 60 == 0) return Tf("%d minutes", s / 60);
+  if (s < 60) return Tf("%d seconds", s);
+  return Tf("%d min %d s", s / 60, s % 60);
 }
 
 // What the keyboard shows right now.
 struct Look {
-  Rgb col;
+  std::vector<Rgb> zones;   // one colour per light block
   double frac = 1.0;
   bool lit = false;
-  std::string why;   // "" = lit, otherwise: user | idle | display | sleep | absent
+  bool absent = false;
 };
 
-Look LookNow(App& a, const Ui& ui, const Rgb* draft) {
+std::vector<Rgb> ZonesOf(App& a) {
+  std::vector<Rgb> z;
+  for (const std::string& p : Split(a.S("light.kbd.colors"), ',')) {
+    Rgb c;
+    if (ParseHex(Trim(p), &c)) z.push_back(c);
+  }
+  Rgb all;
+  if (z.empty() && ParseHex(a.S("light.kbd.color", "#ffffff"), &all)) z.push_back(all);
+  if (z.empty()) z.push_back(Rgb{});
+  return z;
+}
+
+Look LookNow(App& a) {
   Look l;
   if (!a.CapOk("light.kbd")) {
-    l.why = "absent";
+    l.absent = true;
     return l;
   }
-  Rgb base;
-  if (!lightfx::ParseHex(a.S("light.kbd.color", "#ffffff"), &base)) base = Rgb{255, 255, 255};
-  if (draft) base = *draft;
-  const int e = EffectIdx(a.S("light.kbd.effect", "static"));
-  l.col = lightfx::EffectColor(e, static_cast<int>(a.I("light.kbd.speed", 5)), static_cast<uint64_t>(ui.now * 1000.0), base, a.I("cpu.temp", 60));
-  const int lvl = static_cast<int>(a.Has("light.bright.eff") ? a.I("light.bright.eff") : a.I("light.kbd.bright", 4));
-  l.frac = lightfx::LevelFraction(lvl);
-  l.why = !a.B("light.kbd.power", true) ? std::string("user") : a.S("light.off.why");
-  l.lit = l.why.empty();
+  l.zones = ZonesOf(a);
+  const int lvl = static_cast<int>(std::max(0LL, std::min(4LL, a.I("light.kbd.bright", 4))));
+  l.frac = (lvl + 1) / 5.0;
+  l.lit = a.B("light.kbd.power", true);
   return l;
 }
 
-void LitCap(Ui& ui, const Rect& r, const std::string& legend, const Look& L, bool fontBig) {
+Rgb ZoneAt(const Look& L, float xFrac) {
+  if (L.zones.empty()) return Rgb{};
+  const int n = static_cast<int>(L.zones.size());
+  const int i = std::max(0, std::min(n - 1, static_cast<int>(std::floor(xFrac * static_cast<float>(n)))));
+  return L.zones[static_cast<size_t>(i)];
+}
+
+void LitCap(Ui& ui, const Rect& r, const std::string& legend, const Look& L, const Rgb& zone, bool fontBig) {
   Gfx& g = ui.gfx;
   const Theme& th = ui.th;
   const uint32_t unlit = Mix(th.elev, th.panel, 0.25f);
   uint32_t fill = unlit, border = th.line, text = th.faint;
   if (L.lit) {
-    const uint32_t lc = ToArgb(L.col);
-    fill = Mix(unlit, lc, 0.20f + 0.50f * static_cast<float>(L.frac));
-    border = Mix(th.line, lc, 0.45f * static_cast<float>(L.frac));
+    const uint32_t lc = ToArgb(zone);
+    fill = Mix(unlit, lc, 0.20f + 0.60f * static_cast<float>(L.frac));
+    border = Mix(th.line, lc, 0.50f * static_cast<float>(L.frac));
     text = Luma(fill) > 0.58 ? Argb(255, 28, 29, 27) : Argb(255, 244, 241, 235);
   }
   g.FillRound(r, 6, fill);
@@ -125,9 +184,9 @@ void LitCap(Ui& ui, const Rect& r, const std::string& legend, const Look& L, boo
   g.Text(r.Inset(2, 0), legend, fontBig ? FontId::Small : FontId::Tiny, text, Align::Center);
 }
 
-void Glow(Ui& ui, const Rect& r, const Look& L) {
+void Glow(Ui& ui, const Rect& r, const Look& L, const Rgb& zone) {
   if (!L.lit) return;
-  ui.gfx.FillRound(r.Inset(-2.5f), 8, WithAlpha(ToArgb(L.col), static_cast<int>(34.0 * L.frac)));
+  ui.gfx.FillRound(r.Inset(-2.5f), 8, WithAlpha(ToArgb(zone), static_cast<int>(40.0 * L.frac)));
 }
 
 // A polygon with every corner rounded (quadratic curves), for the L-shaped ISO Enter key.
@@ -153,7 +212,8 @@ std::vector<V2> RoundedPoly(const std::vector<V2>& v, float rad) {
   return out;
 }
 
-// The keyboard drawing (geometry as on the key-mapping page). Two passes: the glow of every key first, then the caps on top.
+// The keyboard drawing (geometry as on the key-mapping page). Two passes: the glow of every key first, then the caps on top. Each key
+// takes the colour of the light block under it (blocks run left to right).
 void DrawKeyboard(Ui& ui, const Rect& board, bool tr, const Look& L) {
   Gfx& g = ui.gfx;
   const Theme& th = ui.th;
@@ -163,6 +223,7 @@ void DrawKeyboard(Ui& ui, const Rect& board, bool tr, const Look& L) {
   const float bx = board.x + (board.w - 15 * u) * 0.5f;
   ui.Panel(board, th.inset, th.line, 12);
   const auto& rows = KeyboardRows();
+  auto zoneOfX = [&](float cx) { return ZoneAt(L, std::max(0.0f, std::min(0.999f, (cx - bx) / (15 * u)))); };
   for (int pass = 0; pass < 2; pass++) {
     float by = board.y + 9 + gap * 0.5f;
     std::vector<Rect> enter;
@@ -175,24 +236,26 @@ void DrawKeyboard(Ui& ui, const Rect& board, bool tr, const Look& L) {
           enter.push_back(kr);
           continue;
         }
-        if (pass == 0) Glow(ui, kr, L);
-        else LitCap(ui, kr, tr ? pk.tr : pk.us, L, pk.w * u > 34);
+        const Rgb z = zoneOfX(kr.cx());
+        if (pass == 0) Glow(ui, kr, L, z);
+        else LitCap(ui, kr, tr ? pk.tr : pk.us, L, z, pk.w * u > 34);
       }
       by += kh + gap;
     }
     if (enter.size() == 2) {   // the ISO Enter key: two rectangles that read as one key
       const Rect& t = enter[0];
       const Rect& l = enter[1];
+      const Rgb z = zoneOfX(t.cx());
       if (pass == 0) {
-        Glow(ui, t, L);
-        Glow(ui, l, L);
+        Glow(ui, t, L, z);
+        Glow(ui, l, L, z);
       } else {
         const std::vector<V2> shape = RoundedPoly({{t.x, t.y}, {t.r(), t.y}, {t.r(), l.b()}, {l.x, l.b()}, {l.x, t.b() + 4}, {t.x, t.b() + 4}}, 6.0f);
         uint32_t fill = Mix(th.elev, th.panel, 0.25f), border = th.line, text = th.faint;
         if (L.lit) {
-          const uint32_t lc = ToArgb(L.col);
-          fill = Mix(fill, lc, 0.20f + 0.50f * static_cast<float>(L.frac));
-          border = Mix(th.line, lc, 0.45f * static_cast<float>(L.frac));
+          const uint32_t lc = ToArgb(z);
+          fill = Mix(fill, lc, 0.20f + 0.60f * static_cast<float>(L.frac));
+          border = Mix(th.line, lc, 0.50f * static_cast<float>(L.frac));
           text = Luma(fill) > 0.58 ? Argb(255, 28, 29, 27) : Argb(255, 244, 241, 235);
         }
         g.PolyFill(shape, fill);
@@ -217,13 +280,13 @@ PickResult ColorPicker(Ui& ui, App& a, const Rect& area, Hsv* hsv, bool enabled)
   const Rect sv(area.x, area.y, area.w, 122);
   const Rect hue(area.x, sv.b() + 12, area.w, 18);
   // ---- drawing
-  g.FillRound(sv, 8, ToArgb(lightfx::FromHsv(hsv->h, 1, 1)));
+  g.FillRound(sv, 8, ToArgb(FromHsv(hsv->h, 1, 1)));
   g.FillGrad(sv, 8, Argb(255, 255, 255, 255), Argb(0, 255, 255, 255), 0);
   g.FillGrad(sv, 8, Argb(0, 0, 0, 0), Argb(255, 0, 0, 0), 90);
   g.StrokeRound(sv, 8, th.line, 1.0f);
   for (int i = 0; i < 6; i++) {
     const float x0 = hue.x + hue.w * static_cast<float>(i) / 6.0f, x1 = hue.x + hue.w * static_cast<float>(i + 1) / 6.0f;
-    g.FillGrad(Rect(x0, hue.y, x1 - x0 + 0.6f, hue.h), 0, ToArgb(lightfx::FromHsv(i * 60.0, 1, 1)), ToArgb(lightfx::FromHsv((i + 1) * 60.0, 1, 1)), 0);
+    g.FillGrad(Rect(x0, hue.y, x1 - x0 + 0.6f, hue.h), 0, ToArgb(FromHsv(i * 60.0, 1, 1)), ToArgb(FromHsv((i + 1) * 60.0, 1, 1)), 0);
   }
   g.StrokeRound(hue, 4, th.line, 1.0f);
   // ---- input (registered after drawing so the frame already shows the new draft next time)
@@ -248,14 +311,14 @@ PickResult ColorPicker(Ui& ui, App& a, const Rect& area, Hsv* hsv, bool enabled)
   out.released = was && !out.held;
   was = out.held;
   // ---- handles
-  const Rgb now = lightfx::FromHsv(hsv->h, hsv->s, hsv->v);
+  const Rgb now = FromHsv(hsv->h, hsv->s, hsv->v);
   const V2 hp{static_cast<float>(sv.x + sv.w * hsv->s), static_cast<float>(sv.y + sv.h * (1.0 - hsv->v))};
   g.Circle(hp, 8, Argb(200, 0, 0, 0), 3.0f);
   g.Circle(hp, 8, Argb(255, 255, 255, 255), 1.8f);
   g.Dot(hp, 5.5f, ToArgb(now));
   const float hx = static_cast<float>(hue.x + hue.w * hsv->h / 360.0);
   const Rect hb(hx - 4, hue.y - 3, 8, hue.h + 6);
-  g.FillRound(hb, 4, ToArgb(lightfx::FromHsv(hsv->h, 1, 1)));
+  g.FillRound(hb, 4, ToArgb(FromHsv(hsv->h, 1, 1)));
   g.StrokeRound(hb, 4, Argb(255, 255, 255, 255), 2.0f);
   return out;
 }
@@ -267,7 +330,22 @@ std::string HexOf(uint32_t argb) {
   c.r = static_cast<uint8_t>((argb >> 16) & 255);
   c.g = static_cast<uint8_t>((argb >> 8) & 255);
   c.b = static_cast<uint8_t>(argb & 255);
-  return lightfx::ToHex(c);
+  return ToHex(c);
+}
+
+constexpr int kMaxEditableZones = 8;   // beyond this the colour blocks are edited together
+
+// Sends `hex` to the selected block (1..n) or to every block (0).
+void SendColour(App& a, int zone, const std::string& hex) {
+  const std::string label = Tf("Keyboard colour: %s", hex.c_str());
+  if (zone <= 0) {
+    a.Set("light.kbd.color", hex, label);
+    return;
+  }
+  std::vector<std::string> parts = Split(a.S("light.kbd.colors"), ',');
+  if (static_cast<size_t>(zone) > parts.size()) parts.resize(static_cast<size_t>(zone), "#ffffff");
+  parts[static_cast<size_t>(zone - 1)] = hex;
+  a.Set("light.kbd.colors", Join(parts, ","), label);
 }
 
 void StateLine(App& a, Ui& ui, const Rect& r, const Look& L) {
@@ -276,37 +354,23 @@ void StateLine(App& a, Ui& ui, const Rect& r, const Look& L) {
   std::string text;
   uint32_t col = th.muted;
   IconId icon = IconId::Info;
-  if (L.why == "absent") {
-    text = a.CapWhy("light.kbd").empty() ? T("No keyboard lighting controller was found on this computer.") : a.CapWhy("light.kbd");
+  if (L.absent) {
+    text = a.CapWhy("light.kbd").empty() ? T("No keyboard lighting was reported by the vendor's service.") : a.CapWhy("light.kbd");
     col = th.amber;
     icon = IconId::Warn;
-  } else if (L.why == "user") {
+  } else if (!L.lit) {
     text = T("The keyboard light is switched off.");
-  } else if (L.why == "idle") {
-    text = T("Off because you are idle. It comes back with the next key press or mouse move.");
-    col = th.amber;
-    icon = IconId::Moon;
-  } else if (L.why == "display") {
-    text = T("Off while the display is off. It comes back when the display wakes.");
-    col = th.amber;
-    icon = IconId::Moon;
-  } else if (L.why == "sleep") {
-    text = T("Off while the laptop sleeps.");
-    col = th.amber;
-    icon = IconId::Moon;
   } else {
-    const long long set = a.I("light.kbd.bright", 4), eff = a.Has("light.bright.eff") ? a.I("light.bright.eff") : set;
-    text = Tf("%s \xC2\xB7 brightness %lld %%", EffectLabels()[static_cast<size_t>(EffectIdx(a.S("light.kbd.effect", "static")))].c_str(), eff * 25);
-    if (eff < set) text += " \xC2\xB7 " + T("limited while on battery");
+    text = Tf("%s \xC2\xB7 brightness %lld of 4", EffectLabel(static_cast<int>(a.I("light.kbd.effect.id", 0))).c_str(), a.I("light.kbd.bright", 4));
     icon = IconId::Bolt;
-    col = th.muted;
   }
   g.Icon(icon, Rect(r.x, r.cy() - 8, 16, 16), col, 1.7f);
-  g.Text(Rect(r.x + 24, r.y, r.w * 0.62f - 24, r.h), text, FontId::Small, col);
-  if (g.TextW(text, FontId::Small) > r.w * 0.62f - 24) ui.Tip(Rect(r.x + 24, r.y, r.w * 0.62f - 24, r.h), text);
-  const std::string right = T("One light zone: every key shows the same colour.");
-  g.Text(Rect(r.x + r.w * 0.62f, r.y, r.w * 0.38f, r.h), right, FontId::Tiny, th.faint, Align::Right);
-  if (g.TextW(right, FontId::Tiny) > r.w * 0.38f) ui.Tip(Rect(r.x + r.w * 0.62f, r.y, r.w * 0.38f, r.h), right);
+  g.Text(Rect(r.x + 24, r.y, r.w * 0.55f - 24, r.h), text, FontId::Small, col);
+  if (g.TextW(text, FontId::Small) > r.w * 0.55f - 24) ui.Tip(Rect(r.x + 24, r.y, r.w * 0.55f - 24, r.h), text);
+  const long long n = a.I("light.kbd.blocks", 1);
+  const std::string right = n <= 1 ? T("One light block: every key shows the same colour.") : Tf("%lld light blocks, left to right.", n);
+  g.Text(Rect(r.x + r.w * 0.55f, r.y, r.w * 0.45f, r.h), right, FontId::Tiny, th.faint, Align::Right);
+  if (g.TextW(right, FontId::Tiny) > r.w * 0.45f) ui.Tip(Rect(r.x + r.w * 0.55f, r.y, r.w * 0.45f, r.h), right);
 }
 
 }  // namespace
@@ -319,25 +383,28 @@ float PageLighting(App& a, const Rect& r) {
   Masonry m(r.w, 440, 2);
   const bool kbd = a.CapOk("light.kbd");
   const bool tr = a.Pref("keys.layout", GetLang() == Lang::Tr ? "tr" : "us") == "tr";
-  const int effect = EffectIdx(a.S("light.kbd.effect", "static"));
+  const int effectId = static_cast<int>(a.I("light.kbd.effect.id", 0));
+  const int blocks = static_cast<int>(std::max(1LL, a.I("light.kbd.blocks", 1)));
+  const bool zonesEditable = blocks > 1 && blocks <= kMaxEditableZones;
+  int& zone = a.Int("light.zone", 0);   // 0 = every block, 1..n = one block
+  if (!zonesEditable || zone > blocks) zone = 0;
 
-  // ---- the colour being edited: it follows the hardware until you pick something
-  Rgb live{255, 255, 255};
-  lightfx::ParseHex(a.S("light.kbd.color", "#ffffff"), &live);
+  // ---- the colour being edited: it follows the keyboard until you pick something
+  const std::vector<Rgb> zs = ZonesOf(a);
+  Rgb live = zs[static_cast<size_t>(std::min<int>(std::max(zone - 1, 0), static_cast<int>(zs.size()) - 1))];
   int& h10 = a.Int("light.pick.h", 0);
   int& s1k = a.Int("light.pick.s", 0);
   int& v1k = a.Int("light.pick.v", 1000);
   bool& editing = a.Flag("light.pick.edit");
   editing = editing || a.Flag("light.pick.held");
-  if (!editing && !a.Pending("light.kbd.color")) {
+  const bool pendingColour = a.Pending("light.kbd.color") || a.Pending("light.kbd.colors");
+  if (!editing && !pendingColour) {
     const Hsv f = ToHsv(live, h10 / 10.0);
     h10 = static_cast<int>(std::lround(f.h * 10.0));
     s1k = static_cast<int>(std::lround(f.s * 1000.0));
     v1k = static_cast<int>(std::lround(f.v * 1000.0));
   }
   Hsv draft{h10 / 10.0, s1k / 1000.0, v1k / 1000.0};
-  const Rgb draftRgb = lightfx::FromHsv(draft.h, draft.s, draft.v);
-  const bool showDraft = editing || a.Pending("light.kbd.color");
 
   // =============================================================== the keyboard
   {
@@ -345,52 +412,125 @@ float PageLighting(App& a, const Rect& r) {
     const float u = std::floor(std::min(58.0f, std::max(26.0f, (innerW - 28) / 15.0f)));
     const float kh = std::floor(std::min(44.0f, std::max(26.0f, u * 0.8f)));
     const float kbH = 6 * (kh + 4) + 18;
-    Card k(c, m, T("Keyboard"), "", IconId::Keyboard, kbH + 46, true);
-    const Look L = LookNow(a, ui, showDraft ? &draftRgb : nullptr);
-    if (L.lit && effect != lightfx::kStatic) ui.RequestFrame();   // animated effects redraw every frame
+    const std::string note = T("The picture shows the colours the keyboard reports. Moving effects such as Wave or Ripple are run by the keyboard itself and are not animated here.");
+    const float nh = NoteHeight(c, m, note, true);
+    Card k(c, m, T("Keyboard"), "", IconId::Keyboard, kbH + 46 + nh, true);
+    const Look L = LookNow(a);
     DrawKeyboard(ui, Rect(k.x0, k.y, k.w, kbH), tr, L);
     k.Gap(kbH + 12);
     StateLine(a, ui, Rect(k.x0, k.y, k.w, 26), L);
     k.Gap(34);
+    k.Note(note);
   }
 
   // =============================================================== light settings
   {
-    float h = kRowToggle + 9 + kRowSeg + 9 + kRowSlider;
-    if (effect != lightfx::kStatic) h += 9 + kRowSlider;
+    const std::string note = T("\"Save to the keyboard\" also keeps the lighting in the keyboard's own memory, so it applies before Windows has started.");
+    const float h = kRowToggle + 9 + kRowCombo + 9 + kRowCombo + 9 + kRowSeg + 9 + kRowSeg + 9 + kRowCombo + 9 + kRowButtons + NoteHeight(c, m, note);
     Card k(c, m, T("Keyboard light"), "", IconId::Lighting, h);
     k.BoolRow("light.kbd.power", T("Lighting on"), T("Turn the keyboard backlight on or off."));
     k.Divider();
-    const int cur = effect;
-    const int pick = k.Segment("seg#light.effect", T("Effect"), EffectHelp(effect), EffectLabels(), cur, kbd);
-    if (pick >= 0 && pick != cur) a.Set("light.kbd.effect", kEffectIds[pick], T("Effect") + ": " + EffectLabels()[static_cast<size_t>(pick)]);
-    k.Divider();
-    SliderCfg b;
-    b.key = "light.kbd.bright";
-    b.title = T("Brightness");
-    b.desc = T("The keyboard light has four steps.");
-    b.fmt = [](int v) { return Fmt("%d %%", v * 25); };
-    k.Slider(b);
-    if (effect != lightfx::kStatic) {
-      k.Divider();
-      SliderCfg sp;
-      sp.key = "light.kbd.speed";
-      sp.title = T("Effect speed");
-      sp.desc = T("1 is slow, 10 is fast.");
-      sp.fmt = [](int v) { return Fmt("%d / 10", v); };
-      k.Slider(sp);
+
+    // effect: the vendor's list, plus the one that is active if it is not on it
+    std::vector<std::string> items;
+    int curIdx = -1;
+    for (size_t i = 0; i < sizeof kEffects / sizeof kEffects[0]; i++) {
+      items.push_back(T(kEffects[i].label));
+      if (kEffects[i].id == effectId) curIdx = static_cast<int>(i);
     }
+    if (curIdx < 0 && a.Has("light.kbd.effect.id")) {
+      items.push_back(EffectLabel(effectId));
+      curIdx = static_cast<int>(items.size()) - 1;
+    }
+    const int pe = k.ComboRow("cmb#light.effect", T("Effect"), EffectHelp(effectId), items, std::max(curIdx, 0), kbd, 200);
+    if (pe >= 0 && pe != curIdx && static_cast<size_t>(pe) < sizeof kEffects / sizeof kEffects[0]) {
+      const SettingDef* d = FindSetting("light.kbd.effect");
+      const std::string name = d ? EnumName(*d, kEffects[pe].id) : "";
+      if (!name.empty()) a.Set("light.kbd.effect", name, T("Effect") + ": " + items[static_cast<size_t>(pe)]);
+    }
+    k.Divider();
+
+    const SettingDef* dd = FindSetting("light.kbd.dir");
+    const std::vector<std::string> dirs = {T("None"), T("Left to right"), T("Right to left"), T("Bottom to top"), T("Top to bottom"), T("From the pressed key"), T("Synchronised")};
+    const int curDir = dd && a.Has("light.kbd.dir") ? std::max(0, EnumIndex(*dd, a.S("light.kbd.dir"))) : 0;
+    const int pd = k.ComboRow("cmb#light.dir", T("Direction"), T("Used by effects that move, such as Wave and Ripple."), dirs, curDir, kbd, 200);
+    if (pd >= 0 && pd != curDir && dd) a.Set("light.kbd.dir", EnumName(*dd, pd), T("Direction") + ": " + dirs[static_cast<size_t>(pd)]);
+    k.Divider();
+
+    const int bright = static_cast<int>(std::max(0LL, std::min(4LL, a.I("light.kbd.bright", 4))));
+    const int pb = k.Segment("seg#light.bright", T("Brightness"), T("The keyboard light has five steps."), {"0", "1", "2", "3", "4"}, bright, kbd);
+    if (pb >= 0 && pb != bright) a.Set("light.kbd.bright", std::to_string(pb), T("Brightness") + ": " + std::to_string(pb));
+    k.Divider();
+
+    const int speed = static_cast<int>(std::max(0LL, std::min(4LL, a.I("light.kbd.speed", 2))));
+    const int ps = k.Segment("seg#light.speed", T("Effect speed"), T("0 is slow, 4 is fast. Used by effects that move."), {"0", "1", "2", "3", "4"}, speed, kbd);
+    if (ps >= 0 && ps != speed) a.Set("light.kbd.speed", std::to_string(ps), T("Effect speed") + ": " + std::to_string(ps));
+    k.Divider();
+
+    {   // idle timer: the vendor's service switches the light off after this long without input
+      const bool haveTimer = a.Has("light.kbd.timer");
+      const int curSec = haveTimer ? static_cast<int>(a.I("light.kbd.timer", 0)) : 0;
+      std::vector<std::string> titems;
+      int tcur = -1;
+      for (size_t i = 0; i < sizeof kTimerChoices / sizeof kTimerChoices[0]; i++) {
+        titems.push_back(TimerLabel(kTimerChoices[i]));
+        if (kTimerChoices[i] == curSec) tcur = static_cast<int>(i);
+      }
+      if (tcur < 0 && haveTimer) {
+        titems.push_back(TimerLabel(curSec));
+        tcur = static_cast<int>(titems.size()) - 1;
+      }
+      const int pt = k.ComboRow("cmb#light.timer", T("Idle timer"), T("The light goes out after this idle time."), titems, std::max(tcur, 0),
+                                a.CapOk("light.kbd.timer"), 200);
+      if (pt >= 0 && pt != tcur && static_cast<size_t>(pt) < sizeof kTimerChoices / sizeof kTimerChoices[0])
+        a.Set("light.kbd.timer", std::to_string(kTimerChoices[pt]), T("Idle timer") + ": " + titems[static_cast<size_t>(pt)]);
+    }
+    k.Divider();
+
+    if (k.Button("light.save", T("Save to the keyboard"), Btn::Normal, IconId::Download, kbd && !a.Pending("cmd:kb.save"))) a.Cmd("kb.save", KV(), T("Lighting saved to the keyboard"));
+    k.Note(note);
   }
 
   // =============================================================== colour
   {
-    const bool ignored = effect == lightfx::kCycle || effect == lightfx::kTemp;
-    const std::string note = T("Control Center Advanced keeps your lighting and applies it again at start-up, after sleep and when the display wakes.");
-    const std::string ign = T("This effect chooses its own colours, so the colour below is not used.");
-    float h = 122 + 12 + 18 + 16 + kRowSwatch + kRowButtons + 9 + kRowButtons + NoteHeight(c, m, note);
+    const bool ignored = effectId == 4;   // Rainbow
+    const std::string ign = T("This effect chooses its own colours, so the colours below are not used.");
+    const std::string note = T("Pick a colour and let go: it is sent to the keyboard when you release the mouse button.");
+    float h = (zonesEditable ? 50.0f : 0.0f) + 168 + kRowSwatch + kRowButtons + 9 + kRowButtons + NoteHeight(c, m, note);
     if (ignored) h += NoteHeight(c, m, ign);
     Card k(c, m, T("Colour"), "", IconId::Sun, h);
     if (ignored) k.Note(ign, th.amber);
+
+    if (zonesEditable) {   // which light block the picker edits: all of them, or one
+      const Rect row = k.Row(50);
+      const float chipW = 46;
+      float x = row.x;
+      auto pickBtn = [&](int zi, const std::string& label, uint32_t swatch) {
+        const bool sel = zone == zi;
+        const std::string id = Fmt("zn#%d", zi);
+        const float w = zi == 0 ? std::max(chipW, g.TextW(label, FontId::Label) + 28) : chipW;
+        const Rect b(x, row.y + 6, w, 36);
+        bool hov = false;
+        const bool click = ui.Click(id, b, kbd, &hov, nullptr);
+        g.FillRound(b, 9, sel ? WithAlpha(th.accent, 40) : (hov ? th.hover : th.inset));
+        g.StrokeRound(b, 9, sel ? th.accent : th.line, sel ? 1.6f : 1.0f);
+        if (zi == 0) {
+          g.Text(b, label, FontId::Label, sel ? th.accent : th.text, Align::Center);
+        } else {
+          g.FillRound(Rect(b.x + 6, b.y + 6, b.w - 12, 10), 4, swatch);
+          g.Text(Rect(b.x, b.y + 17, b.w, 17), label, FontId::Small, sel ? th.accent : th.muted, Align::Center);
+        }
+        x += w + 8;
+        if (click && zone != zi) {
+          zone = zi;
+          editing = false;
+        }
+      };
+      pickBtn(0, T("All"), 0);
+      for (int i = 1; i <= blocks; i++) pickBtn(i, std::to_string(i), ToArgb(zs[static_cast<size_t>(std::min<int>(i - 1, static_cast<int>(zs.size()) - 1))]));
+      ui.Tip(Rect(row.x, row.y, row.w, row.h), T("Choose which light block the colour below applies to: all of them, or one (counted from the left)."));
+    }
+
     const PickResult pr = ColorPicker(ui, a, Rect(k.x0, k.y, k.w, 152), &draft, kbd && !ignored);
     k.Gap(168);
     if (pr.changed) {
@@ -399,26 +539,24 @@ float PageLighting(App& a, const Rect& r) {
       s1k = static_cast<int>(std::lround(draft.s * 1000.0));
       v1k = static_cast<int>(std::lround(draft.v * 1000.0));
     }
-    if (pr.released) {
-      const std::string hex = lightfx::ToHex(lightfx::FromHsv(draft.h, draft.s, draft.v));
-      a.Set("light.kbd.color", hex, Tf("Keyboard colour: %s", hex.c_str()));
-    }
-    if (editing && !pr.held && !a.Pending("light.kbd.color")) editing = false;
+    if (pr.released) SendColour(a, zone, ToHex(FromHsv(draft.h, draft.s, draft.v)));
+    if (editing && !pr.held && !pendingColour) editing = false;
+
     // preset colours
     std::vector<uint32_t> cols(std::begin(kSwatches), std::end(kSwatches));
     int curSw = -1;
     for (size_t i = 0; i < cols.size(); i++)
-      if (HexOf(cols[i]) == lightfx::ToHex(live)) curSw = static_cast<int>(i);
-    const int ps = k.Swatches("sw#light.preset", T("Presets"), cols, curSw, kbd && !ignored);
-    if (ps >= 0) {
+      if (HexOf(cols[i]) == ToHex(live)) curSw = static_cast<int>(i);
+    const int pw = k.Swatches("sw#light.preset", T("Presets"), cols, curSw, kbd && !ignored);
+    if (pw >= 0) {
       editing = false;
-      a.Set("light.kbd.color", HexOf(cols[static_cast<size_t>(ps)]), Tf("Keyboard colour: %s", HexOf(cols[static_cast<size_t>(ps)]).c_str()));
+      SendColour(a, zone, HexOf(cols[static_cast<size_t>(pw)]));
     }
-    // hex field
+
+    // hex field: it follows the colour (picker, presets, other programs) but keeps what you typed until the colour itself changes
     std::string& hexText = a.Str("light.hex");
     {
-      // the field follows the colour (picker, presets, other programs) but keeps what you typed until the colour itself changes
-      const std::string src = lightfx::ToHex(showDraft ? draftRgb : live);
+      const std::string src = ToHex((editing || pendingColour) ? FromHsv(draft.h, draft.s, draft.v) : live);
       std::string& seen = a.Str("light.hex.seen");
       if (seen != src) {
         seen = src;
@@ -427,9 +565,9 @@ float PageLighting(App& a, const Rect& r) {
     }
     if (k.InputRow("light.hex", &hexText, "#rrggbb", T("Set"), kbd && !ignored, 7, true)) {
       Rgb t;
-      if (lightfx::ParseHex(Trim(hexText), &t)) {
+      if (ParseHex(Trim(hexText), &t)) {
         editing = false;
-        a.Set("light.kbd.color", lightfx::ToHex(t), Tf("Keyboard colour: %s", lightfx::ToHex(t).c_str()));
+        SendColour(a, zone, ToHex(t));
         ui.ClearFocus();
       } else {
         ui.Toast(T("Use a colour like #ff8800."), ToastKind::Warn);
@@ -439,7 +577,7 @@ float PageLighting(App& a, const Rect& r) {
     if (k.Button("light.reset", T("Restore defaults"), Btn::Normal, IconId::Undo, kbd)) {
       std::vector<Request> reqs;
       std::vector<std::string> labels;
-      const std::pair<const char*, const char*> kDef[] = {{"light.kbd.power", "1"}, {"light.kbd.effect", "static"}, {"light.kbd.color", "#ffffff"}, {"light.kbd.bright", "4"}, {"light.kbd.speed", "5"}};
+      const std::pair<const char*, const char*> kDef[] = {{"light.kbd.power", "1"}, {"light.kbd.effect", "static"}, {"light.kbd.color", "#ffffff"}, {"light.kbd.bright", "4"}};
       for (auto& d : kDef) {
         Request q;
         q.op = "set";
@@ -453,85 +591,6 @@ float PageLighting(App& a, const Rect& r) {
       a.Chain(reqs, labels);
     }
     k.Note(note);
-  }
-
-  // =============================================================== idle timeout
-  {
-    const std::string note = T("Counted from your last key press or mouse move. Control Center Advanced watches for it, so the tray icon or the window has to be running.");
-    const long long idle = a.I("light.idle", 0);
-    const float h = 80 + NoteHeight(c, m, note) + kRowToggle + 9 + kRowCombo;
-    Card k(c, m, T("Idle timeout"), "", IconId::Moon, h);
-    const Rect row = k.Row(80);
-    const Rect box(row.x, row.y + 8, 56, 56);
-    g.FillRound(box, 14, Mix(th.inset, th.elev, 0.5f));
-    g.StrokeRound(box, 14, th.line, 1.0f);
-    g.Icon(IconId::Keyboard, Rect(box.cx() - 13, box.cy() - 13, 26, 26), idle > 0 ? th.accent : th.faint, 1.7f);
-    std::string big, unit;
-    if (idle <= 0) {
-      big = T("Off");
-    } else if (idle < 60 || idle % 60 != 0) {
-      big = Fmt("%lld", idle);
-      unit = "s";
-    } else {
-      big = Fmt("%lld", idle / 60);
-      unit = "min";
-    }
-    const float bw = g.TextW(big, FontId::Mega);
-    const std::string cap = T("Light turns off after");
-    g.Text(Rect(box.r() + 16, row.y + 4, 220, 16), cap, FontId::Tiny, th.faint, Align::Left, false);
-    g.Text(Rect(box.r() + 16, row.y + 22, bw + 6, 52), big, FontId::Mega, idle > 0 ? th.text : th.faint);
-    if (!unit.empty()) g.Text(Rect(box.r() + 22 + bw, row.y + 40, 60, 30), unit, FontId::H3, th.muted, Align::Left, false);
-    // status chip
-    std::string chip;
-    uint32_t cc = th.faint;
-    if (idle <= 0) {
-      chip = T("Not used");
-    } else if (a.S("light.off.why") == "idle") {
-      chip = T("Idle: lights off");
-      cc = th.amber;
-    } else {
-      chip = T("Watching");
-      cc = th.green;
-    }
-    const float cw = ui.ChipW(chip);
-    ui.Chip(Rect(row.r() - cw, row.y + 8, cw, 22), chip, cc);
-    k.Note(note);
-    // switch + wait time
-    if (k.Toggle("sw#light.idle", T("Turn off when idle"), T("Any key press or mouse move turns the light back on."), idle > 0, kbd)) {
-      const std::string last = a.Pref("light.idle.last", "30");
-      a.Set("light.idle", idle > 0 ? "0" : last, T("Idle timeout") + ": " + (idle > 0 ? T("off") : T("on")));
-    }
-    k.Divider();
-    const auto ch = IdleChoices(idle > 0 ? idle : std::atoll(a.Pref("light.idle.last", "30").c_str()));
-    std::vector<std::string> items;
-    int curIdx = 0;
-    const long long shown = idle > 0 ? idle : std::atoll(a.Pref("light.idle.last", "30").c_str());
-    for (size_t i = 0; i < ch.size(); i++) {
-      items.push_back(ch[i].text);
-      if (ch[i].sec == shown) curIdx = static_cast<int>(i);
-    }
-    const int pick = k.ComboRow("cmb#light.idle", T("Wait time"), "", items, curIdx, kbd && idle > 0, 150);
-    if (pick >= 0 && pick != curIdx) {
-      a.SetPref("light.idle.last", std::to_string(ch[static_cast<size_t>(pick)].sec));
-      a.Set("light.idle", std::to_string(ch[static_cast<size_t>(pick)].sec), T("Idle timeout") + ": " + ch[static_cast<size_t>(pick)].text);
-    }
-  }
-
-  // =============================================================== by power state
-  {
-    const bool dim = a.B("light.battdim", false);
-    float h = kRowToggle + 9 + kRowToggle;
-    if (dim) h += kRowSegLean;
-    Card k(c, m, T("By power state"), "", IconId::Battery, h);
-    k.BoolRow("light.battdim", T("Dim on battery"), T("Limit the brightness while the charger is unplugged."));
-    if (dim) {
-      const int lvl = static_cast<int>(a.I("light.battlevel", 2));
-      const int cur = std::max(1, std::min(3, lvl)) - 1;
-      const int pick = k.Segment("seg#light.battlevel", T("Brightness on battery"), "", {"25 %", "50 %", "75 %"}, cur, kbd);
-      if (pick >= 0 && pick != cur) a.Set("light.battlevel", std::to_string(pick + 1), T("Brightness on battery") + ": " + Fmt("%d %%", (pick + 1) * 25));
-    }
-    k.Divider();
-    k.BoolRow("light.sleepoff", T("Off with the display and in sleep"), T("The lights go out with the screen and come back when it wakes."));
   }
 
   return m.Bottom();

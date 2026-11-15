@@ -1,4 +1,4 @@
-// "Application profiles": programs that switch the performance profile while they run. A list in priority order (the first running
+// "Application profiles": programs that switch the performance mode while they run. A list in priority order (the first running
 // entry wins), an inline editor with a "pick from the programs that are open now" list, and the master switch.
 #include <algorithm>
 #include <cctype>
@@ -184,7 +184,7 @@ RowAction DrawRow(App& a, const Rect& row, const Entry& e, bool active, bool sel
     const float px = std::max(tx + 120, row.x + row.w * 0.52f);
     ProfilePill(ui, std::min(px, rx - 150.0f), row.y + (kRowWide - 28) * 0.5f, e.profile, missing);
   }
-  if (missing) ui.Tip(Rect(row.x, row.y, row.w, row.h), T("This profile no longer exists, so the entry is skipped. Edit it and pick another profile."));
+  if (missing) ui.Tip(Rect(row.x, row.y, row.w, row.h), T("This mode no longer exists, so the entry is skipped. Edit it and pick another mode."));
   return out;
 }
 
@@ -262,7 +262,7 @@ void DrawEditor(App& a, const Rect& panel, const std::vector<Entry>& entries, co
 
   // --- Profile
   const Rect cProf = two ? cell(1, 1) : cell(0, 3);
-  label(cProf, T("Profile while it runs"));
+  label(cProf, T("Mode while it runs"));
   const std::vector<std::string> pitems = ProfileItems(names, missing);
   prof = std::max(0, std::min(prof, static_cast<int>(pitems.size()) - 1));
   const int pp = ui.Combo("cb#apps.prof", Rect(cProf.x, cProf.y + 22, cProf.w, 38), pitems, prof, !pitems.empty());
@@ -292,7 +292,7 @@ void DrawEditor(App& a, const Rect& panel, const std::vector<Entry>& entries, co
   const bool profReal = static_cast<size_t>(prof) < names.size();
   if (!profReal) {
     valid = false;
-    hint = T("Pick a profile that exists.");
+    hint = T("Pick a mode that exists.");
     hintCol = th.amber;
   }
   g.Text(Rect(x0, y, iw, kHintH), hint, FontId::Small, hintCol);
@@ -310,7 +310,7 @@ void DrawEditor(App& a, const Rect& panel, const std::vector<Entry>& entries, co
     if (ui.Button("apps.remove", rem, T("Remove"), Btn::Danger, IconId::Trash, !pending)) {
       ModalSpec ms;
       ms.title = Tf("Remove %s?", exe.c_str());
-      ms.body = T("The program stays on your computer. Only the profile rule is removed.");
+      ms.body = T("The program stays on your computer. Only the mode rule is removed.");
       ms.icon = IconId::Trash;
       ms.buttons = {{T("Cancel"), Btn::Ghost, 0}, {T("Remove"), Btn::Danger, 1}};
       App* ap = &a;
@@ -345,15 +345,16 @@ void MatchingCard(Ctx& c, Masonry& m) {
   const Theme& th = ui.th;
   const std::string active = a.S("app.active");
   const std::string note = T("If several listed programs run at once, the one higher in the list decides.");
-  const std::string svcNote = (a.mode() == "local") ? T("No background service is installed, so switching only works while Control Center Advanced is running. Safety and service can install it.") : std::string();
+  const std::string ls = a.S("oem.link.state", "none");
+  const std::string svcNote = (ls == "connected" || a.simulated()) ? std::string() : T("The vendor's service is not reachable, so a mode cannot be switched right now. See the Service page.");
   float h = kRowToggle + (active.empty() ? 0.0f : kRowInfo) + NoteHeight(c, m, note, true) + (svcNote.empty() ? 0.0f : NoteHeight(c, m, svcNote, true));
   Card k(c, m, T("Automatic matching"), "", IconId::Apps, h, true);
   const bool on = a.B("cfg.app.auto", true);
-  if (k.Toggle("tg#app.auto", T("Switch profile per application"), T("When the program closes, the previous profile comes back."), on, true)) a.Cfg("cfg.app.auto", on ? "0" : "1");
+  if (k.Toggle("tg#app.auto", T("Switch mode per application"), T("When the program closes, the previous mode comes back."), on, true)) a.Cfg("cfg.app.auto", on ? "0" : "1");
   if (!active.empty()) {
     const std::string prof = ProfileLabel(a.S("profile.active"));
     const std::string before = a.S("app.before");
-    k.Info(T("Running now"), active + "  \xE2\x86\x92  " + prof, th.accent, before.empty() ? std::string() : Tf("The profile before it started: %s", ProfileLabel(before).c_str()));
+    k.Info(T("Running now"), active + "  \xE2\x86\x92  " + prof, th.accent, before.empty() ? std::string() : Tf("The mode before it started: %s", ProfileLabel(before).c_str()));
   }
   k.Note(note);
   if (!svcNote.empty()) k.Note(svcNote, th.amber);
@@ -384,7 +385,7 @@ void ListCard(Ctx& c, Masonry& m) {
   h += static_cast<float>(entries.size()) * rowH + (edit >= 0 ? editorH + 10 : 0.0f);
   if (empty && edit != -1) h += 150;
   if (!empty) h += 8;
-  Card k(c, m, T("Programs"), T("Each one runs with the profile you choose while it is open."), IconId::Gamepad, h, true);
+  Card k(c, m, T("Programs"), T("Each one runs with the mode you choose while it is open."), IconId::Gamepad, h, true);
 
   // the add button sits in the card header
   const float bw = std::max(150.0f, g.TextW(T("Add a program"), FontId::Label) + 64);
@@ -394,7 +395,7 @@ void ListCard(Ctx& c, Masonry& m) {
   if (!empty) {
     const Rect hd = k.Row(26);
     g.Text(Rect(hd.x + 62, hd.y, 200, 24), T("Program"), FontId::Tiny, th.faint);
-    if (!narrow) g.Text(Rect(hd.x + hd.w * 0.52f, hd.y, 200, 24), T("Profile"), FontId::Tiny, th.faint);
+    if (!narrow) g.Text(Rect(hd.x + hd.w * 0.52f, hd.y, 200, 24), T("Mode"), FontId::Tiny, th.faint);
     g.Line({hd.x, hd.b() - 1}, {hd.r(), hd.b() - 1}, WithAlpha(th.line, 150), 1);
   }
   if (edit == -1) {
@@ -407,7 +408,7 @@ void ListCard(Ctx& c, Masonry& m) {
     g.FillRound(Rect(r.cx() - 28, r.y + 14, 56, 56), 16, WithAlpha(th.accent, 24));
     g.Icon(IconId::Gamepad, Rect(r.cx() - 14, r.y + 28, 28, 28), th.accent, 1.8f);
     g.Text(Rect(r.x, r.y + 78, r.w, 24), T("No programs yet"), FontId::Value, th.text, Align::Center);
-    g.WrappedClamped(Rect(r.x + r.w * 0.1f, r.y + 104, r.w * 0.8f, 44), T("Add a game or a tool and choose the profile it should run with. Control Center Advanced switches to it while the program runs and back when it closes."),
+    g.WrappedClamped(Rect(r.x + r.w * 0.1f, r.y + 104, r.w * 0.8f, 44), T("Add a game or a tool and choose the mode it should run with. Control Center Advanced switches to it while the program runs and back when it closes."),
                      FontId::Small, th.muted, 2, 3.0f, nullptr);
   }
   for (size_t i = 0; i < entries.size(); i++) {

@@ -30,39 +30,33 @@ void NamedApplyLock::Release() {
   if (h_) ReleaseMutex(h_);
 }
 
-WinWorld::WinWorld(WorldKind kind, const std::string& dataDir, const std::string& logName) : kind_(kind), dataDir_(dataDir), log_(dataDir + "\\logs", logName) {
-  const bool hwSide = kind != WorldKind::UiSession;      // EC / MSR / GPU / OEM services / HID
-  const bool deskSide = kind != WorldKind::Service;      // display + touchpad need the user's desktop
+WinWorld::WinWorld(const std::string& dataDir, const std::string& logName) : dataDir_(dataDir), log_(dataDir + "\\logs", logName) {
   hw_.clock = &clock_;
   hw_.log = &log_;
   host_.reset(new HostInfoWin(&smbios_));
   hw_.host = host_.get();
   hw_.smbios = &smbios_;
-  if (hwSide) {
-    ec_.reset(new AcpiEc());
-    nv_.reset(new mgp::win::NvmlTelemetry());
-    oemFiles_.reset(new mgp::win::WinOemPlatform());
-    msr_.reset(new PawnIoMsr());
-    gpu_.reset(new NvmlExtra());
-    power_.reset(new OsPower());
-    oem_.reset(new OemServices(dataDir));
-    light_.reset(new IteHid());
-    storage_.reset(new StorageWin());
-    lock_.reset(new NamedApplyLock());
-    hw_.ec = ec_.get();
-    hw_.nv = nv_.get();
-    hw_.oemFiles = oemFiles_.get();
-    hw_.msr = msr_.get();
-    hw_.gpu = gpu_.get();
-    hw_.power = power_.get();
-    hw_.oem = oem_.get();
-    hw_.light = light_.get();
-    hw_.storage = storage_.get();
-    hw_.applyLock = lock_.get();
-  }
-  if (deskSide) display_.reset(new OsDisplay());
+  ec_.reset(new AcpiEc());
+  nv_.reset(new mgp::win::NvmlTelemetry());
+  oemFiles_.reset(new mgp::win::WinOemPlatform());
+  gpu_.reset(new NvmlExtra());
+  power_.reset(new OsPower());
+  oemProbe_.reset(new OemProbeWin(dataDir));
+  storage_.reset(new StorageWin());
+  lock_.reset(new NamedApplyLock());
+  display_.reset(new OsDisplay());
+  devices_.reset(new OsDevices(OsDevices::Scope::All));
+  link_ = MakeOemLink();
+  hw_.ec = ec_.get();
+  hw_.nv = nv_.get();
+  hw_.oemFiles = oemFiles_.get();
+  hw_.gpu = gpu_.get();
+  hw_.power = power_.get();
+  hw_.oemSvc = oemProbe_.get();
+  hw_.oemLink = link_.get();
+  hw_.storage = storage_.get();
+  hw_.applyLock = lock_.get();
   hw_.display = display_.get();
-  devices_.reset(new OsDevices(kind == WorldKind::Service ? OsDevices::Scope::ServiceOnly : kind == WorldKind::UiSession ? OsDevices::Scope::UserOnly : OsDevices::Scope::All));
   hw_.devices = devices_.get();
 }
 

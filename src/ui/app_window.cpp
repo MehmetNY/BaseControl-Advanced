@@ -403,9 +403,8 @@ LRESULT App::Impl::Handle(HWND h, UINT m, WPARAM w, LPARAM l) {
       break;
     }
     case WM_POWERBROADCAST: {
-      // The in-process controller needs these events: in the elevated "local" mode it does everything, in service mode it is the user-session
-      // half that puts the display colours back after sleep (the service handles the hardware side itself).
-      Controller* target = ctl ? ctl.get() : userCtl.get();
+      // The in-process controller needs these events: it puts the display colours back after sleep and re-applies what you confirmed.
+      Controller* target = ctl.get();
       if (target) {
         if (w == PBT_APMSUSPEND) {
           target->Notify("suspend");

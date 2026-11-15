@@ -18,7 +18,7 @@ const std::vector<KeyAction>& KeyActions() {
       {"media_next", N_("Next track"), false},
       {"media_prev", N_("Previous track"), false},
       {"osd_toggle", N_("Show / hide the in-game overlay"), false},
-      {"profile_next", N_("Next performance profile"), false},
+      {"profile_next", N_("Next performance mode"), false},
       {"fan_boost", N_("Maximum fans on / off"), false},
       {"kbd_light", N_("Cycle the keyboard backlight"), false},
       {"touchpad_toggle", N_("Touchpad on / off"), false},
